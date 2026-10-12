@@ -286,15 +286,32 @@ def render_readme_progress(counts: dict[str, dict[str, int]]) -> tuple[str, str]
             "; ".join(breakdown) + ".",
         ]
     )
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="420" height="24" viewBox="0 0 420 24" role="img" aria-labelledby="progress-title">
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="480" height="80" viewBox="0 0 480 80" role="img" aria-labelledby="progress-title progress-description">
   <title id="progress-title">{escape(summary)}</title>
+  <desc id="progress-description">Only fully implemented operations count toward completion. Partial and missing operations remain in the unfilled portion.</desc>
+  <style>
+    text {{ font-family: "Segoe UI", Helvetica, sans-serif; }}
+    .label {{ fill: #34433c; font-size: 15px; font-weight: 600; }}
+    .value {{ fill: #216e4e; font-size: 18px; font-weight: 650; }}
+    .caption {{ fill: #596960; font-size: 13px; }}
+    .track {{ fill: #e6ece8; }}
+    .fill {{ fill: #27845a; }}
+    @media (prefers-color-scheme: dark) {{
+      .label {{ fill: #dce7df; }}
+      .value {{ fill: #7bd6a4; }}
+      .caption {{ fill: #a1b4a8; }}
+      .track {{ fill: #293b31; }}
+      .fill {{ fill: #56b985; }}
+    }}
+  </style>
   <defs>
-    <clipPath id="bar"><rect x="0.5" y="0.5" width="419" height="23" rx="3" /></clipPath>
+    <clipPath id="bar"><rect x="0" y="34" width="480" height="10" rx="5" /></clipPath>
   </defs>
-  <rect x="0.5" y="0.5" width="419" height="23" rx="3" fill="#e5e7eb" />
-  <rect x="0.5" y="0.5" width="{419 * implemented / total:.2f}" height="23" fill="#93b4d8" clip-path="url(#bar)" />
-  <rect x="0.5" y="0.5" width="419" height="23" rx="3" fill="none" stroke="#9ca3af" />
-  <text x="210" y="16" text-anchor="middle" fill="#111827" font-family="Verdana, sans-serif" font-size="12">{percent}%</text>
+  <text class="label" x="0" y="20">API implementation</text>
+  <text class="value" x="480" y="20" text-anchor="end">{percent}%</text>
+  <rect class="track" x="0" y="34" width="480" height="10" rx="5" />
+  <rect class="fill" x="0" y="34" width="{480 * implemented / total:.2f}" height="10" rx="5" clip-path="url(#bar)" />
+  <text class="caption" x="0" y="67">{implemented} of {total} operations fully implemented</text>
 </svg>
 '''
     return markdown, svg
