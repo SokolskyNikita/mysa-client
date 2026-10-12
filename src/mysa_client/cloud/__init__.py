@@ -1,7 +1,7 @@
 """Standalone async client for Mysa's cloud API.
 
-Nothing in this package imports Home Assistant, so it can move to its own PyPI
-package later.
+This package is part of the standalone mysa-client distribution and does not
+import Home Assistant.
 """
 
 from .auth import MysaAuth, Tokens, jwt_claims
