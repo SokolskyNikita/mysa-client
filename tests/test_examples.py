@@ -346,9 +346,10 @@ async def test_cloud_refreshes_saved_token_without_sign_in(
 
 
 async def test_homekit_discovery_only_stops_all_sessions(
-    homekit_example, tmp_path: Path, capsys
+    homekit_example, tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Discovery-only mode reports results and closes without loading a pairing."""
+    monkeypatch.setattr(homekit_example.module, "DISCOVERY_SECONDS", 0.001)
     args = _homekit_args(tmp_path / "pairing.json", discover=True)
 
     await homekit_example.module.run(args)
@@ -359,6 +360,49 @@ async def test_homekit_discovery_only_stops_all_sessions(
     assert homekit_example.protocol.stopped
     assert homekit_example.zeroconf.closed
     assert "id=AA:BB" in capsys.readouterr().out
+
+
+async def test_homekit_discovery_polls_late_snapshot_and_deduplicates(
+    homekit_example, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """Discovery polls after an empty initial cache and prints an ID once."""
+    module = homekit_example.module
+
+    class DelayedDiscovery:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def async_discover(self):
+            self.calls += 1
+            if self.calls == 1:
+                return
+            yield SimpleNamespace(
+                endpoint=None,
+                id="AA:BB",
+                name="Hall",
+                model="Mysa",
+                paired=True,
+            )
+            yield SimpleNamespace(
+                endpoint=None,
+                id="aa:bb",
+                name="Hall",
+                model="Mysa",
+                paired=True,
+            )
+
+    protocol = DelayedDiscovery()
+
+    async def finish_after_repeated_snapshot(_seconds: float) -> None:
+        if protocol.calls == 3:
+            raise TimeoutError
+
+    monkeypatch.setattr(module.asyncio, "sleep", finish_after_repeated_snapshot)
+    await module.discover(protocol, seconds=5)
+
+    output = capsys.readouterr().out
+    assert protocol.calls == 3
+    assert output.count("name='Hall'") == 1
 
 
 async def test_homekit_pairing_persists_then_reads_and_closes(

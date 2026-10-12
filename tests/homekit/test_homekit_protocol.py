@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -238,3 +239,148 @@ async def test_pairing_storage_callback_is_shielded_from_cancellation() -> None:
 
 async def _return(value: Any) -> Any:
     return value
+
+
+async def test_protocol_owns_only_missing_zeroconf_browsers(monkeypatch) -> None:
+    """Standalone startup adds both HAP browsers and releases only those."""
+    import mysa_client.homekit.controller as controller_module
+
+    class FakeBrowser:
+        def __init__(self, service_type: str) -> None:
+            self.types = {service_type}
+
+    class FakeAsyncZeroconf:
+        def __init__(self) -> None:
+            self.zeroconf = SimpleNamespace(listeners=[])
+            self.async_browsers = {}
+
+        async def async_add_service_listener(self, service_type, listener) -> None:
+            browser = FakeBrowser(service_type)
+            self.zeroconf.listeners.append(browser)
+            self.async_browsers[listener] = browser
+
+        async def async_remove_service_listener(self, listener) -> None:
+            browser = self.async_browsers.pop(listener)
+            self.zeroconf.listeners.remove(browser)
+
+    class FakeController:
+        def __init__(self, async_zeroconf) -> None:
+            self.async_zeroconf = async_zeroconf
+            self.stopped = False
+
+        async def async_start(self) -> None:
+            types = {
+                service_type
+                for browser in self.async_zeroconf.zeroconf.listeners
+                for service_type in browser.types
+            }
+            assert types == set(controller_module._HAP_SERVICE_TYPES)
+
+        async def async_stop(self) -> None:
+            self.stopped = True
+            assert len(self.async_zeroconf.zeroconf.listeners) == 2
+
+    monkeypatch.setattr(controller_module, "AsyncServiceBrowser", FakeBrowser)
+    async_zeroconf = FakeAsyncZeroconf()
+    controller = FakeController(async_zeroconf)
+    protocol = HomeKitProtocol(async_zeroconf, controller=controller)
+
+    await protocol.async_start()
+    assert len(async_zeroconf.zeroconf.listeners) == 2
+    await protocol.async_stop()
+
+    assert controller.stopped
+    assert async_zeroconf.zeroconf.listeners == []
+    assert async_zeroconf.async_browsers == {}
+
+
+async def test_protocol_preserves_shared_zeroconf_browsers(monkeypatch) -> None:
+    """HA-owned HAP browsers are reused and are not removed by this wrapper."""
+    import mysa_client.homekit.controller as controller_module
+
+    class FakeBrowser:
+        def __init__(self, service_type: str) -> None:
+            self.types = {service_type}
+
+    class FakeAsyncZeroconf:
+        def __init__(self) -> None:
+            self.zeroconf = SimpleNamespace(
+                listeners=[
+                    FakeBrowser(service_type)
+                    for service_type in controller_module._HAP_SERVICE_TYPES
+                ]
+            )
+            self.async_browsers = {}
+
+        async def async_add_service_listener(self, _service_type, _listener) -> None:
+            raise AssertionError("existing HomeKit browsers must be reused")
+
+        async def async_remove_service_listener(self, _listener) -> None:
+            raise AssertionError("caller-owned HomeKit browsers must be preserved")
+
+    class FakeController:
+        async def async_start(self) -> None:
+            return
+
+        async def async_stop(self) -> None:
+            return
+
+    monkeypatch.setattr(controller_module, "AsyncServiceBrowser", FakeBrowser)
+    async_zeroconf = FakeAsyncZeroconf()
+    caller_browsers = list(async_zeroconf.zeroconf.listeners)
+    protocol = HomeKitProtocol(async_zeroconf, controller=FakeController())
+
+    await protocol.async_start()
+    await protocol.async_stop()
+
+    assert async_zeroconf.zeroconf.listeners == caller_browsers
+
+
+async def test_protocol_start_failure_cleans_up_only_owned_browsers(
+    monkeypatch,
+) -> None:
+    """A failed backend start leaves shared Zeroconf listeners intact."""
+    import mysa_client.homekit.controller as controller_module
+
+    class FakeBrowser:
+        def __init__(self, service_type: str) -> None:
+            self.types = {service_type}
+
+    class FakeAsyncZeroconf:
+        def __init__(self) -> None:
+            self.zeroconf = SimpleNamespace(
+                listeners=[FakeBrowser(controller_module.HAP_TYPE_TCP)]
+            )
+            self.async_browsers = {}
+
+        async def async_add_service_listener(self, service_type, listener) -> None:
+            browser = FakeBrowser(service_type)
+            self.zeroconf.listeners.append(browser)
+            self.async_browsers[listener] = browser
+
+        async def async_remove_service_listener(self, listener) -> None:
+            browser = self.async_browsers.pop(listener)
+            self.zeroconf.listeners.remove(browser)
+
+    class FakeController:
+        def __init__(self) -> None:
+            self.stopped = False
+
+        async def async_start(self) -> None:
+            raise RuntimeError("backend start failed")
+
+        async def async_stop(self) -> None:
+            self.stopped = True
+
+    monkeypatch.setattr(controller_module, "AsyncServiceBrowser", FakeBrowser)
+    async_zeroconf = FakeAsyncZeroconf()
+    caller_browser = async_zeroconf.zeroconf.listeners[0]
+    controller = FakeController()
+    protocol = HomeKitProtocol(async_zeroconf, controller=controller)
+
+    with pytest.raises(RuntimeError, match="backend start failed"):
+        await protocol.async_start()
+
+    assert controller.stopped
+    assert async_zeroconf.zeroconf.listeners == [caller_browser]
+    assert async_zeroconf.async_browsers == {}

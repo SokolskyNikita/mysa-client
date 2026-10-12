@@ -24,6 +24,12 @@ from aiohomekit.exceptions import (
     MaxTriesError,
     UnavailableError,
 )
+from aiohomekit.zeroconf import (
+    HAP_TYPE_TCP,
+    HAP_TYPE_UDP,
+    ZeroconfServiceListener,
+)
+from zeroconf.asyncio import AsyncServiceBrowser
 
 from .device import HomeKitDevice
 from .exceptions import (
@@ -44,6 +50,7 @@ _KNOWN_PROTOCOL_ERRORS = (HomeKitException, TimeoutError, OSError)
 PAIRING_CLEANUP_TIMEOUT = 15
 PAIRING_CLOSE_TIMEOUT = 5
 _LOGGER = logging.getLogger(__name__)
+_HAP_SERVICE_TYPES = (HAP_TYPE_TCP, HAP_TYPE_UDP)
 
 
 def _translate_error(error: BaseException) -> HomeKitError:
@@ -207,6 +214,8 @@ class HomeKitProtocol:
                 char_cache=CharacteristicCacheMemory(),
             )
         self.__controller = controller
+        self.__async_zeroconf_instance = async_zeroconf_instance
+        self.__owned_zeroconf_listeners: list[ZeroconfServiceListener] = []
         self.__started = async_zeroconf_instance is None
 
     @classmethod
@@ -219,23 +228,78 @@ class HomeKitProtocol:
         return cls(controller=controller)
 
     async def async_start(self) -> None:
-        """Start mDNS discovery and the HomeKit controller."""
+        """Start HomeKit discovery and the controller on the supplied Zeroconf."""
         try:
+            await self.__async_add_missing_browsers()
             await self.__controller.async_start()
         except _KNOWN_PROTOCOL_ERRORS as error:
+            await self.__async_cleanup_failed_start()
             raise _translate_error(error) from error
+        except BaseException:
+            await self.__async_cleanup_failed_start()
+            raise
         self.__started = True
 
     async def async_stop(self) -> None:
         """Stop the controller and its discovery listeners."""
-        if not self.__started:
+        if not self.__started and not self.__owned_zeroconf_listeners:
             return
         try:
-            await self.__controller.async_stop()
+            if self.__started:
+                await self.__controller.async_stop()
         except _KNOWN_PROTOCOL_ERRORS as error:
             raise _translate_error(error) from error
         finally:
             self.__started = False
+            await self.__async_remove_owned_browsers()
+
+    async def __async_add_missing_browsers(self) -> None:
+        """Create only the HomeKit browsers absent from the caller's Zeroconf."""
+        async_zeroconf = self.__async_zeroconf_instance
+        if async_zeroconf is None:
+            return
+        zeroconf = async_zeroconf.zeroconf
+        for service_type in _HAP_SERVICE_TYPES:
+            if any(
+                isinstance(browser, AsyncServiceBrowser)
+                and service_type in browser.types
+                for browser in zeroconf.listeners
+            ):
+                continue
+            listener = ZeroconfServiceListener()
+            await async_zeroconf.async_add_service_listener(service_type, listener)
+            self.__owned_zeroconf_listeners.append(listener)
+
+    async def __async_remove_owned_browsers(self) -> None:
+        """Remove only listeners created by this protocol wrapper."""
+        async_zeroconf = self.__async_zeroconf_instance
+        if async_zeroconf is None:
+            return
+        listeners, self.__owned_zeroconf_listeners = (
+            self.__owned_zeroconf_listeners,
+            [],
+        )
+        for listener in listeners:
+            try:
+                await async_zeroconf.async_remove_service_listener(listener)
+            except Exception as error:  # noqa: BLE001 - cleanup must continue
+                _LOGGER.debug(
+                    "Removing a HomeKit Zeroconf browser failed (%s)",
+                    type(error).__name__,
+                )
+
+    async def __async_cleanup_failed_start(self) -> None:
+        """Close a partially started controller before removing owned browsers."""
+        try:
+            await self.__controller.async_stop()
+        except BaseException as error:  # noqa: BLE001 - retain the start failure
+            _LOGGER.debug(
+                "Stopping a partially started HomeKit controller failed (%s)",
+                type(error).__name__,
+            )
+        finally:
+            self.__started = False
+            await self.__async_remove_owned_browsers()
 
     async def async_discover(self) -> AsyncIterator[HomeKitDiscovery]:
         """Yield discovered accessories as safe name/model/paired records."""

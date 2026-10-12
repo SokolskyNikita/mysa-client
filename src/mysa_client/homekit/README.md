@@ -108,6 +108,9 @@ and validates the endpoint, rejecting invalid ports or unusable addresses.
 `HomeKitProtocol.async_discover()` and `async_find()` expose discovery records;
 `async_start_pairing()` starts the PIN exchange and returns a `PairingSession`.
 Saved pairing data remains an opaque credential dictionary for callers to store.
+`async_discover()` yields the currently known snapshot. After a cold start, poll
+it for a bounded listening period, as the [example](../../../examples/homekit_basic.py)
+does, or use `async_find()` when the accessory ID is known.
 
 Once the accessory accepts the controller key, `PairingSession.async_complete()`
 invokes its required `on_pairing_saved` callback before requesting accessory
@@ -127,7 +130,9 @@ owns durable storage, recovery UI, and protection of the saved key material.
 ## Lifecycle and application policy
 
 Create `HomeKitProtocol` with an asynchronous Zeroconf instance supplied and
-owned by the caller. Start and stop the protocol before closing Zeroconf. For
+owned by the caller. The protocol creates any missing HomeKit discovery
+listeners during startup, reuses existing shared browsers, and removes only
+its own listeners during shutdown. Start and stop the protocol before closing Zeroconf. For
 each loaded device, remove event listeners and call `async_close()` when the
 session ends. Subscription failure still permits caller-managed polling; this
 package does not run a poll loop. Home Assistant's lifecycle integration is
@@ -160,3 +165,11 @@ The protocol modules import neither Home Assistant nor the cloud package.
 
 These tests establish controlled behavior; real-device validation is a separate
 check, and compatibility varies with the accessory's exposed characteristics.
+
+On October 12, 2026, an installed 0.1.1 wheel in a Python 3.11 environment without
+Home Assistant discovered and authenticated to both tested Baseboard Lites.
+Read-only checks covered advertised capabilities, all five semantic fields,
+repeat reads, fresh-session reconnection, and shutdown without pending tasks.
+Targets, modes, display units, and saved pairing credentials remained unchanged.
+The passive observation window saw no value-change events; it did not validate
+notification delivery after a device change or exercise writes/pairing.

@@ -15,6 +15,9 @@ from zeroconf.asyncio import AsyncZeroconf
 
 from mysa_client.homekit import Field, HomeKitEvent, HomeKitProtocol
 
+DISCOVERY_SECONDS = 8
+DISCOVERY_POLL_INTERVAL = 0.25
+
 
 def save_pairing(path: Path, pairing_data: dict[str, Any]) -> None:
     """Atomically save pairing keys with owner-only permissions."""
@@ -41,18 +44,28 @@ def save_pairing(path: Path, pairing_data: dict[str, Any]) -> None:
             Path(temporary_name).unlink(missing_ok=True)
 
 
-async def discover(protocol: HomeKitProtocol, seconds: float = 8) -> None:
-    """Print discoveries for a bounded interval."""
+async def discover(
+    protocol: HomeKitProtocol, seconds: float = DISCOVERY_SECONDS
+) -> None:
+    """Poll and print discoveries for a bounded interval."""
     print(f"Listening for HomeKit accessories for {seconds:g} seconds…")
+    seen: set[str] = set()
     try:
         async with asyncio.timeout(seconds):
-            async for accessory in protocol.async_discover():
-                endpoint = accessory.endpoint
-                address = f" at {endpoint.host}:{endpoint.port}" if endpoint else ""
-                print(
-                    f"id={accessory.id} name={accessory.name!r} "
-                    f"model={accessory.model or 'unknown'} paired={accessory.paired}{address}"
-                )
+            while True:
+                async for accessory in protocol.async_discover():
+                    identity = accessory.id.casefold()
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    endpoint = accessory.endpoint
+                    address = f" at {endpoint.host}:{endpoint.port}" if endpoint else ""
+                    print(
+                        f"id={accessory.id} name={accessory.name!r} "
+                        f"model={accessory.model or 'unknown'} "
+                        f"paired={accessory.paired}{address}"
+                    )
+                await asyncio.sleep(DISCOVERY_POLL_INTERVAL)
     except TimeoutError:
         pass
 
@@ -84,7 +97,7 @@ async def run(args: argparse.Namespace) -> None:
 
         pairing_data: dict[str, Any] | None = None
         if args.discover:
-            await discover(protocol)
+            await discover(protocol, seconds=DISCOVERY_SECONDS)
 
         if args.discover and not args.pair_id and not args.use_saved_pairing:
             return
@@ -113,7 +126,7 @@ async def run(args: argparse.Namespace) -> None:
             )
             pairing_data = json.loads(pairing_json)
         elif not args.discover:
-            await discover(protocol)
+            await discover(protocol, seconds=DISCOVERY_SECONDS)
 
         if pairing_data is None:
             return

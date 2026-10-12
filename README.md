@@ -113,7 +113,8 @@ when available. Authentication, connection, rate-limit, not-found, and API
 errors derive from `MysaError`.
 
 `HomeKitProtocol` receives an externally managed asynchronous Zeroconf
-instance. Start and stop the protocol within that instance's lifetime, close
+instance. It creates missing HomeKit discovery listeners and reuses existing
+shared browsers. Start and stop the protocol within that instance's lifetime, close
 each loaded `HomeKitDevice`, and then close Zeroconf. Reads have a default
 three-second deadline; controller discovery/pairing and accessory metadata
 operations have bounded internal timeouts. Writes have no fixed caller

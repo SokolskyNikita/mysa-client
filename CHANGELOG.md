@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 (2026-10-12)
+
+- Fix HomeKit startup with a fresh caller-owned `AsyncZeroconf`: create missing
+  discovery listeners and clean up only listeners owned by the client. Existing
+  shared discovery browsers, including Home Assistant's, remain caller-owned.
+- Make the discovery example wait for late mDNS results and print each accessory
+  once during its listening window.
+- Consolidate protocol references, diagnostic tools, examples, and raw API
+  coverage in this repository, separate from Home Assistant behavior docs.
+
 ## 0.1.0 (2026-10-12)
 
 Initial standalone release, extracted from Mysa Local for Home Assistant.

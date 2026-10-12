@@ -60,7 +60,7 @@ reboot or version change occurred; installation of an available release remains
 unverified. See [startup and connectivity](#thermostat-startup-and-connectivity)
 for the device's network behavior.
 
-`MysaClient.trigger_firmware_update()` sends the required JSON `{}`. The
+`MysaClient.start_firmware_update()` sends the required JSON `{}`. The
 consuming application owns opt-in UI, polling, and completion handling; see the
 HA [firmware workflow](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/cloud-workflows.md#firmware)
 for that integration's behavior. Neither the client method nor its offline tests
