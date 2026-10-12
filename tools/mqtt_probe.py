@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Inspect Mysa MQTT authorization and test CONNECT/SUBACK without publishing.
+"""Inspect Mysa MQTT authorization; optionally test a harmless echo exchange.
 
 Requires aiohttp, boto3, and paho-mqtt>=2 (diagnostic-only dependencies). Supply
 private JSON containing refresh_token and/or email/password on stdin or via
 --credentials FILE. Never pass credentials as command-line values. This tool
-does not attach policies, publish commands, or alter thermostat settings. The
+does not attach policies or alter thermostat settings. Only --echo publishes
+the non-mutating legacy echo request. The
 credentials file grants account access; protect it and do not share its
 contents. The probe reports selected diagnostic fields, not tokens or message
 payloads.
@@ -34,7 +35,10 @@ import paho.mqtt.client as mqtt
 from mysa_client.cloud import MysaAuth, MysaClient
 
 REGION = "us-east-1"
-POOL = "us-east-1:e27f246e-ad23-41ce-ac80-eda86f8be424"
+POOLS = {
+    "legacy": "us-east-1:ebd95d52-9995-45da-b059-56b865a18379",
+    "modern": "us-east-1:e27f246e-ad23-41ce-ac80-eda86f8be424",
+}
 PROVIDER = "cognito-idp.us-east-1.amazonaws.com/us-east-1_GUFWfhI7g"
 HOST = "a3q27gia9qg3zy-ats.iot.us-east-1.amazonaws.com"
 AWS_CONFIG = Config(connect_timeout=10, read_timeout=15, retries={"max_attempts": 0})
@@ -102,9 +106,12 @@ def inspect_policy(iot, identity):
     return False
 
 
-def probe_connection(creds, devices, duration):
+def probe_connection(creds, devices, duration, *, echo=False):
     """Use Paho for MQTT framing and listen only to account-owned devices."""
     pending, accepted = {}, set()
+    publish_pending, published, echoed = {}, set(), set()
+    echo_ids = {device: uuid.uuid4().int % (2**31) for device in devices}
+    topics = {f"/v1/dev/{device}/out": device for device in devices}
     observations = {"connected": False, "messages": 0, "disconnected": False}
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
@@ -129,17 +136,52 @@ def probe_connection(creds, devices, duration):
             granted = bool(reasons) and all(not reason.is_failure for reason in reasons)
             if granted:
                 accepted.add(device)
-            report("suback", device_suffix=device[-6:], granted=granted)
+                if echo:
+                    payload = {
+                        "Device": device,
+                        "Timestamp": int(time.time()),
+                        "MsgType": 6,
+                        "EventType": 4294967295,
+                        "EchoID": echo_ids[device],
+                    }
+                    result = client.publish(
+                        f"/v1/dev/{device}/in",
+                        json.dumps(payload),
+                        qos=1,
+                        retain=False,
+                    )
+                    if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                        publish_pending[result.mid] = device
+            report("suback", device_index=list(devices).index(device), granted=granted)
+
+    def on_publish(client, userdata, mid, reason, properties):
+        device = publish_pending.pop(mid, None)
+        if device is not None and not reason.is_failure:
+            published.add(device)
 
     def on_message(client, userdata, message):
         # Do not log payloads or full device identifiers.
         observations["messages"] += 1
+        device = topics.get(message.topic)
+        if echo and device is not None and not message.retain:
+            try:
+                body = json.loads(message.payload)
+            except (ValueError, UnicodeDecodeError):
+                return
+            if (
+                isinstance(body, dict)
+                and body.get("MsgType") == 5
+                and body.get("Device") == device
+                and body.get("EchoID") == echo_ids[device]
+            ):
+                echoed.add(device)
 
     def on_disconnect(client, userdata, flags, reason, properties):
         observations["disconnected"] = True
 
     client.on_connect, client.on_subscribe = on_connect, on_subscribe
     client.on_message, client.on_disconnect = on_message, on_disconnect
+    client.on_publish = on_publish
     client.tls_set()
     client.ws_set_options(path=signed_path(creds))
     client.connect_timeout = 15
@@ -159,8 +201,11 @@ def probe_connection(creds, devices, duration):
         connack_ok=observations["connected"],
         subscriptions=len(accepted),
         messages=observations["messages"],
+        publishes_accepted=len(published),
+        echoes_received=len(echoed),
     )
-    return observations["connected"] and len(accepted) == len(devices)
+    connected = observations["connected"] and len(accepted) == len(devices)
+    return connected, len(published & echoed) == len(devices)
 
 
 async def run(args, saved):
@@ -185,7 +230,10 @@ async def run(args, saved):
         "cognito-identity", region_name=REGION, config=AWS_CONFIG
     )
     logins = {PROVIDER: token}
-    identity = identity_client.get_id(IdentityPoolId=POOL, Logins=logins)["IdentityId"]
+    report("configuration", identity_pool=args.identity_pool, echo=args.echo)
+    identity = identity_client.get_id(
+        IdentityPoolId=POOLS[args.identity_pool], Logins=logins
+    )["IdentityId"]
     result = identity_client.get_credentials_for_identity(
         IdentityId=identity, Logins=logins
     )
@@ -199,17 +247,21 @@ async def run(args, saved):
         aws_session_token=creds["SessionToken"],
     )
     limited = inspect_policy(iot, result["IdentityId"])
-    connected = probe_connection(creds, devices, args.duration)
+    connected, echoed = probe_connection(creds, devices, args.duration, echo=args.echo)
     report(
         "result",
-        authorization="blocked" if limited else "inconclusive",
-        explanation="Publish/Receive absent"
+        authorization="echo_verified"
+        if echoed
+        else "blocked"
+        if limited
+        else "inconclusive",
+        explanation="Publish/Receive verified for echo; thermostat control not tested"
+        if echoed
+        else "Publish/Receive absent from inspected policy"
         if limited
         else "CONNECT/SUBACK alone do not prove Publish/Receive",
     )
-    return (
-        2 if connected else 1
-    )  # No end-to-end MQTT success is claimed by this passive probe.
+    return 0 if echoed else 2 if connected else 1
 
 
 def main():
@@ -220,6 +272,12 @@ def main():
     )
     parser.add_argument(
         "--duration", type=int, choices=range(1, 56), metavar="1..55", default=20
+    )
+    parser.add_argument("--identity-pool", choices=POOLS, default="legacy")
+    parser.add_argument(
+        "--echo",
+        action="store_true",
+        help="Publish a non-mutating echo to each account device (no thermostat controls)",
     )
     args = parser.parse_args()
     logging.disable(logging.CRITICAL)

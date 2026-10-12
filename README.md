@@ -3,14 +3,17 @@
 > Unofficial and unaffiliated with Mysa. Use at your own risk.
 
 `mysa-client` is an asynchronous Python library for the reverse-engineered Mysa
-cloud API and the Mysa thermostat HomeKit interface. It exposes the two
-protocols independently; it does not choose between them or provide an
-application polling, persistence, or device-state confirmation policy.
+cloud API, thermostat HomeKit interface, and optional legacy MQTT client. It
+exposes these protocols independently; standalone callers must explicitly
+create an MQTT client and request live reporting.
+The library does not provide an application polling, persistence, or
+device-state confirmation policy.
 
 **Powers [Mysa Local for Home Assistant](https://github.com/SokolskyNikita/mysa-homeassistant).**
 For Home Assistant / HACS installation, setup, and thermostat entities, use that
 integration. This repository owns the shared cloud and HomeKit communication
-logic, API documentation, and standalone Python examples.
+logic, the opt-in MQTT client, API documentation, and standalone Python
+examples.
 
 The API is based on behavior observed in the Mysa apps and, where noted, on
 Baseboard Lite hardware. It is not a vendor API contract. The only hardware
@@ -24,11 +27,11 @@ evidence.
 ## API support and goals
 
 <!-- api-progress:start -->
-[![57.3% of known Mysa API operations fully implemented (63/110)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
+[![58.2% of known Mysa API operations fully implemented (64/110)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
 
-**57.3% of known Mysa API operations fully implemented (63/110).**
+**58.2% of known Mysa API operations fully implemented (64/110).**
 
-Cloud & account APIs: 51/88 (58%); Local & provisioning APIs: 12/22 (54.5%).
+Cloud & account APIs: 52/88 (59.1%); Local & provisioning APIs: 12/22 (54.5%).
 <!-- api-progress:end -->
 
 The [API inventory](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
@@ -54,17 +57,32 @@ optional extra:
 python -m pip install 'mysa-client[homekit]'
 ```
 
+Direct MQTT support is also an optional extra:
+
+```sh
+python -m pip install 'mysa-client[mqtt]'
+```
+
+MQTT remains opt-in in the library: standalone callers explicitly create the
+client and choose the device IDs to subscribe to in its `devices` mapping.
+There is no additional per-device enable flag in the client. Mysa Local for
+Home Assistant applies global and per-thermostat options before passing its
+account-device allowlist to the client. It uses MQTT for read-only telemetry
+when cloud access and both options are enabled. Standalone use never opens a
+connection automatically.
+
 To run the examples or develop the library, clone this repository and install
 from its checkout:
 
 ```sh
 git clone https://github.com/SokolskyNikita/mysa-client.git
 cd mysa-client
-python -m pip install -e '.[homekit]' --group test --group lint --group build
+python -m pip install -e '.[homekit,mqtt]' --group test --group lint --group build
 ```
 
-Import from `mysa_client.cloud` or `mysa_client.homekit`. Importing the package
-root does not load either protocol's optional transport dependencies.
+Import from `mysa_client.cloud`, `mysa_client.homekit`, or `mysa_client.mqtt`.
+Importing the package root does not load HomeKit or MQTT's optional transport
+dependencies.
 
 ## Cloud example
 
@@ -91,6 +109,32 @@ MYSA_SET_CELSIUS=20.5 python examples/cloud_basic.py
 The command's successful HTTP response means the API accepted the request. It
 does not prove that the thermostat applied it. Read reported state separately
 and use an application-specific confirmation policy.
+
+## MQTT example
+
+The [MQTT example](https://github.com/SokolskyNikita/mysa-client/blob/main/examples/mqtt_basic.py)
+authenticates through the existing cloud client, opens an explicitly requested
+MQTT session, and prints decoded device events. It can request live status and
+run an MQTT echo check without changing thermostat settings. A setpoint command
+is sent only when both `MYSA_DEVICE_ID` and `MYSA_SET_CELSIUS` are explicitly
+set; the result distinguishes broker acceptance from a matching device
+acknowledgement. MQTT command support is experimental and has only been
+validated on Baseboard Lite hardware. The Home Assistant integration uses the
+client for read-only telemetry when account access, cloud use, and its Live
+MQTT readings option are enabled.
+
+Run the read-only example after setting the same authentication variables used
+by the cloud example:
+
+```sh
+python examples/mqtt_basic.py
+```
+
+To explicitly request a target, name the device and Celsius value:
+
+```sh
+MYSA_DEVICE_ID='your-device-id' MYSA_SET_CELSIUS=20.5 python examples/mqtt_basic.py
+```
 
 ## HomeKit example
 
@@ -126,9 +170,8 @@ for freshness and application policy.
 
 ## Ownership and error handling
 
-Both clients use resources supplied by the caller. Cloud `MysaAuth` and
-`MysaClient` share a caller-owned `aiohttp.ClientSession`; close it with an
-`async with` block. The cloud client uses a 20-second request timeout and
+Cloud `MysaAuth` and `MysaClient` share a caller-owned `aiohttp.ClientSession`;
+close it with an `async with` block. The cloud client uses a 20-second request timeout and
 refreshes/retries once after a 401. It does not automatically retry an
 ambiguous command after a timeout, connection loss, cancellation, 429, or
 server error. `MysaRateLimitError.retry_after` carries the server's backoff hint
@@ -147,6 +190,14 @@ completion awaits the caller's credential-save callback before fetching
 accessory details; if saving fails, the library attempts bounded key removal.
 That cleanup is best effort if the accessory is unreachable.
 
+`MysaMqttClient` owns its Paho connection and reconnect loop inside an
+`async with` block and performs bounded cleanup on exit. Its event queue is
+bounded and has one async-iterator consumer. The client does not poll or issue
+commands by itself: callers explicitly request live reporting, echo checks, or
+Lite setpoint/mode commands. A `CommandResult` reports broker acceptance and
+device confirmation separately; a matching device acknowledgement still does
+not prove physical heater operation.
+
 The caller owns long-term refresh-token and pairing-data storage, polling,
 freshness, retries after ambiguous outcomes, validation against advertised
 capabilities, and command confirmation. HomeKit `state` is a cached view, not
@@ -161,6 +212,9 @@ The public cloud surface is exported from `mysa_client.cloud`: `MysaAuth`,
 and the documented command helpers. HomeKit's public semantic API is exported
 from `mysa_client.homekit`: `HomeKitProtocol`, `HomeKitDevice`, `PairingSession`,
 `Field`, mode/action and event models, discovery records, and typed errors.
+The optional MQTT API is exported from `mysa_client.mqtt`: `MysaMqttClient`,
+`MqttMessage`, `MqttTelemetry`, `DeviceCommandState`, echo/publish/command
+result types, message kinds, and typed errors.
 
 The Home Assistant consumer also uses supported helpers from
 `mysa_client.cloud.commands`, `.const`, `.observations`, `.trace`, and

@@ -26,20 +26,23 @@ has no implementation; it is not a promise of support.
 | --- | --- |
 | [HomeKit accessory behavior](homekit.md) | HAP characteristics and observed Mysa-specific behavior |
 | [Bluetooth and SoftAP](bluetooth.md) | Wi-Fi setup, scanning, and newer-model credential transfer |
-| [MQTT](mqtt.md) | Authentication, authorization limits, message formats, and diagnostic probing |
+| [MQTT](mqtt.md) | Opt-in runtime client, Identity Pool behavior, events, message formats, validation limits, and diagnostic probing |
 | [Firmware and connectivity](firmware-and-connectivity.md) | Startup, connections, update routes, and observed limits |
 | [Matter](matter.md) | Research status and commissioning/validation gaps; no client implementation |
 | [Examples](../examples/README.md) | Runnable consumer scripts and inert cloud/MQTT evidence records |
 
 The [Wi-Fi setup application](https://github.com/SokolskyNikita/mysa-wifi-setup)
-is a separate product. Keeping its protocol reference here does not make BLE,
-SoftAP, MQTT, or Matter supported transports in `mysa-client`.
+is a separate product. BLE, SoftAP, and Matter remain research-only here.
+MQTT is an optional, experimental client transport: standalone consumers opt
+in explicitly, and Mysa Local opts in for read-only telemetry when Mysa account
+and cloud access are enabled and its Live MQTT readings option is on.
 
 ## Home Assistant consumer
 
 The [Mysa Local documentation](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md)
-owns HA setup, entities, polling, routing, credential storage, command
-confirmation, recovery, and integration-level validation. Its
+owns HA setup, entities, MQTT session lifecycle and telemetry freshness,
+polling, routing, credential storage, command confirmation, recovery, and
+integration-level validation. Its
 [management coverage](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md)
 is separate from this library's raw API coverage.
 

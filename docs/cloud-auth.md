@@ -24,16 +24,29 @@ identify the protocol family. The client's host selection is described in the
 
 ### Cognito sign-in
 
-Current and legacy clients share these public Cognito identifiers:
+The current and legacy clients use the same User Pool, but the app-client and
+Identity Pool configuration differs. These are public application identifiers;
+the table does not contain a user's Cognito `IdentityId`:
 
 | Setting | Value |
 | --- | --- |
 | AWS region | `us-east-1` |
 | User pool | `us-east-1_GUFWfhI7g` |
-| App client | `6cktj934gasnc72f7jo2cmf6rt` |
-| Identity pool | `us-east-1:e27f246e-ad23-41ce-ac80-eda86f8be424` |
+| Modern app client | `6cktj934gasnc72f7jo2cmf6rt` |
+| Modern Identity Pool | `us-east-1:e27f246e-ad23-41ce-ac80-eda86f8be424` |
+| Legacy app client (app 3.26/3.54) | `19efs8tgqe942atbqmot5m36t3` |
+| Legacy Identity Pool (app 3.26/3.54) | `us-east-1:ebd95d52-9995-45da-b059-56b865a18379` |
 
-The app client has no client secret. Cognito requests go to `https://cognito-idp.us-east-1.amazonaws.com/` with:
+The October 12 MQTT comparison found that the same modern User Pool token
+could be exchanged through either Identity Pool, but only the legacy pool
+passed the tested MQTT echo exchange. The legacy app-client token worked with
+the legacy pool and was rejected by the modern pool with `NotAuthorizedException`.
+The modern pool's attached IoT policy was inspected; inspecting the legacy
+identity's policy returned `AccessDeniedException`, so its policy and effective
+IAM permissions remain unknown. See the detailed
+[MQTT evidence](mqtt.md#october-12-pool-comparison-and-device-control).
+
+The modern app client has no client secret. Cognito requests go to `https://cognito-idp.us-east-1.amazonaws.com/` with:
 
 ```http
 X-Amz-Target: AWSCognitoIdentityProviderService.<Action>

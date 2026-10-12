@@ -12,7 +12,7 @@ import mysa_client
 PACKAGE = Path(mysa_client.__file__).parent
 
 
-@pytest.mark.parametrize("protocol", ["cloud", "homekit"])
+@pytest.mark.parametrize("protocol", ["cloud", "homekit", "mqtt"])
 def test_protocol_import_boundary(protocol: str) -> None:
     """Each protocol depends only on itself and declared external libraries."""
     for path in (PACKAGE / protocol).glob("*.py"):
@@ -26,27 +26,32 @@ def test_protocol_import_boundary(protocol: str) -> None:
                 continue
             for module in modules:
                 assert not module.startswith(("homeassistant", "custom_components"))
-                other = "homekit" if protocol == "cloud" else "cloud"
-                assert not module.startswith(f"mysa_client.{other}"), path
+                for other in {"cloud", "homekit", "mqtt"} - {protocol}:
+                    assert not module.startswith(f"mysa_client.{other}"), path
                 if protocol == "cloud":
-                    assert not module.startswith(("aiohomekit", "zeroconf")), path
+                    assert not module.startswith(
+                        ("aiohomekit", "zeroconf", "boto3", "botocore", "paho")
+                    ), path
 
 
 def test_cloud_imports_without_optional_dependencies() -> None:
-    """A fresh interpreter must never need HA or HomeKit for cloud imports."""
+    """A fresh interpreter must never need HA, HomeKit or MQTT for cloud imports."""
     script = """
 import importlib.abc
 import sys
 
 class RejectOptional(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'homeassistant', 'aiohomekit', 'zeroconf'}:
+        if fullname.split('.')[0] in {
+            'homeassistant', 'aiohomekit', 'zeroconf', 'boto3', 'botocore', 'paho'
+        }:
             raise AssertionError(f'Unexpected optional import: {fullname}')
 
 sys.meta_path.insert(0, RejectOptional())
 import mysa_client
 from mysa_client.cloud import MysaAuth, MysaClient
 assert 'mysa_client.homekit' not in sys.modules
+assert 'mysa_client.mqtt' not in sys.modules
 """
     result = subprocess.run(  # noqa: S603 - fixed interpreter and import check
         [sys.executable, "-I", "-c", script],
@@ -60,3 +65,28 @@ assert 'mysa_client.homekit' not in sys.modules
 def test_typing_marker_is_installed() -> None:
     """Typed consumers need the marker in editable and wheel installs."""
     assert (PACKAGE / "py.typed").is_file()
+
+
+def test_mqtt_imports_without_transports_or_other_protocols() -> None:
+    """Inspecting MQTT types must neither load optional SDKs nor sign in."""
+    script = """
+import importlib.abc
+import sys
+
+class RejectTransport(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {
+            'homeassistant', 'aiohomekit', 'zeroconf', 'boto3', 'botocore', 'paho'
+        } or fullname in {'mysa_client.cloud', 'mysa_client.homekit'}:
+            raise AssertionError(f'Unexpected transport import: {fullname}')
+
+sys.meta_path.insert(0, RejectTransport())
+from mysa_client.mqtt import MysaMqttClient, parse_message
+"""
+    result = subprocess.run(  # noqa: S603 - fixed interpreter and import check
+        [sys.executable, "-I", "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr

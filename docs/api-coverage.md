@@ -2,23 +2,23 @@
 
 Last reviewed: **2026-10-12**
 
-Client baseline: **mysa-client 0.1.1**
+Client baseline: **mysa-client 0.1.2**
 
 This map tracks direct cloud, HomeKit, and device-setup API capabilities in the
 standalone client. HA orchestration and user-facing management behavior have a
 separate map in the [Mysa Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md).
 
 <!-- api-coverage:start -->
-![Cloud & account APIs: 51 of 88 implemented (58 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
+![Cloud & account APIs: 52 of 88 implemented (59.1 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
 
-**01 Cloud & account APIs:** 51 of 88 known rows fully implemented (58%). Partial: 5; missing: 32.
+**01 Cloud & account APIs:** 52 of 88 known rows fully implemented (59.1%). Partial: 5; missing: 31.
 
 **02 Local & provisioning APIs:** 12 of 22 known rows fully implemented (54.5%). Partial: 0; missing: 10.
 
 | Layer | Category | Implemented | Partial | Missing | Total |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Cloud & account APIs | Authentication | 2 | 0 | 0 | 2 |
-| Cloud & account APIs | State & history | 16 | 2 | 10 | 28 |
+| Cloud & account APIs | State & history | 17 | 2 | 9 | 28 |
 | Cloud & account APIs | Device controls | 16 | 2 | 12 | 30 |
 | Cloud & account APIs | Schedules & templates | 12 | 1 | 4 | 17 |
 | Cloud & account APIs | Device services | 5 | 0 | 6 | 11 |
@@ -116,7 +116,7 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-read-22"></a>API-READ-22 | Read Home/Away/Vacation shortcuts | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) get_shortcuts() reads shortcut maps. Saved schedule templates are a separate operation family in API-SCHED-16. |
 | <a id="api-read-23"></a>API-READ-23 | Read Mysa zones/groups and geofences | Missing | Known consumer GET /zones/{homeId} and geofence read routes are catalogued in [Consumer workflow reference](cloud-workflows.md#retained-app-only-workflow-mechanics); no resource reader exists. |
 | <a id="api-read-24"></a>API-READ-24 | Read telemetry-alert rules and maintenance reminders | Missing | Known device-alert and home-reminder methods are listed in [Consumer workflow reference](cloud-workflows.md#retained-app-only-workflow-mechanics); no resource reader or typed parser exists. User/account and push-delivery administration are excluded. |
-| <a id="api-read-25"></a>API-READ-25 | Subscribe to and decode MQTT command acknowledgements and device-event notifications | Missing | This counts the distinct /out notification/ack interface, not a second ordinary-state read path. Message formats are described in [MQTT reference](mqtt.md); the package has no MQTT subscription/decoder, and the tested identity did not receive telemetry because its IoT policy lacked Receive permission. Broader availability is not established. |
+| <a id="api-read-25"></a>API-READ-25 | Subscribe to and decode MQTT command acknowledgements and device-event notifications | Implemented | Optional [MysaMqttClient](../src/mysa_client/mqtt/client.py) subscribes to explicitly selected device /out topics and exposes bounded async events: normalized msg 40 telemetry, correlated msg 44 device acknowledgements, echo replies, and decoded/raw envelopes for other notifications. Uses the legacy Identity Pool; Live echo/telemetry and correlated setpoint control worked on two Lites; one required a power cycle to recover command handling. Broker acceptance is distinct from device confirmation. See [MQTT reference](mqtt.md) for limitations. |
 | <a id="api-read-26"></a>API-READ-26 | Read legacy device, zone, and home energy summaries | Missing | The known device/zone/home energy summary routes are catalogued in [Consumer workflow reference](cloud-workflows.md#retained-app-only-workflow-mechanics); the package has no request wrapper or typed response parser. |
 | <a id="api-read-27"></a>API-READ-27 | Request expanded usage attributes and raw telemetry samples | Missing | [Usage query and response](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/cloud-state.md#usage) and [API-READ-27](#api-read-27) distinguish optional attributes/rawReadings from current summary-only get_usage(); no expanded query or named raw-result parser is implemented. |
 | <a id="api-read-28"></a>API-READ-28 | Read current-service whole-home energy | Missing | The [additional endpoint](cloud-workflows.md#additional-endpoints) POST /energy/v3/{home}/home has no wrapper. it returned 404 on the tested Lite account. |

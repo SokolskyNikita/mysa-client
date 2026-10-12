@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.2 (2026-10-12)
+
+- Add an opt-in MQTT client behind the optional `mqtt` extra. It exposes
+  subscribed device events, explicit live-status and echo requests, and
+  experimental Lite setpoint/mode commands whose results distinguish broker
+  acceptance from device confirmation. Standalone consumers choose when to
+  connect and request telemetry; no transport is enabled automatically.
+- Keep MQTT client construction and TLS setup off the event loop. Expose a
+  connection generation counter so consumers can renew live reporting after
+  reconnecting.
+- Document the optional transport, observed authorization limits, and hardware
+  validation. MQTT stays experimental; command acceptance and device
+  acknowledgement are distinct from physical heater operation.
+
 ## 0.1.1 (2026-10-12)
 
 - Fix HomeKit startup with a fresh caller-owned `AsyncZeroconf`: create missing

@@ -1,0 +1,41 @@
+{
+  "id": "device-acknowledgement",
+  "kind": "live-sanitized",
+  "evidence": {
+    "source": "../../docs/mqtt.md#october-12-pool-comparison-and-device-control",
+    "appVersion": null,
+    "sourceReference": "Direct Paho MQTT 3.1.1/WSS probe using the legacy Identity Pool and a modern MysaAuth token.",
+    "observationDate": "2026-10-12",
+    "model": "BB-V2-0-L",
+    "firmware": "3.17.5.13",
+    "confirmation": "Device-origin response captured; for the command acknowledgement the matching target was independently read through local HomeKit.",
+    "notes": "Device ID, timestamps, message ID and correlation ID replaced with synthetic values. Fields otherwise preserved. Incoming QoS/retain were not retained by this probe."
+  },
+  "direction": "cloud-to-client",
+  "topic": "/v1/dev/a1b2c3d4e5f6/out",
+  "qos": null,
+  "retain": null,
+  "payload": {
+    "ver": "1.0",
+    "src": {
+      "type": 1,
+      "ref": "a1b2c3d4e5f6"
+    },
+    "time": 1791700000,
+    "msg": 44,
+    "id": 1234567890123456789,
+    "resp_id": 1791700000000,
+    "body": {
+      "success": 1,
+      "type": 5,
+      "trig_src": 3,
+      "state": {
+        "md": 3,
+        "sp": 22.0,
+        "lk": 0,
+        "ho": 1,
+        "br": 100
+      }
+    }
+  }
+}

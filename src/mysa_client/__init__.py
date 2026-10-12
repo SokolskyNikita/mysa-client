@@ -1,4 +1,4 @@
-"""Standalone Mysa clients; import cloud or homekit explicitly.
+"""Standalone Mysa clients; import cloud, homekit or mqtt explicitly.
 
-HomeKit dependencies are optional and are never imported by this package root.
+HomeKit and MQTT dependencies are never imported by this package root.
 """
