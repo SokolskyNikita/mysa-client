@@ -102,3 +102,11 @@ Existing network observations are from October 11–12, 2026. App evidence uses
 Android 3.26.0/3.54.1 for legacy notifications and 4.20.1 for HTTPS and fleet OTA.
 App behavior does not establish the behavior of the device's downloader. See the
 [documentation maintenance guide](maintenance.md).
+
+### Reading the legacy firmware catalog
+
+`MysaClient.get_firmware_catalog()` wraps `GET /devices/firmware` as a mapping
+of device IDs to `FirmwareRecord` objects. Its `installed_version` describes the
+catalog's reported installed version; it is not a target release or an offered
+update. `get_firmware_info(id)` continues to expose the separate availability
+service. See [response contracts, errors, and model applicability](../src/mysa_client/cloud/README.md#device-record-and-firmware-catalog-reads).

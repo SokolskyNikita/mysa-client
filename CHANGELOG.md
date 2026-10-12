@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 (2026-10-12)
+
+- Add `get_device(id)` for a typed single settings record and
+  `get_firmware_catalog()` for typed legacy installed-version records.
+- Export `FirmwareRecord`, preserve unknown fields, validate response identities,
+  and keep catalog versions separate from per-device update offers.
+- Document response contracts, legacy fallback, errors, and model applicability;
+  cover missing records, empty catalogs, and malformed responses.
+
 ## 0.1.2 (2026-10-12)
 
 - Add an opt-in MQTT client behind the optional `mqtt` extra. It exposes

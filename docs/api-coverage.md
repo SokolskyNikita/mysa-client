@@ -9,19 +9,19 @@ standalone client. HA orchestration and user-facing management behavior have a
 separate map in the [Mysa Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md).
 
 <!-- api-coverage:start -->
-![Cloud & account APIs: 52 of 88 implemented (59.1 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
+![Cloud & account APIs: 54 of 88 implemented (61.4 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
 
-**01 Cloud & account APIs:** 52 of 88 known rows fully implemented (59.1%). Partial: 5; missing: 31.
+**01 Cloud & account APIs:** 54 of 88 known rows fully implemented (61.4%). Partial: 5; missing: 29.
 
 **02 Local & provisioning APIs:** 12 of 22 known rows fully implemented (54.5%). Partial: 0; missing: 10.
 
 | Layer | Category | Implemented | Partial | Missing | Total |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Cloud & account APIs | Authentication | 2 | 0 | 0 | 2 |
-| Cloud & account APIs | State & history | 17 | 2 | 9 | 28 |
+| Cloud & account APIs | State & history | 18 | 2 | 8 | 28 |
 | Cloud & account APIs | Device controls | 16 | 2 | 12 | 30 |
 | Cloud & account APIs | Schedules & templates | 12 | 1 | 4 | 17 |
-| Cloud & account APIs | Device services | 5 | 0 | 6 | 11 |
+| Cloud & account APIs | Device services | 6 | 0 | 5 | 11 |
 | Local & provisioning APIs | HomeKit | 12 | 0 | 1 | 13 |
 | Local & provisioning APIs | Provisioning | 0 | 0 | 9 | 9 |
 <!-- api-coverage:end -->
@@ -111,7 +111,7 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-read-17"></a>API-READ-17 | Read state-change history | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) get_state_history() parses timestamped changes from GET /state/history/{id}. |
 | <a id="api-read-18"></a>API-READ-18 | Read legacy target/setpoint history | Missing | The legacy POST /energy/setpoints/device/{id} query is documented in the [cloud protocol reference](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/README.md); no matching wrapper/parser exists. |
 | <a id="api-read-19"></a>API-READ-19 | Read offered firmware update and installed/allowed versions | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) get_firmware_info() and [models.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/models.py) FirmwareInfo parse GET /devices/update_available/{id}. |
-| <a id="api-read-20"></a>API-READ-20 | Read the firmware version catalog | Missing | The app route GET /devices/firmware is identified in [Firmware reference](firmware-and-connectivity.md#legacy-devices); the client only reads per-device availability. |
+| <a id="api-read-20"></a>API-READ-20 | Read the firmware version catalog | Implemented | `get_firmware_catalog()` returns device-keyed `FirmwareRecord` entries from GET /devices/firmware. Catalog installed versions are separate from update offers; see [contracts and applicability](../src/mysa_client/cloud/README.md#device-record-and-firmware-catalog-reads). |
 | <a id="api-read-21"></a>API-READ-21 | Read demand-response event state | Partial | Structured drState.inEvent is parsed by [models.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/models.py); the separate GET /devices/{id}/drstate fallback has no wrapper. |
 | <a id="api-read-22"></a>API-READ-22 | Read Home/Away/Vacation shortcuts | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) get_shortcuts() reads shortcut maps. Saved schedule templates are a separate operation family in API-SCHED-16. |
 | <a id="api-read-23"></a>API-READ-23 | Read Mysa zones/groups and geofences | Missing | Known consumer GET /zones/{homeId} and geofence read routes are catalogued in [Consumer workflow reference](cloud-workflows.md#retained-app-only-workflow-mechanics); no resource reader exists. |
@@ -187,7 +187,7 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-device-03"></a>API-DEVICE-03 | Claim Wi-Fi-only legacy device to a Mysa home | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) add_device() encodes the known claim body for V1/V2/Lite, in-floor, and AC. It intentionally rejects V3/Central HVAC/Climate Sensor, which require newer credential setup. |
 | <a id="api-device-04"></a>API-DEVICE-04 | Replace a retained legacy account device record | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) replace_device() sends the documented /devices/purgeadd body to the legacy host; this is an explicit operation. |
 | <a id="api-device-05"></a>API-DEVICE-05 | Remove a device from the Mysa account | Implemented | [client.py](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/client.py) delete_device() issues DELETE /devices/{id}; schedule/shortcut cleanup is a separate caller responsibility. |
-| <a id="api-device-06"></a>API-DEVICE-06 | Read one device settings record | Missing | The separate GET /devices/{id} operation appears in the [cloud read matrix](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/cloud/README.md#read-matrix); the client only wraps collection acquisition. |
+| <a id="api-device-06"></a>API-DEVICE-06 | Read one device settings record | Implemented | `get_device(id)` parses the Device envelope from GET /devices/{id} into `DeviceRecord`, validates identity, and updates the model cache. See [contracts and applicability](../src/mysa_client/cloud/README.md#device-record-and-firmware-catalog-reads). |
 | <a id="api-device-07"></a>API-DEVICE-07 | Read newer-model fleet firmware availability | Missing | The [newer OTA service](firmware-and-connectivity.md#newer-ota-service) defines `GET /ota/update/available/{device}`; there is no wrapper in this package. [API-DEVICE-07–10](#api-device-07) tracks model-gated support. |
 | <a id="api-device-08"></a>API-DEVICE-08 | Start a newer-model fleet firmware update | Missing | The [newer OTA service](firmware-and-connectivity.md#newer-ota-service) defines `POST /ota/update`; there is no wrapper in this package. [API-DEVICE-07–10](#api-device-07) tracks model-gated support. |
 | <a id="api-device-09"></a>API-DEVICE-09 | Read a newer-model firmware update request status | Missing | The [newer OTA service](firmware-and-connectivity.md#newer-ota-service) defines `GET /ota/update/{requestId}`; there is no wrapper in this package. [API-DEVICE-07–10](#api-device-07) tracks model-gated support. |

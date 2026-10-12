@@ -27,11 +27,11 @@ evidence.
 ## API support and goals
 
 <!-- api-progress:start -->
-[![58.2% of known Mysa API operations fully implemented (64/110)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
+[![60% of known Mysa API operations fully implemented (66/110)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
 
-**58.2% of known Mysa API operations fully implemented (64/110).**
+**60% of known Mysa API operations fully implemented (66/110).**
 
-Cloud & account APIs: 52/88 (59.1%); Local & provisioning APIs: 12/22 (54.5%).
+Cloud & account APIs: 54/88 (61.4%); Local & provisioning APIs: 12/22 (54.5%).
 <!-- api-progress:end -->
 
 The [API inventory](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)

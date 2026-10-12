@@ -8,6 +8,7 @@ _ROUTES = (
     "/mobile/bootstrap",
     "/devices",
     "/devices/state",
+    "/devices/firmware",
     "/devices/purgeadd",
     "/state/batch",
     "/state/{id}/update",

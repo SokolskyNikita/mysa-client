@@ -373,7 +373,7 @@ Install the published package from [PyPI](https://pypi.org/project/mysa-client/)
 
 The supported top-level API is exported by [`__init__.py`](__init__.py):
 `MysaAuth`, `Tokens`, `MysaClient`, `Bootstrap`, `Capabilities`,
-`DeviceRecord`, `DeviceState`, `FirmwareInfo`, `StateChange`, `UsageBucket`,
+`DeviceRecord`, `DeviceState`, `FirmwareInfo`, `FirmwareRecord`, `StateChange`, `UsageBucket`,
 `UsageDay`, `Mode`, `AcFan`, `ButtonLock`, `HeaterType`, `DutyCycleOpt`,
 `Swing`, `ModelFamily`, `MysaError` and its typed subclasses, plus
 `ScheduleEventSpec`, `encode_schedule_events`, `make_state`, `model_family`,
@@ -423,3 +423,40 @@ full scheduled execution, notification delivery, and installation of a new
 firmware release were not established. The two Lites also differed in cloud
 setpoint/mode application, so confirmation remains necessary even for a
 supported route.
+
+### Device record and firmware catalog reads
+
+`await client.get_device(device_id)` sends `GET /devices/{id}` and returns a
+`DeviceRecord` from the response's `{"Device": {"Id": "…", "Model": "…", …}}`
+envelope. It reads stored settings, not live state. The required `Id` must match
+the requested ID. Missing optional settings remain unknown, unknown fields stay
+in `raw`, and the model cache used by legacy state parsing is updated.
+
+`await client.get_firmware_catalog()` sends `GET /devices/firmware` and returns
+`dict[str, FirmwareRecord]`, keyed by device ID. Its wire envelope is
+`{"Firmware": {"device-id": {"Device": "device-id", "InstalledVersion": "3.17.5.13"}}}`.
+`FirmwareRecord` exposes `device_id`, nullable `installed_version`, and `raw`.
+This is the account's catalog of reported installed versions, not a list of
+releases available to install. It does not infer update availability or an
+allowed version; use `get_firmware_info(id)` for that separate service. Catalog
+and live-state versions may disagree in age; neither read overwrites the other.
+
+Both methods try the modern host first, then use the existing legacy read
+fallback and five-minute host cache, independently of other operations. A 404
+on both hosts raises `MysaNotFoundError`; a malformed envelope or record raises
+`MysaApiError`. An empty `Firmware` object is a valid empty catalog. A catalog
+entry must identify the matching `Device`; missing/null `InstalledVersion`
+remains `None`, while a non-string version is rejected. Invalid entries fail the
+whole call rather than silently returning partial catalog data.
+
+The envelopes were checked against saved October 2026 responses from Baseboard
+Lite (`BB-V2-0-L`, firmware `3.17.5.13`) on both hosts. The legacy catalog is
+app-derived for V1/V2, Lite, in-floor, and AC; other hardware has not been
+validated. These reads do not add newer V3/Central HVAC/Climate Sensor OTA fleet
+support. Settings are parsed without a model whitelist so unknown model strings
+and extra fields remain available, without implying control support.
+
+Constructed regression fixtures derived from those envelope shapes:
+[single record](../../../tests/fixtures/device_record.json) and
+[firmware catalog](../../../tests/fixtures/firmware_catalog.json). They use
+synthetic identifiers and are not additional hardware observations.

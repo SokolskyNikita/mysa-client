@@ -563,6 +563,24 @@ class DeviceRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class FirmwareRecord:
+    """One legacy firmware catalog entry; no update availability is implied."""
+
+    device_id: str
+    installed_version: str | None
+    raw: dict[str, Any] = field(repr=False)
+
+    @classmethod
+    def from_api(cls, device_id: str, data: Mapping[str, Any]) -> FirmwareRecord:
+        """Parse an entry of the Firmware mapping, preserving unknown fields."""
+        return cls(
+            device_id=device_id,
+            installed_version=_str(data.get("InstalledVersion")),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class FirmwareInfo:
     """GET /devices/update_available/{dev}."""
 

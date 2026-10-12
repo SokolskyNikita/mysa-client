@@ -56,6 +56,7 @@ from .models import (
     DeviceRecord,
     DeviceState,
     FirmwareInfo,
+    FirmwareRecord,
     StateChange,
     UsageDay,
 )
@@ -312,6 +313,8 @@ class MysaClient:
         if operation not in {
             "state",
             "records",
+            "record",
+            "firmware_catalog",
             "settings",
             "schedules_v1",
             "schedules_v2",
@@ -414,6 +417,16 @@ class MysaClient:
             for dev_id, record in devices.items()
             if isinstance(record, dict)
         }
+
+    async def get_device(self, device_id: str) -> DeviceRecord:
+        """Read one stored settings record, not live state, by device ID."""
+        data = await self._legacy_request("record", "GET", f"/devices/{device_id}")
+        record = data.get("Device") if isinstance(data, dict) else None
+        if not isinstance(record, dict) or record.get("Id") != device_id:
+            raise MysaApiError("Unexpected single-device record response")
+        result = DeviceRecord.from_api(device_id, record)
+        self._device_models[device_id] = result.model
+        return result
 
     async def add_device(
         self,
@@ -700,6 +713,28 @@ class MysaClient:
         return Capabilities.from_api(data)
 
     # ---- firmware ------------------------------------------------------
+
+    async def get_firmware_catalog(self) -> dict[str, FirmwareRecord]:
+        """Read legacy catalog records of installed versions, not update offers."""
+        data = await self._legacy_request(
+            "firmware_catalog", "GET", "/devices/firmware"
+        )
+        records = data.get("Firmware") if isinstance(data, dict) else None
+        if not isinstance(records, dict):
+            raise MysaApiError("Unexpected firmware catalog response")
+        catalog = {}
+        for device_id, record in records.items():
+            if (
+                not isinstance(record, dict)
+                or record.get("Device") != device_id
+                or (
+                    record.get("InstalledVersion") is not None
+                    and not isinstance(record["InstalledVersion"], str)
+                )
+            ):
+                raise MysaApiError("Invalid firmware catalog record")
+            catalog[device_id] = FirmwareRecord.from_api(device_id, record)
+        return catalog
 
     async def get_firmware_info(self, device_id: str) -> FirmwareInfo:
         """Whether Mysa offers a firmware update for this thermostat."""

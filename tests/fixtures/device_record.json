@@ -1,0 +1,12 @@
+{
+  "Device": {
+    "Id": "a1b2c3d4e5f6",
+    "Model": "BB-V2-0-L",
+    "Name": "Example room",
+    "MinSetpoint": 5,
+    "MaxSetpoint": 30,
+    "Format": "celsius",
+    "TimeZone": "America/Los_Angeles",
+    "FutureSetting": true
+  }
+}
