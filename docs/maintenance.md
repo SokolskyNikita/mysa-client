@@ -47,8 +47,9 @@ them. It never signs in, discovers devices, or contacts a thermostat. External
 URLs need a separate review; local checks cannot establish protocol accuracy.
 
 After changing the raw API inventory, run `python tools/update_api_coverage.py`.
-CI uses `--check` to validate API IDs and verify the Markdown summary and SVG match
-the reviewed rows. Preserve stable IDs and meaningful row scope. Raw method availability is
+CI uses `--check` to validate API IDs and verify the inventory summary, detailed
+map, README percentage, and compact progress bar match the reviewed rows.
+Preserve stable IDs and meaningful row scope. Raw method availability is
 not a measure of hardware support, integration reliability, or absence of bugs.
 
 Update the authoritative reference first, then affected examples and incoming

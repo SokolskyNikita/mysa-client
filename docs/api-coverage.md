@@ -39,10 +39,11 @@ denominators. Partial rows remain visible without receiving completion credit.
 | Partial | Some of the named operation is available; its remaining method-level gap is explicit. |
 | Missing | This client package has no supported implementation of the operation. |
 
-Only **Implemented** counts toward a panel percentage. This measures breadth of
-the listed operations; it does not measure effort, severity, hardware coverage,
-or whether an API request caused a physical effect. Adding a newly found
-operation can lower a score.
+Only **Implemented** counts toward a panel percentage. The README progress bar
+combines both panels, dividing all implemented rows by all known rows.
+This measures breadth of the listed operations; it does not measure effort,
+severity, hardware coverage, or whether an API request caused a physical effect.
+Adding a newly found operation can lower a score.
 
 ## Scope and evidence
 
@@ -230,6 +231,7 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 Update the operation row, linked protocol guide, and code/test evidence together.
 Preserve API-* identifiers when scope or status changes; assign a new stable ID
 for a newly discovered operation. Run `python tools/update_api_coverage.py` to
-regenerate the summary and SVG, and `python tools/update_api_coverage.py --check`
+regenerate the inventory map and README progress bar and summaries, and
+`python tools/update_api_coverage.py --check`
 to verify them. The generator reads only this repository and does not contact a
 thermostat.

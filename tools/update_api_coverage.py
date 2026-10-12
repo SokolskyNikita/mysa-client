@@ -1,9 +1,10 @@
-"""Render the standalone Mysa client raw API coverage map.
+"""Render the standalone Mysa client API coverage summaries and images.
 
 Run ``python tools/update_api_coverage.py`` after editing
-``docs/api-coverage.md``. The command updates the marked Markdown summary and
-writes ``docs/api-coverage.svg``. Run with ``--check`` in CI or before
-committing to verify both generated artifacts without changing files.
+``docs/api-coverage.md``. The command updates the marked inventory and README
+summaries, the detailed coverage map, and a compact README progress bar.
+Run with ``--check`` in CI or before committing to verify the generated
+artifacts without changing files.
 
 The map reports direct cloud/account API support separately from local and
 provisioning API support. Each inventory row becomes one colored tile; partial
@@ -24,8 +25,12 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 TRACKER = ROOT / "docs/api-coverage.md"
 SVG_PATH = ROOT / "docs/api-coverage.svg"
+README = ROOT / "README.md"
+PROGRESS_PATH = ROOT / "docs/api-progress.svg"
 START_MARKER = "<!-- api-coverage:start -->"
 END_MARKER = "<!-- api-coverage:end -->"
+README_START_MARKER = "<!-- api-progress:start -->"
+README_END_MARKER = "<!-- api-progress:end -->"
 
 GROUPS = (
     ("API-AUTH", "Authentication"),
@@ -114,12 +119,14 @@ def table_cells(line: str) -> list[str] | None:
     return [cell.replace(r"\|", "|").strip() for cell in cells]
 
 
-def marked_region(text: str) -> tuple[int, int]:
+def marked_region(
+    text: str, start_marker: str = START_MARKER, end_marker: str = END_MARKER
+) -> tuple[int, int]:
     """Return the offsets inside the unique generated-content markers."""
-    if text.count(START_MARKER) != 1 or text.count(END_MARKER) != 1:
-        raise fail("api-coverage.md must contain each API coverage marker exactly once")
-    start = text.index(START_MARKER) + len(START_MARKER)
-    end = text.index(END_MARKER)
+    if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+        raise fail(f"must contain {start_marker} and {end_marker} exactly once")
+    start = text.index(start_marker) + len(start_marker)
+    end = text.index(end_marker)
     if end < start:
         raise fail("API coverage end marker appears before its start marker")
     return start, end
@@ -251,6 +258,46 @@ def render_markdown(counts: dict[str, dict[str, int]]) -> str:
             f"| {PANELS[panel]['label']} | {label} | {row['Implemented']} | {row['Partial']} | {row['Missing']} | {row['Total']} |"
         )
     return "\n".join(lines)
+
+
+def render_readme_progress(counts: dict[str, dict[str, int]]) -> tuple[str, str]:
+    """Build a compact progress bar and README summary from the same inventory."""
+    implemented = sum(row["Implemented"] for row in counts.values())
+    total = sum(row["Total"] for row in counts.values())
+    percent = percentage(implemented, total)
+    summary = (
+        f"{percent}% of known Mysa API operations fully implemented "
+        f"({implemented}/{total})"
+    )
+    panels = panel_tallies(counts)
+    breakdown = []
+    for panel, info in PANELS.items():
+        row = panels[panel]
+        breakdown.append(
+            f"{info['label']}: {row['Implemented']}/{row['Total']} "
+            f"({percentage(row['Implemented'], row['Total'])}%)"
+        )
+    markdown = "\n".join(
+        [
+            f"[![{summary}](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)",
+            "",
+            f"**{summary}.**",
+            "",
+            "; ".join(breakdown) + ".",
+        ]
+    )
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="420" height="24" viewBox="0 0 420 24" role="img" aria-labelledby="progress-title">
+  <title id="progress-title">{escape(summary)}</title>
+  <defs>
+    <clipPath id="bar"><rect x="0.5" y="0.5" width="419" height="23" rx="3" /></clipPath>
+  </defs>
+  <rect x="0.5" y="0.5" width="419" height="23" rx="3" fill="#e5e7eb" />
+  <rect x="0.5" y="0.5" width="{419 * implemented / total:.2f}" height="23" fill="#93b4d8" clip-path="url(#bar)" />
+  <rect x="0.5" y="0.5" width="419" height="23" rx="3" fill="none" stroke="#9ca3af" />
+  <text x="210" y="16" text-anchor="middle" fill="#111827" font-family="Verdana, sans-serif" font-size="12">{percent}%</text>
+</svg>
+'''
+    return markdown, svg
 
 
 def _rect_area(rect: Rect) -> float:
@@ -634,17 +681,30 @@ def render_svg(
 '''
 
 
-def expected_outputs(text: str) -> tuple[str, str]:
-    """Derive the marked Markdown block and SVG from the current source rows."""
+def expected_outputs(text: str, readme: str) -> dict[Path, str]:
+    """Derive the inventory and README artifacts from the current source rows."""
     reviewed = reviewed_date(text)
     features = parse_features(text)
     counts = tally(features)
-    return render_markdown(counts), render_svg(features, counts, reviewed)
+    readme_progress, progress_svg = render_readme_progress(counts)
+    return {
+        TRACKER: update_markdown(text, render_markdown(counts)),
+        SVG_PATH: render_svg(features, counts, reviewed),
+        README: update_markdown(
+            readme, readme_progress, README_START_MARKER, README_END_MARKER
+        ),
+        PROGRESS_PATH: progress_svg,
+    }
 
 
-def update_markdown(text: str, generated: str) -> str:
+def update_markdown(
+    text: str,
+    generated: str,
+    start_marker: str = START_MARKER,
+    end_marker: str = END_MARKER,
+) -> str:
     """Replace only the content within the unique generated-content markers."""
-    start, end = marked_region(text)
+    start, end = marked_region(text, start_marker, end_marker)
     return text[:start] + "\n" + generated + "\n" + text[end:]
 
 
@@ -652,32 +712,28 @@ def run(check: bool) -> int:
     """Validate generated files or write their current rendered versions."""
     try:
         source = TRACKER.read_text(encoding="utf-8")
-        generated_markdown, generated_svg = expected_outputs(source)
-        expected_tracker = update_markdown(source, generated_markdown)
+        outputs = expected_outputs(source, README.read_text(encoding="utf-8"))
 
         if check:
             stale: list[str] = []
-            if source != expected_tracker:
-                stale.append(
-                    "docs/implementation/progress.md generated section is stale"
-                )
-            try:
-                current_svg = SVG_PATH.read_text(encoding="utf-8")
-            except OSError:
-                stale.append("docs/api-coverage.svg is missing")
-            else:
-                if current_svg != generated_svg:
-                    stale.append("docs/api-coverage.svg is stale")
+            for path, expected in outputs.items():
+                try:
+                    current = path.read_text(encoding="utf-8")
+                except OSError:
+                    stale.append(f"{path.relative_to(ROOT)} is missing")
+                else:
+                    if current != expected:
+                        stale.append(f"{path.relative_to(ROOT)} is stale")
             if stale:
                 for message in stale:
                     print(message, file=sys.stderr)
                 return 1
-            print("Client API coverage Markdown and SVG are up to date.")
+            print("Client API coverage summaries and images are up to date.")
             return 0
 
-        SVG_PATH.write_text(generated_svg, encoding="utf-8")
-        TRACKER.write_text(expected_tracker, encoding="utf-8")
-        print("Updated docs/api-coverage.md and docs/api-coverage.svg.")
+        for path, expected in outputs.items():
+            path.write_text(expected, encoding="utf-8")
+        print("Updated client API coverage summaries and images.")
     except (OSError, ValueError) as error:
         print(f"update_api_coverage.py: {error}", file=sys.stderr)
         return 1

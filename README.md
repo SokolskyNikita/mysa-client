@@ -21,6 +21,24 @@ hardware. See the [cloud protocol guide](https://github.com/SokolskyNikita/mysa-
 [HomeKit protocol guide](https://github.com/SokolskyNikita/mysa-client/blob/main/src/mysa_client/homekit/README.md) for limits and
 evidence.
 
+## API support and goals
+
+<!-- api-progress:start -->
+[![57.3% of known Mysa API operations fully implemented (63/110)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
+
+**57.3% of known Mysa API operations fully implemented (63/110).**
+
+Cloud & account APIs: 51/88 (58%); Local & provisioning APIs: 12/22 (54.5%).
+<!-- api-progress:end -->
+
+The [API inventory](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
+tracks known operations and bounded operation families. Only fully implemented
+rows count; partial support earns no credit. This measures API breadth, not
+hardware validation or unit-test coverage.
+
+**Testing goal: 100% unit-test coverage of client business logic**, including
+edge cases and failure paths.
+
 ## Installation
 
 Python 3.11 or newer is required. Install the cloud client from PyPI:
