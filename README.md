@@ -65,11 +65,12 @@ python -m pip install 'mysa-client[mqtt]'
 
 MQTT remains opt-in in the library: standalone callers explicitly create the
 client and choose the device IDs to subscribe to in its `devices` mapping.
-There is no additional per-device enable flag in the client. Mysa Local for
-Home Assistant applies global and per-thermostat options before passing its
-account-device allowlist to the client. It uses MQTT for read-only telemetry
-when cloud access and both options are enabled. Standalone use never opens a
-connection automatically.
+That mapping is the per-device allowlist; the library does not manage user
+settings. Mysa Local for Home Assistant provides global and per-thermostat
+switches, both enabled by default, and passes only enabled account devices to
+the client. The integration uses MQTT for read-only telemetry when cloud access
+and both switches are enabled. Standalone use never opens a connection
+automatically; see the [MQTT reference](docs/mqtt.md) for protocol details.
 
 To run the examples or develop the library, clone this repository and install
 from its checkout:
@@ -120,8 +121,9 @@ is sent only when both `MYSA_DEVICE_ID` and `MYSA_SET_CELSIUS` are explicitly
 set; the result distinguishes broker acceptance from a matching device
 acknowledgement. MQTT command support is experimental and has only been
 validated on Baseboard Lite hardware. The Home Assistant integration uses the
-client for read-only telemetry when account access, cloud use, and its Live
-MQTT readings option are enabled.
+client for read-only telemetry when account access, cloud use, and its global
+and per-thermostat Live MQTT readings options are enabled. See the
+[MQTT reference](docs/mqtt.md) for evidence and limits.
 
 Run the read-only example after setting the same authentication variables used
 by the cloud example:

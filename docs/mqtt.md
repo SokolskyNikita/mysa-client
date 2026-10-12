@@ -1,357 +1,234 @@
-# Legacy Mysa MQTT protocol
+# Mysa MQTT
 
-**Evidence reviewed: October 10–12, 2026.** Hardware tests used two Mysa
-Baseboard Lite thermostats (`BB-V2-0-L`, firmware `3.17.5.13`) on one Mysa
-account. `mysa-client` now includes an opt-in MQTT client behind the optional
-`mqtt` extra; see [Using the optional client](#using-the-optional-client).
-The standalone library never opens an MQTT session automatically: consumers
-must install the extra and explicitly create the client and request live
-reporting. Mysa Local for Home Assistant opts into this client for read-only
-telemetry when Mysa sign-in and cloud access are enabled and both its global
-and per-thermostat Live MQTT readings options are on (both default to on).
-Freshness and fallback policy belong to the integration; MQTT commands are not
-used by this HA flow. See the [HA MQTT guide](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/mqtt.md).
+<a id="legacy-mysa-mqtt-protocol"></a>
 
-The initial Mysa Local 0.6.0 deployment with this client on Home Assistant
-2026.10.1 received MQTT humidity and numeric duty cycle from both installed
-Baseboard Lite devices. The per-thermostat option and sustained availability
-remain under live validation; see the linked HA guide for the deployment and
-intermittency findings.
+`mysa-client` includes an experimental, opt-in client for Mysa's legacy AWS IoT
+MQTT service. Installing the optional `mqtt` extra does not connect by itself:
+an application chooses the device IDs, creates `MysaMqttClient`, and requests
+live reporting. The library can also send experimental Baseboard Lite commands
+when a caller explicitly asks it to; Mysa Local for Home Assistant uses MQTT
+for read-only telemetry only.
 
-**Direct MQTT transport works with Mysa's legacy Cognito Identity Pool on the
-tested devices. Command responses have varied between runs, and the reason is
-unknown.** On October 12, a paired test
-used the same account and modern User Pool token with two Identity Pools. The
-modern pool allowed CONNECT and SUBSCRIBE but rejected publishing an echo; the
-legacy pool returned a QoS 1 PUBACK and the expected echo response. The old
-app-client and legacy-pool combination also returned the echo response. With
-the legacy pool, both tested Lites returned echoes and produced MCM `msg: 40`
-live telemetry after a live-status request. A legacy token could not be
-exchanged through the modern pool. This explains the conflicting broker
-authorization observations: the October 11 denied publish used the modern
-pool, while MQTT publish/echo and live telemetry worked through the legacy
-pool.
+The protocol and behavior below are reverse-engineered observations, not a
+vendor contract. Hardware evidence is from two Baseboard Lite `BB-V2-0-L`
+thermostats running firmware `3.17.5.13` on one Mysa account. It does not
+establish behavior for other models or accounts.
 
-Hardware command behavior changed after a power cycle on one of the two tested
-Lites. The first Lite acknowledged array-form setpoint commands with and without
-a seconds-based `Timestamp`; the matching response reported success and the
-requested state, and an independent local read confirmed the target. The
-JSON-string command form was ignored. Before a power cycle, the second Lite did
-not acknowledge the tested array or string variants, and its local target stayed
-unchanged. After the power cycle, an array-form request was acknowledged and
-independently confirmed by subsequent MQTT telemetry and an independent HA
-readback. Both devices were restored to their original targets. The reason the
-second device's response changed is unknown; these results do not establish
-behavior on other accounts or devices.
+## What was validated
 
-These results cover one Mysa account and the tested app-client/pool
-combinations; they do not establish behavior for every Mysa user or Lite
-thermostat. `mysa-client` provides
-[HomeKit](../src/mysa_client/homekit/README.md) for local communication and the
-[HTTPS cloud protocol](../src/mysa_client/cloud/README.md) for cloud operations.
+The legacy Cognito Identity Pool worked for MQTT connect, subscriptions,
+publish/receive, echo replies, and live telemetry on the tested account. The
+modern Identity Pool also allowed connect and subscribe, but its inspected IoT
+policy did not grant publish or receive. A successful connection or
+subscription therefore does not prove that messages can be sent or received.
+The legacy identity's policy could not be inspected, so its effective grants
+are unknown. See [authorization and connection](#connection-and-authorization-model)
+for the dated comparison.
+
+The Home Assistant integration's real-installation checks, including the
+per-device option, are documented in its
+[MQTT guide](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/mqtt.md).
+That integration uses the library for read-only telemetry; it owns the polling,
+freshness, and fallback policy.
+
+The standalone client also received echo replies and live telemetry from both
+devices. Its experimental array-form setpoint command was acknowledged by both
+in observed runs, with matching reported state and independent HA readback.
+One device had failed to acknowledge earlier command variants before a power
+cycle. During those tests its MCM `msg: 40` timestamp was within a second of
+local time before and after the reboot, while a cloud snapshot continued to
+report `latestTelemetry` in 2031. The command's `time` field is the sender's
+current Unix time, not a clock-synchronization exchange; no device-side
+timestamp rejection rule was established. The reboot coincided with command
+acknowledgements returning, but the cause is unknown. A broker PUBACK, echo, or
+device acknowledgement alone does not prove physical heater operation.
 
 ## Connection and authorization model
 
-There are three distinct communication paths:
+The clients sign in to Mysa's Cognito User Pool, then exchange the ID token
+through an Identity Pool for short-lived AWS credentials. Those credentials
+sign a secure WebSocket connection to AWS IoT. `MysaMqttClient` uses Mysa's
+legacy Identity Pool by default; advanced callers can provide different pool
+configuration. The tested modern User Pool token also worked through the legacy
+pool. An old app-client token worked through the legacy pool but was rejected
+by the modern pool. The public app-client and pool identifiers are listed in
+the [cloud authentication reference](cloud-auth.md#cognito-sign-in).
 
-| Path | Transport | Evidence |
+This is Mysa's AWS infrastructure and Mysa account authentication. The
+thermostat owner's own AWS account is not involved. The MQTT path does not use
+HomeKit pairing or its eight-digit setup code, but it does require valid Mysa
+account authentication and whatever AWS permissions Mysa has granted that
+identity.
+
+<a id="aws-permission-controls"></a>
+
+AWS evaluates separate data-plane permissions for each operation:
+
+| Action | Operation | Resource suffix used by this client |
 | --- | --- | --- |
-| Legacy app (3.26/3.54) → Mysa cloud | Direct AWS IoT MQTT over secure WebSocket, using its legacy app client and Identity Pool | Reverse-engineered from the original Mysa apps; legacy pool passed the October 12 echo test |
-| Current app → Mysa cloud | HTTPS reads and writes | Reverse-engineered from the original Mysa apps; no direct MQTT client found |
-| Thermostat → Mysa cloud | TLS MQTT on port 8883 | Observed device traffic; separate from the mobile client's credentials |
+| `iot:Connect` | MQTT CONNECT | `client/<clientId>` |
+| `iot:Subscribe` | MQTT SUBSCRIBE | `topicfilter//v1/dev/<deviceId>/out` |
+| `iot:Publish` | Outgoing message | `topic//v1/dev/<deviceId>/in` |
+| `iot:Receive` | Incoming delivery | `topic//v1/dev/<deviceId>/out` |
 
-The clients sign into Mysa's Cognito **User Pool**, obtain an ID token, then
-exchange it through a configured **Identity Pool** using `GetId` and
-`GetCredentialsForIdentity`. The resulting temporary access key, secret key,
-and session token sign the AWS IoT WebSocket request. The User Pool is shared,
-but the legacy and modern app configurations use different app clients and
-Identity Pools. The October 12 paired test shows the Identity Pool selection
-changes the observed MQTT authorization result. Public app-client and pool
-identifiers are recorded in the
-[cloud authentication reference](cloud-auth.md#cognito-sign-in).
-
-The resulting AWS identity belongs to **Mysa's AWS infrastructure**. It
-represents the user's Mysa login; it is not an AWS account owned or administered
-by the thermostat owner. Keep these identifiers separate:
-
-| Identifier | Purpose |
-| --- | --- |
-| User Pool `sub` | Mysa user identity; `src.ref` in app command envelopes |
-| Identity Pool `IdentityId` | Principal to which AWS IoT policies are attached |
-| Device `Id` from the account API | Topic suffix and command destination |
-| Fresh UUID client ID | Identifies one MQTT connection |
-
-### AWS permission controls
-
-For authenticated Cognito identities, permissions must be present in both the
-Identity Pool's authenticated IAM role and the IoT policy attached to the
-identity. A successful Cognito login supplies credentials, not unrestricted
-broker access. See [AWS's Cognito authorization model](https://docs.aws.amazon.com/iot/latest/developerguide/cog-iot-policies.html).
-
-The legacy client exercises four independent MQTT data-plane permissions:
-
-| AWS action | Checked when | Resource needed by this client | Modern-pool policy inspected October 11 |
-| --- | --- | --- | --- |
-| `iot:Connect` | MQTT CONNECT | `client/<clientId>` | Allowed |
-| `iot:Subscribe` | MQTT SUBSCRIBE | `topicfilter//v1/dev/<deviceId>/out` | Allowed |
-| `iot:Publish` | Each outgoing PUBLISH | `topic//v1/dev/<deviceId>/in` | Absent |
-| `iot:Receive` | Each incoming message delivery | `topic//v1/dev/<deviceId>/out` | Absent |
-
-These are resource suffixes under
-`arn:aws:iot:us-east-1:<Mysa-AWS-account-id>:`. The doubled slash is intentional:
-the topic starts with `/`. Subscribe uses a **topic filter** resource; Publish
-and Receive use **topic** resources. See AWS's
-[action definitions](https://docs.aws.amazon.com/iot/latest/developerguide/iot-policy-actions.html)
+The leading slash in each topic makes the doubled slash in the resource suffix
+intentional. AWS also requires the authenticated Cognito role and IoT policy to
+allow the operation. See AWS's [Cognito authorization guide](https://docs.aws.amazon.com/iot/latest/developerguide/cog-iot-policies.html),
+[action definitions](https://docs.aws.amazon.com/iot/latest/developerguide/iot-policy-actions.html),
 and [resource mapping](https://docs.aws.amazon.com/iot/latest/developerguide/iot-action-resources.html).
-This explains why a successful SUBACK can coexist with no delivered messages.
 
-The October 11 policy inspection applies to the modern Identity Pool path only.
-The October 12 comparison confirms that legacy-pool credentials can publish
-and receive the echo response, but the legacy identity's policy and effective
-IAM permissions were not available for inspection. Do not infer its grants
-from the modern-pool policy. An attachment operation such
-as [`AttachPolicy`](https://docs.aws.amazon.com/iot/latest/apireference/API_AttachPolicy.html)
-associates an existing policy with an identity; it does not expand that policy.
-These are controls in Mysa's AWS deployment, not settings in the thermostat
-owner's personal AWS account.
+<a id="live-evidence"></a>
 
-## Live evidence
+<a id="test-results"></a>
 
-### Policy inspection
+### Dated authorization evidence
 
-On October 11, the tested identity had exactly one attached policy, `default`.
-`GetPolicy(default)` returned:
+<a id="policy-inspection"></a>
 
-[Policy document projection](../examples/cloud/iot-policy.limited.json).
+On October 11, 2026, the tested modern-pool identity had one attached `default`
+policy. The inspected policy allowed CONNECT and SUBSCRIBE, but not Publish or
+Receive; its sanitized projection is in
+[`iot-policy.limited.json`](../examples/cloud/iot-policy.limited.json). A
+separate probe connected and subscribed successfully, then saw the WebSocket
+disconnect on publish; AWS IoT's HTTPS Publish returned 403. During passive
+subscriptions no MQTT messages arrived while HTTPS live readings advanced.
+Those results apply to that modern-pool identity only.
 
-The wildcard covers resources for the two listed actions; it does not grant
-other actions. The absence of `iot:Publish` and `iot:Receive` is therefore
-material even though connection and subscription requests succeed.
+<a id="october-12-pool-comparison-and-device-control"></a>
 
-### Test results
+On October 12, the same modern User Pool token was exchanged through both
+Identity Pools. The modern pool again connected and subscribed but failed the
+echo publish. The legacy pool received a QoS 1 PUBACK and matching echo reply;
+the legacy app-client/pool pair did too. Trying the legacy app-client token
+with the modern pool failed at `GetId`. Both tested Lites then returned legacy
+echo replies and MCM `msg: 40` telemetry after live-status requests. AWS denied
+inspection of the legacy identity's attached policy, so the policy statements
+and effective role permissions remain unknown. These observations explain the
+different results seen with the two pools, but they do not establish
+permissions for every account or topic.
 
-The following results are from October 11 using the modern Identity Pool;
-preserve them as a dated observation for that configuration, not a statement
-about legacy-pool access or current access for every session.
+<a id="legacy-wire-protocol"></a>
 
-| Check | Observed result | What it establishes |
-| --- | --- | --- |
-| MQTT 3.1.1 connection | CONNACK `20 02 00 00` | Connection accepted with fresh credentials and a UUID client ID. |
-| QoS 1 subscriptions to both devices' `/out` topics | SUBACK granted QoS 1 | Subscriptions accepted, independently reproduced with Paho. |
-| Publish to a device's `/in` topic | WebSocket disconnected; AWS IoT HTTPS `Publish` returned 403 `ForbiddenException` | Command publication was forbidden with this modern-pool identity before a device response could be assessed. |
-| Passive subscriptions during 20 seconds of HTTPS live reporting | HTTPS readings advanced; no MQTT messages in a 25-second window | Consistent with the missing Receive permission. |
+## Wire protocol
 
-AWS IoT HTTPS `Publish` and Mysa's HTTPS state API are separate paths; the
-latter remains usable. See [live-mode and liveness](cloud-state.md#live-mode-and-liveness).
-An earlier connection failed before CONNACK; its cause remains unresolved and
-does not change the later authorization findings.
+The original Android clients use MQTT in versions 3.26.0 and 3.54.1; the
+examined 4.20.1 client uses HTTPS for its Mysa API operations. The device's own
+TLS MQTT connection on port 8883 is a separate path with separate
+authentication. No thermostat-authenticated MQTT client has been established.
 
-### October 12: pool comparison and device control
+<a id="session-and-topics"></a>
 
-The paired broker test used the same account. For the modern app client, the
-same User Pool token was exchanged through the modern and legacy Identity
-Pools. Additional controls used the legacy app-client/pool pair and tried its
-token with the modern pool:
-
-| User Pool token and Identity Pool | Observed result |
-| --- | --- |
-| Modern app client + modern Identity Pool | `GetId`/credential exchange succeeded. The identity's `default` policy was version 2 and allowed CONNECT/SUBSCRIBE only. MQTT CONNECT and SUBSCRIBE succeeded; echo PUBLISH disconnected before PUBACK, and no echo response arrived. |
-| Same modern token + legacy Identity Pool | MQTT CONNECT and SUBSCRIBE succeeded; echo PUBLISH received QoS 1 PUBACK and the expected `MsgType: 5` echo response. |
-| Legacy app client + legacy Identity Pool | Echo received PUBACK and the expected response. |
-| Legacy app-client token + modern Identity Pool | `GetId` failed with `NotAuthorizedException`. |
-
-In a follow-up using the legacy Identity Pool, both tested devices returned
-echoes and produced MCM `msg: 40` telemetry after live status was requested.
-Inspecting the legacy identity's attached policy returned
-`AccessDeniedException`. These results establish publish/receive for the tested
-topics, but do not establish the legacy policy statements or prove that every
-device topic and command is permitted. Do not include per-user Cognito Identity
-IDs or account/device identifiers in reports.
-
-The separate hardware-control test used the source of
-[`mysa2mqtt` PR #306 at `f872d79`](https://github.com/bourquep/mysa2mqtt/pull/306/commits/f872d790d296061c1dd9dcb08804e875ec24a98d).
-Its active Identity Pool was not recorded. The SDK tries AWS IoT MQTT first
-and falls back to Mysa's REST API only when publishing fails. During this run,
-MQTT publishes returned successfully and the normal command path did not
-invoke REST fallback.
-
-- On one Lite, a 0.5 °C setpoint decrease, off, heat, and restoration all worked.
-  Each change was independently observed through local HomeKit in about two
-  seconds. This establishes actual MQTT control in that session, beyond broker
-  acceptance or an optimistic UI update.
-- On the other Lite, the setpoint publish returned successfully, but its local
-  target remained unchanged during an approximately 57-second observation.
-  The MQTT climate entity initially displayed the requested target, then
-  reverted on a subsequent state update. Local HomeKit control still worked.
-- In a separate test, simulated MQTT rejection exercised the same SDK's fallback
-  with real REST requests. Setpoint/off/heat worked on the first Lite; the second
-  still did not apply the REST setpoint within approximately 45 seconds. This
-  validates that fallback path under an injected failure, not automatic fallback
-  after a real broker rejection. Both devices ended at their original settings.
-
-The REST request matched `mysa-client`'s heating-state encoding. Our integration's
-successful local control uses HomeKit, so it is not evidence of a different or
-more reliable REST payload. Transport acceptance alone remains insufficient to
-confirm that a thermostat applied a command.
-
-The pool comparison explains the earlier broker authorization difference, but
-does not explain the device-specific command results. A broker PUBACK and echo
-response confirm transport-level publish/receive for the tested echo topic;
-they do not confirm thermostat command application.
-
-In the initial variant tests, array-form `cmd` setpoint commands with and
-without seconds-based `Timestamp` were confirmed on one Lite by a correlated
-MCM `msg: 44` response with `success: 1`, `src.type: 1`, and a matching
-`resp_id`, followed by independent local readback of the requested target. The
-JSON-string `cmd` form was ignored on that device. Before a power cycle, the
-other Lite did not acknowledge the tested array or string forms, including a
-timestamped `resp: 2` request, and its local target did not change. Omitting
-`resp` and adding a mode field produced the same result.
-
-After that Lite was power-cycled, an array-form request for 21.5 °C was confirmed
-by a matching MCM `msg: 44` acknowledgement (`success: 1`, `src.type: 1`, and
-matching `resp_id`), two subsequent MCM `msg: 40` telemetry events reporting
-21.5 °C, and an independent HA readback after six seconds. Restoring 22 °C was
-confirmed by the same acknowledgement, live telemetry, and HA readback.
-The MQTT timestamps were already within one second of local time before the
-power cycle and remained current after it, so those observations do not support
-clock skew as the cause. The cloud `latestTelemetry` timestamp for this device
-still reported 2031 after the reboot. The power cycle coincided with recovery,
-but the cause remains unknown. Both tested Lites have now acknowledged and
-independently reflected an array-form setpoint command in the observed runs;
-this is limited evidence and does not establish reliability across sessions,
-accounts, or models.
-
-## Legacy wire protocol
-
-The following wire protocol was reverse-engineered from the original Mysa apps.
-The October 12 follow-up confirmed MQTT echo transport through the legacy pool
-and array-form setpoint control on both tested Lites in observed runs. One Lite
-required a power cycle before it acknowledged the request; the cause and
-reliability across sessions remain unresolved.
-
-### Session and topics
-
-| Property | App behavior |
+| Property | Observed legacy app behavior |
 | --- | --- |
 | Endpoint | `wss://a3q27gia9qg3zy-ats.iot.us-east-1.amazonaws.com/mqtt` |
-| Authentication | SigV4, service `iotdevicegateway`, region `us-east-1`; temporary Identity Pool credentials |
-| MQTT session | MQTT 3.1.1, fresh UUID client ID, 60-second keepalive |
-| Commands | Publish `/v1/dev/{deviceId}/in`, normally QoS 1, not retained |
-| Readings | Subscribe `/v1/dev/{deviceId}/out`, QoS 1; no `/batch` subscription in the app |
-| Device identifier | Account API `Id`, used verbatim |
-| Publish pacing | One queued message per 350 ms |
+| Authentication | SigV4 WebSocket request using temporary Identity Pool credentials; service `iotdevicegateway`, region `us-east-1` |
+| MQTT | MQTT 3.1.1, fresh UUID client ID, 60-second keepalive |
+| Device topic | `/v1/dev/{deviceId}/in` for publishes; `/v1/dev/{deviceId}/out` for subscriptions |
+| QoS | Normally QoS 1; app publishes are not retained |
+| Device ID | Account API `Id`, used verbatim |
+| Publish pacing | The observed app queued publishes about 350 ms apart; the Python client does not impose that delay |
 
-IoT policy attachment uses the AWS IoT **control plane**, signed for service
-`iot`, rather than the `iotdevicegateway` service used by the WebSocket URL.
+AWS IoT policy management uses the separate control-plane service name `iot`.
+The standalone client reconnects after transport loss, calls its token provider
+again, obtains a new temporary AWS credential set, and resubscribes. It exposes
+`connection_generation` so consumers can detect a fully subscribed new session.
+It does not automatically restart a live-reporting request or replay a command
+after reconnecting.
 
-### Lite commands and responses
+<a id="liveness-and-notifications"></a>
 
-The Lite always uses MCM `msg: 44` with `body.type: 5`. Other models take this
-path from firmware 3.11.0 for V1, V2 and In-floor, or 3.12.0 for AC. A Lite
-setpoint command has this shape; identifiers and times are illustrative:
+### Telemetry and liveness messages
 
-[Array command](../examples/mqtt/thermostat-command.array.json) and
-[JSON-string command](../examples/mqtt/thermostat-command.string.json).
+MCM `msg: 40` carries device telemetry. For tested Lite messages, the client
+normalizes room temperature, humidity, setpoint, and numeric duty cycle from
+`body` (or `body.reading`). Missing values remain `None`. The parser records
+local receipt time; it does not treat a device timestamp as a freshness
+guarantee.
 
-`time` is Unix seconds; `id` is milliseconds. The app sends the command twice:
-first with `cmd` as an array, then with that array encoded as a JSON string.
-Its newer MQTT client adds a seconds-based `Timestamp`; the generator does
-not set `resp`. Other device types are 1 for baseboard V1, 2 for AC, 3 for
-In-floor, and 4 for baseboard V2.
+The legacy event envelope uses `MsgType`, a different namespace from MCM
+`msg`:
 
-| Command field | Meaning |
+| Purpose | Request | Expected response |
+| --- | --- | --- |
+| Echo/liveness | `MsgType: 6`, `EventType: 4294967295`, unique `EchoID` | `MsgType: 5` with the same `EchoID` |
+| Request live telemetry | `MsgType: 11`, `Timeout` from 1 to 180 seconds | Device publishes telemetry during the requested interval when available |
+
+The app requests 180 seconds and renews around every 150 seconds while
+foregrounded. The library exposes `request_live_status()` but leaves renewal to
+the caller. Legacy `MsgType: 7` is named REBOOT in the app enum; it is not an
+echo or telemetry check. The legacy source enum uses 0 for device manual and 1
+for device schedule; these values are distinct from the MCM `src.type` field.
+`MsgType: 40` must not be confused with MCM `msg: 40`.
+
+<a id="lite-commands-and-responses"></a>
+
+### Lite commands
+
+The experimental command path currently supports Baseboard Lite model strings
+only. It publishes MCM `msg: 44`, `body.type: 5`, with `cmd` as an array. The
+application-derived examples show the observed array and JSON-string forms:
+[array command](../examples/mqtt/thermostat-command.array.json) and
+[JSON-string command](../examples/mqtt/thermostat-command.string.json). The
+library sends the array form. On one tested Lite the JSON-string form was
+ignored; this does not establish behavior for all firmware.
+
+| Field | Meaning |
 | --- | --- |
-| `sp` | Setpoint in Celsius |
-| `md` | Legacy mode: 1 off, 3 heat; distinct from the HTTPS mode enum |
-| `ho` | 1 follow schedule, 2 hold |
+| `sp` | Celsius setpoint |
+| `md` | Legacy mode: `1` off, `3` heat |
+| `ho` | `1` follow schedule, `2` hold |
 | `tm` | Execution time in Unix seconds; `-1` means now |
 | `br` | Brightness object |
 
-A timed hold contains a hold-now entry and a future follow-schedule entry.
-The app does not add `lk`, `stpt`, or `a_sp` to its Lite commands. The audited
-Mysa_HA implementation differs by adding `resp: 2`, `stpt`/`a_sp`, and sending
-one command representation. Those are compatibility questions, not established
-causes of the observed authorization failure.
-
-Device acknowledgements correlate the request through `resp_id` and carry
-state in `body.state`, including `md`, `sp`, `ho`, `tr`, `fn`, and `ss`. The
-app parser does not inspect `success`, `trig_src`, `br`, or `lk`. Live Lite
-telemetry uses MCM `msg: 40`, with `body.ambTemp`, `hum`, `stpt`, and `dtyCycle`.
-
-### Liveness and notifications
-
-| Purpose | Legacy message fields in addition to `Device` and seconds-based `Timestamp` |
-| --- | --- |
-| Echo | `MsgType: 6`, `EventType: 4294967295`, `EchoID: 418`; expected reply is `MsgType: 5` with the same echo ID |
-| Request live reporting | `MsgType: 11`, `Timeout: 180`; app renews every 150 seconds while foregrounded |
-| Settings changed | `MsgType: 6`, `EventType: 0`, after the REST settings write |
-| Schedule changed | `MsgType: 6`, `EventType: 1`, after the REST schedule write |
-
-Legacy `MsgType` and MCM `msg` are different namespaces. In particular,
-legacy `MsgType: 7` is named REBOOT in the app enum, and legacy `MsgType: 40`
-is not MCM `msg: 40` telemetry. Neither is a suitable liveness probe. The
-legacy source enum defines 0 as device manual and 1 as device schedule.
+The message envelope's `time` is Unix seconds and `id` is a request ID. The
+user-pool subject is included in `src.ref`; the account device ID is in
+`dest.ref`. Device acknowledgements use MCM `msg: 44`, `resp_id` correlation,
+and reported state in `body.state`. A QoS 1 PUBACK only confirms broker
+acceptance. A correlated successful acknowledgement confirms the device
+reported matching state, not that the heater physically operated.
 
 ## Using the optional client
 
-`mysa_client.mqtt.MysaMqttClient` is an opt-in consumer API. Install its
-optional extra with `python -m pip install 'mysa-client[mqtt]'`. Pass
-`auth.async_get_id_token` from `MysaAuth` and a mapping of account-owned device
-IDs to their model strings. That mapping is the device allowlist: the client
-does not have a separate per-device enable flag. The client uses Mysa's
-legacy Identity Pool by default, waits for CONNECT and all requested
-subscriptions, and closes/reconnects within bounded timeouts. It only
-subscribes to the IDs supplied by the caller.
+Install the extra with:
 
-`connection_generation` increases after each fully subscribed connection,
-including reconnects. Consumers can watch it to request live reporting again
-after a new session. Client construction and TLS setup run off the event loop.
+```sh
+python -m pip install 'mysa-client[mqtt]'
+```
 
-The client sends no thermostat command unless the caller explicitly invokes
-`set_setpoint` or `set_mode`. `request_live_status` asks for a telemetry stream
-that lasts up to 180 seconds; the client does not renew it automatically, so a
-consumer that wants continued updates should request it again before it
-expires. `echo` sends a non-mutating liveness probe and waits for its matching
-reply. The bounded `events()` iterator yields parsed `MqttMessage`
-objects with `kind`, `telemetry`, `state`, correlation fields, and the original
-payload for advanced use. `MqttMessage.payload` and `raw_payload` are hidden
-from `repr` to reduce accidental disclosure.
+Create `MysaMqttClient` with a token provider such as
+`auth.async_get_id_token` and a mapping of account device IDs to model names.
+The mapping is an explicit allowlist: omitting a device keeps it out of MQTT
+subscriptions. The client copies this mapping at construction; create a new
+client if the selected devices change. Open the client with `async with`, call
+`request_live_status(device_id)`, and consume its single bounded
+`events()` iterator. Live reporting lasts at most 180 seconds per request, so
+the caller should renew it before it expires. The default request is 180
+seconds; valid requests range from 1 to 180 seconds. Re-check
+`connection_generation` and request live status again after a reconnect.
+`dropped_events` reports events lost if the bounded queue fills. Paho client
+construction and TLS setup run off the asyncio event loop.
 
-Commands currently support Baseboard Lite model strings only. A
-`CommandResult` separates `broker_accepted` (QoS 1 PUBACK) from
-`device_confirmed`. Confirmation requires a successful, correlated MCM `msg: 44`
-response from the device with state matching the request; it is still not
-proof of physical heater operation. The client emits the app-shaped array form
-of `cmd`. In the October 12 live runtime test, both tested Lites confirmed a
-0.5 °C setpoint decrease and restoration with correlated device acknowledgements.
-Both also returned echo replies and live telemetry. After an intentional socket
-disconnect, the client reconnected with a fresh session and both devices echoed
-again. The devices were left at their original setpoints. An independent HA
-readback matched the commanded state; after reboot, HA's connection path had
-switched between local and cloud for the two devices, so this does not establish
-a local HomeKit readback on both. These observations cover two Lites on one
-account, not other accounts or models. Home Assistant adds its own 30-second
-receipt-time freshness and per-field HTTPS fallback around these events; those
-are integration policies, not client defaults. See the runnable
-[MQTT example](../examples/mqtt_basic.py) and the
-[sanitized acknowledgement](../examples/mqtt/device-acknowledgement.json),
-[telemetry](../examples/mqtt/live-telemetry.json), and
-[echo reply](../examples/mqtt/echo-reply.json).
+The client also provides a non-mutating `echo()` check. `set_setpoint()` and
+`set_mode()` send real thermostat commands and should be used only when a
+consumer intentionally wants to change a supported Lite. `CommandResult`
+reports `broker_accepted` and `device_confirmed` separately: the first reflects
+the QoS 1 PUBACK, while the second requires a matching successful device
+acknowledgement. A timeout can leave the outcome uncertain, and the client does
+not replay the command. The
+[runnable example](../examples/mqtt_basic.py) shows authentication, events,
+echo, live reporting, and an explicitly gated setpoint command. The
+[sanitized message examples](../examples/mqtt/README.md) show fixture
+provenance and payloads.
 
-## Reproduction
+<a id="reproduction"></a>
 
-[`tools/mqtt_probe.py`](../tools/mqtt_probe.py) is a maintainer diagnostic.
-It reuses `mysa_client.cloud.MysaAuth` and `MysaClient`, obtains Identity Pool
-credentials, inspects attached policies when permitted, and checks MQTT CONNECT
-and per-device SUBACK through Paho. It discovers topic targets from the
-authenticated account. By default it is passive; `--echo` publishes a
-non-mutating echo to each device and requires matching PUBACK and echo replies.
-The default pool is legacy; use `--identity-pool modern` to compare the modern
-pool.
+## Maintainer probe
 
-From the repository root, use a separate environment and install the standalone
-client with the diagnostic-only dependencies:
+[`tools/mqtt_probe.py`](../tools/mqtt_probe.py) is an optional, non-mutating
+authorization diagnostic. It discovers account devices, checks MQTT CONNECT
+and SUBACK, and can send the non-mutating echo request with `--echo`. It does
+not request live telemetry or thermostat commands. Install its diagnostic
+dependencies and run it from the repository root:
 
 ```sh
 python -m pip install mysa-client boto3 'paho-mqtt>=2'
@@ -360,62 +237,34 @@ python tools/mqtt_probe.py --credentials /path/to/credentials.json --echo
 python tools/mqtt_probe.py --credentials /path/to/credentials.json --identity-pool modern --echo
 ```
 
-The private JSON accepts `refresh_token` and/or `email` plus `password`.
-Omit `--credentials` to supply it through stdin. Keep credentials out of Git
-and command-line arguments. The tool reports selected policy and connection
-fields without tokens, signed URLs, or message payloads.
+The credentials file accepts a refresh token or email/password; keep it out of
+Git and do not put credentials in command-line arguments. The tool suppresses
+tokens, signed URLs, device IDs, and raw payloads. A verified echo establishes
+publish/receive for that echo exchange, not successful thermostat control.
+Policy inspection may be denied, and the diagnostic is not a general AWS IAM
+evaluator. Without `--echo`, the tool cannot verify delivery and returns 2
+after CONNECT/SUBACK; policy inspection determines whether the result is
+`blocked` or `inconclusive`.
 
-| Result | Interpretation |
+| Exit status | Interpretation |
 | --- | --- |
-| Exit 0, `authorization: "echo_verified"` | With `--echo`, every account device returned PUBACK and its matching echo. This validates echo transport, not thermostat control. |
-| Exit 1 | The diagnostic could not complete the broker connection and all expected subscriptions. |
-| Exit 2, `authorization: "blocked"` | CONNECT/SUBACK completed, no echo was verified, and policy inspection matched the modern pool's limited policy. |
-| Exit 2, `authorization: "inconclusive"` | CONNECT/SUBACK completed, but echo was not verified and policy inspection did not establish the limited policy. |
+| `0`, `authorization: "echo_verified"` | With `--echo`, each selected device returned PUBACK and its matching echo. This verifies the echo exchange, not thermostat control. |
+| `1` | Setup or connection/subscription checks did not complete. |
+| `2`, `authorization: "blocked"` | CONNECT/SUBACK completed, no echo was verified, and policy inspection matched the previously observed limited modern-pool policy. |
+| `2`, `authorization: "inconclusive"` | CONNECT/SUBACK completed, but no echo was verified and policy inspection did not establish that limited policy. |
 
-The tool is not an IAM evaluator: other policies, different document shapes,
-or denied inspection (including `AccessDeniedException`) are not treated as
-proof of access. It never attaches a policy or sends thermostat commands. It
-does not request live reporting; use the optional MQTT client for telemetry.
+<a id="validation-and-limitations"></a>
+<a id="sources-and-unresolved-questions"></a>
 
-## Validation and limitations
+## Scope and sources
 
-Further investigation should capture authorization and session evidence during
-successful and failing command runs: record which app-client and Identity Pool
-configuration was used, compare available policy and IAM evidence, client
-ID/session settings, and command encoding. Separately record broker acceptance,
-correlated device responses, and fresh device-reported state. Keep credentials,
-per-user Cognito Identity IDs, and account/device identifiers out of public
-reports.
+<a id="validation-criteria-for-a-future-fix"></a>
 
-A meaningful validation should first confirm delivery of
-the safe echo and fresh telemetry, then test a controlled state change and
-read it back from the device. CONNACK, SUBACK, or a broker-level publish
-acknowledgement alone must not be reported as successful thermostat control.
-
-For complementary HTTPS endpoints and model-specific findings, see the
-[cloud API supplementary reference](../src/mysa_client/cloud/README.md).
-
-## Sources and unresolved questions
-
-The original Android apps use MQTT in 3.26.0/3.54.1 and HTTPS in 4.20.1. The older 3.26.0 Lite MSG44 path requires firmware 3.13.0;
-the later legacy app removes that gate. Both test devices exceeded it.
-
-The October 11 modern-pool policy was present as `default`, version 2, and
-allowed CONNECT/SUBSCRIBE but not Publish/Receive. The October 12 paired test
-found that legacy-pool credentials can complete echo and live-telemetry
-exchanges. Inspection of the legacy identity's policy returned
-`AccessDeniedException`, so its policy statements and effective IAM permissions
-remain unknown. No extra per-device attachment or identity registration step
-was found in the inspected sign-in path. The pool difference explains the
-conflicting broker authorization results, but not the device-specific command
-results. Community reports also describe different failure stages and do not
-establish one universal cutoff. Do not generalize these observations to all
-accounts or devices. `mysa-client` provides an opt-in experimental client;
-Mysa Local uses it for account-backed read-only telemetry when cloud access and
-its Live MQTT readings option are enabled, while standalone consumers must
-explicitly construct it and request live reporting. MQTT
-behavior outside the tested pool and Lite-device cases remains unverified.
-
-The later port-8883 credential attempt failed during TLS; see
-[device connectivity](firmware-and-connectivity.md#time-transport-and-validation-limits).
-There is no demonstrated thermostat-authenticated client here.
+The protocol and evidence are based on reverse-engineering the original Mysa
+apps, the current library implementation, sanitized captures, and the dated
+hardware tests above. The modern-pool policy findings are not evidence about
+the legacy pool. The legacy policy and its effective IAM role remain
+uninspected; long-term MQTT availability, other accounts, and models other
+than the tested Lites remain unvalidated. For complementary HTTPS behavior,
+see the [cloud protocol guide](../src/mysa_client/cloud/README.md). For the
+actual device's network behavior, see [firmware and connectivity](firmware-and-connectivity.md).

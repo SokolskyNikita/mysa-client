@@ -34,8 +34,11 @@ has no implementation; it is not a promise of support.
 The [Wi-Fi setup application](https://github.com/SokolskyNikita/mysa-wifi-setup)
 is a separate product. BLE, SoftAP, and Matter remain research-only here.
 MQTT is an optional, experimental client transport: standalone consumers opt
-in explicitly, and Mysa Local opts in for read-only telemetry when Mysa account
-and cloud access are enabled and its Live MQTT readings option is on.
+in explicitly. Mysa Local uses it for read-only telemetry when account and
+cloud access are enabled and both its global and per-thermostat Live MQTT
+readings options are on; both default to on. The [MQTT reference](mqtt.md)
+covers the shared protocol, while the HA guide owns integration behavior and
+live validation.
 
 ## Home Assistant consumer
 

@@ -37,14 +37,8 @@ the table does not contain a user's Cognito `IdentityId`:
 | Legacy app client (app 3.26/3.54) | `19efs8tgqe942atbqmot5m36t3` |
 | Legacy Identity Pool (app 3.26/3.54) | `us-east-1:ebd95d52-9995-45da-b059-56b865a18379` |
 
-The October 12 MQTT comparison found that the same modern User Pool token
-could be exchanged through either Identity Pool, but only the legacy pool
-passed the tested MQTT echo exchange. The legacy app-client token worked with
-the legacy pool and was rejected by the modern pool with `NotAuthorizedException`.
-The modern pool's attached IoT policy was inspected; inspecting the legacy
-identity's policy returned `AccessDeniedException`, so its policy and effective
-IAM permissions remain unknown. See the detailed
-[MQTT evidence](mqtt.md#october-12-pool-comparison-and-device-control).
+For the dated MQTT comparison of these app-client and Identity Pool
+configurations, see the [MQTT authorization evidence](mqtt.md#dated-authorization-evidence).
 
 The modern app client has no client secret. Cognito requests go to `https://cognito-idp.us-east-1.amazonaws.com/` with:
 
@@ -66,8 +60,9 @@ Refresh uses `GetTokensFromRefreshToken` with:
 
 The observed refresh response supplied ID and access tokens with a one-hour
 lifetime and no replacement refresh token. The Identity Pool is not needed for
-HTTPS; the examined mobile app uses it for SNS push registration. Its credential exchange and
-MQTT role are covered in the [MQTT connection model](mqtt.md#connection-and-authorization-model).
+HTTPS; the examined mobile app uses it for SNS push registration. The MQTT
+client separately exchanges the User Pool ID token through an Identity Pool;
+see the [MQTT reference](mqtt.md#connection-and-authorization-model).
 
 For HTTP errors and retries, see the [cloud error reference](../src/mysa_client/cloud/README.md#errors-timeouts-retries-and-caller-responsibilities).
 The examined mobile app treats 409 as success generally; the Python client handles it specially
