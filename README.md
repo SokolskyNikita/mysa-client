@@ -1,11 +1,16 @@
 # Mysa Client
 
-> **Unofficial project.** This project is not affiliated with, endorsed by, or supported by Mysa. **Use at your own risk.** The software is provided "as is", without warranty.
+> Unofficial and unaffiliated with Mysa. Use at your own risk.
 
 `mysa-client` is an asynchronous Python library for the reverse-engineered Mysa
 cloud API and the Mysa thermostat HomeKit interface. It exposes the two
 protocols independently; it does not choose between them or provide an
 application polling, persistence, or device-state confirmation policy.
+
+**Powers [Mysa Local for Home Assistant](https://github.com/SokolskyNikita/mysa-homeassistant).**
+For Home Assistant / HACS installation, setup, and thermostat entities, use that
+integration. This repository owns the shared cloud and HomeKit communication
+logic, API documentation, and standalone Python examples.
 
 The API is based on behavior observed in the Mysa apps and, where noted, on
 Baseboard Lite hardware. It is not a vendor API contract. The only hardware
