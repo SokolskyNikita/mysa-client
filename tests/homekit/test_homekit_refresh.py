@@ -227,3 +227,30 @@ async def test_failed_refresh_is_throttled_and_can_recover():
         assert refresh.await_count == 2
         assert device.ready
     await device.async_close()
+
+
+async def test_offline_start_read_preserves_connection_error_until_recovery():
+    """A cooldown must not turn failed discovery into missing characteristics."""
+    controller = await make_controller()
+    pairing = controller.aliases[HKID]
+    device = HomeKitProtocol.from_controller(controller).load_pairing(PAIRING_DATA)
+    pairing.available = False
+    with patch(CLOCK, return_value=1) as clock:
+        with pytest.raises(HomeKitConnectionError) as initial:
+            await device.async_connect()
+        clock.return_value = 31
+        with pytest.raises(type(initial.value)) as retried:
+            await device.async_read((Field.CURRENT_TEMPERATURE,))
+        assert str(retried.value) == str(initial.value)
+        assert device.diagnostics()["recovery"]["last_refresh_error"] == str(
+            initial.value
+        )
+        pairing.available = True
+        clock.return_value = 61
+        assert await device.async_read((Field.CURRENT_TEMPERATURE,))
+        assert device.ready
+        await device.async_read(device.supported_fields)
+        assert not device.failed_fields
+        assert device.pairing_data == PAIRING_DATA
+        assert device.diagnostics()["recovery"]["last_refresh_error"] is None
+    await device.async_close()

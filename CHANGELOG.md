@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 (2026-10-12)
+
+- Preserve the original HomeKit discovery failure during the metadata retry
+  cooldown instead of reporting missing required fields before a database has
+  been read. Expose pending refresh, discovery failure, and missing-field details
+  in semantic diagnostics. Ordinary reconnect continues to reuse saved keys.
+
 ## 0.2.0 (2026-10-12)
 
 - Add reusable cloud-domain helpers for per-field observation reconciliation,

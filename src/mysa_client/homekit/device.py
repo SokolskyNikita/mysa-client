@@ -255,6 +255,7 @@ class HomeKitDevice:
         self.__last_refresh = float("-inf")
         self.__last_refresh_attempt = float("-inf")
         self.__last_missing_retry = float("-inf")
+        self.__last_refresh_error: tuple[type[HomeKitError], str] | None = None
 
     @property
     def pairing_data(self) -> dict[str, Any]:
@@ -389,16 +390,19 @@ class HomeKitDevice:
         except _KNOWN_PROTOCOL_ERRORS as error:
             self.__refresh_pending = True
             translated = _translate_error(error)
+            self.__last_refresh_error = (type(translated), str(translated))
             self.__mark_fields_failed(_ESSENTIAL_FIELDS, str(translated))
             raise translated from error
         except (HomeKitError, asyncio.CancelledError) as error:
             self.__refresh_pending = True
             if isinstance(error, HomeKitError):
+                self.__last_refresh_error = (type(error), str(error))
                 self.__mark_fields_failed(_ESSENTIAL_FIELDS, str(error))
             raise
         finally:
             self.__refreshing = False
         self.__last_refresh = monotonic()
+        self.__last_refresh_error = None
         return True
 
     async def __refresh_metadata(self) -> None:
@@ -490,6 +494,12 @@ class HomeKitDevice:
         }
         absent = set(fields) - self.__fields.keys()
         if absent & _ESSENTIAL_FIELDS:
+            if self.__last_refresh_error is not None:
+                # Discovery failed and its retry is cooling down. No database
+                # was obtained: absent fields are not evidence of a malformed
+                # accessory. Preserve the connection/authentication failure.
+                error_type, message = self.__last_refresh_error
+                raise error_type(message)
             failures = dict.fromkeys(absent & _ESSENTIAL_FIELDS, "missing")
             self.__state.fail(failures)
             self.__notify(HomeKitEvent.create(failed_fields=failures))
@@ -666,6 +676,15 @@ class HomeKitDevice:
             "model": self.__info.model,
             "manufacturer": self.__info.manufacturer,
             "firmware": self.__info.firmware,
+            "recovery": {
+                "refresh_pending": self.__refresh_pending,
+                "last_refresh_error": (
+                    self.__last_refresh_error[1] if self.__last_refresh_error else None
+                ),
+                "missing_fields": sorted(
+                    field.value for field in _ESSENTIAL_FIELDS - self.__fields.keys()
+                ),
+            },
             "fields": {
                 field.value: {
                     "value": self.__state.values.get(field),
