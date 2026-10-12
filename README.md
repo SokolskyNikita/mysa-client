@@ -146,11 +146,11 @@ They are part of the maintained consumer API even when they are not re-exported
 at `mysa_client.cloud`. Other underscored names and implementation details are
 private.
 
-See [examples](https://github.com/SokolskyNikita/mysa-client/tree/main/examples),
-[cloud authentication](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/cloud-auth.md),
-[cloud state and models](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/cloud-state.md),
-[cloud workflows](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/cloud-workflows.md),
-the protocol guides, and the [change log](https://github.com/SokolskyNikita/mysa-client/blob/main/CHANGELOG.md).
+See the [documentation index](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/README.md)
+for cloud and HomeKit APIs, Bluetooth/SoftAP, MQTT, firmware/connectivity,
+Matter research, raw API coverage, and diagnostic tools. Runnable scripts and
+sanitized protocol exchanges live in [examples](https://github.com/SokolskyNikita/mysa-client/tree/main/examples).
+See the [changelog](https://github.com/SokolskyNikita/mysa-client/blob/main/CHANGELOG.md) for releases.
 
 ## Development and release
 

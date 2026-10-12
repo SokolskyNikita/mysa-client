@@ -7,6 +7,7 @@ parse source and JSON but never run them or contact a Mysa account/accessory.
 - [Cloud login, discovery, read, and optional heating target](cloud_basic.py)
 - [HomeKit discovery, pairing, saved-pairing read, events, and optional write](homekit_basic.py)
 - [Sanitized cloud request/response data](cloud/README.md)
+- [Sanitized MQTT message formats](mqtt/README.md)
 
 `MYSA_SET_CELSIUS` and `--set-target-c` explicitly enable device-changing
 commands. Keep them unset during routine reads and never use them as an
@@ -25,3 +26,8 @@ payloads are synthetic or sanitized and do not imply broader hardware support.
 
 Public Cognito pool and app-client identifiers are configuration values, not
 secrets. Any token shown in an example is a nonfunctional placeholder.
+
+Protocol diagnostic tools and their dependencies are documented in the
+[MQTT reference](../docs/mqtt.md#reproduction) and the
+[HomeKit reference](../docs/homekit.md). They are maintainer tools, not
+additional supported library transports.

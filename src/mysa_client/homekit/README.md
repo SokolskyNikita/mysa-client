@@ -8,10 +8,11 @@ semantic API; it does not implement the underlying HAP transport or cryptography
 
 For Mysa-specific hardware observations, unsupported characteristics, and Wi-Fi
 migration limits, see the
-[accessory reference](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/homekit.md).
-For integration feature parity, implementation gaps, and completion criteria,
-see the
-[HomeKit tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/homekit.md).
+[accessory reference](../../../docs/homekit.md).
+For supported client operations and protocol gaps, see the
+[raw API inventory](../../../docs/api-coverage.md#homekit). For HA lifecycle and
+completion criteria, see the
+[HomeKit integration tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/homekit.md).
 
 ## How it is organized
 

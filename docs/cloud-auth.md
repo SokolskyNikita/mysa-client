@@ -1,6 +1,6 @@
 # Cloud authentication
 
-The [cloud protocol reference](../src/mysa_client/cloud/README.md) owns endpoint availability, S/R/L terminology, observed limitations, and recommended client policy. This page supplies detailed wire mechanics; Home Assistant's implementation status belongs to its [cloud tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md).
+This page records the observed Cognito exchange and HTTP authentication mechanics used by Mysa's cloud services. The [cloud protocol reference](../src/mysa_client/cloud/README.md) describes endpoint availability, S/R/L terminology, limits, and how `mysa-client` uses the authentication API. These findings are reverse-engineered observations, not a vendor contract.
 
 The protocols were reverse-engineered from the original Mysa apps. Hardware observations cover Baseboard Lite `BB-V2-0-L`, firmware `3.17.5.13`. Other-model behavior remains app/code-derived unless explicitly stated.
 
@@ -19,7 +19,7 @@ The protocols were reverse-engineered from the original Mysa apps. Hardware obse
 Routing depends on feature flags: `MONOLITH_API_ACCESS` moves legacy routes to
 `mysa-backend`, and `DISABLE_LEGACY_FALLBACK` disables retrying them on `app-prod`.
 Both were enabled for the tested account. A host name alone therefore does not
-identify the protocol family. Mysa Local's host selection is described in the
+identify the protocol family. The client's host selection is described in the
 [cloud guide](../src/mysa_client/cloud/README.md#how-it-is-organized).
 
 ### Cognito sign-in
@@ -54,7 +54,7 @@ Refresh uses `GetTokensFromRefreshToken` with:
 The observed refresh response supplied ID and access tokens with a one-hour
 lifetime and no replacement refresh token. The Identity Pool is not needed for
 HTTPS; the examined mobile app uses it for SNS push registration. Its credential exchange and
-MQTT role are covered in the [MQTT connection model](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/mqtt.md#connection-and-authorization-model).
+MQTT role are covered in the [MQTT connection model](mqtt.md#connection-and-authorization-model).
 
 For HTTP errors and retries, see the [cloud error reference](../src/mysa_client/cloud/README.md#errors-timeouts-retries-and-caller-responsibilities).
 The examined mobile app treats 409 as success generally; the Python client handles it specially
@@ -71,5 +71,5 @@ The tested APIs do not support ordinary cross-origin browser access:
 | `app-prod` | Legacy-route preflights allowed access, but actual responses lacked `Access-Control-Allow-Origin`; newer pairing, state and bootstrap routes returned 403 |
 
 Successful Cognito sign-in therefore does not make Mysa's API responses readable
-by a webpage. Cloud requests need a backend, such as Home Assistant, or an
+by a webpage. Cloud requests need a native client, a server-side process, or an
 extension with the appropriate host permissions.

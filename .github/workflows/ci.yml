@@ -33,6 +33,7 @@ jobs:
           ruff check .
           mypy --python-version '${{ matrix.python }}'
           python tools/check_docs.py
+          python tools/update_api_coverage.py --check
       - name: Build and inspect release artifacts
         run: |
           python -m build

@@ -134,6 +134,57 @@ def check_body(path: Path, value: dict[str, object]) -> None:
             read_json(target)
         except (ValueError, OSError):
             fail(path, "referenced body is not strict JSON")
+        else:
+            check_sanitization(target)
+
+
+def check_example_identity(
+    path: Path, data: dict[str, object], seen: set[str]
+) -> dict[str, object] | None:
+    """Validate a documented example ID and its evidence metadata."""
+    identifier = data.get("id")
+    if identifier != path.stem or not isinstance(identifier, str) or identifier in seen:
+        fail(path, "missing, duplicate, or filename-mismatched ID")
+    else:
+        seen.add(identifier)
+    kind = data.get("kind")
+    if not isinstance(kind, str) or kind not in KINDS:
+        fail(path, "unsupported evidence kind")
+    evidence = data.get("evidence")
+    required_evidence = {
+        "source",
+        "observationDate",
+        "model",
+        "firmware",
+        "confirmation",
+    }
+    if not isinstance(evidence, dict) or not required_evidence <= evidence.keys():
+        fail(path, "missing evidence metadata")
+        return None
+    check_link(path, str(evidence["source"]))
+    if (
+        kind == "app-derived"
+        and not {"appVersion", "sourceReference"} <= evidence.keys()
+    ):
+        fail(path, "app-derived evidence needs app version and source reference")
+    if kind == "live-sanitized" and not evidence["observationDate"]:
+        fail(path, "live capture needs an observation date")
+    return evidence
+
+
+def check_sanitization(path: Path) -> None:
+    """Reject likely credentials and unsanitized household identifiers."""
+    serialized = path.read_text(encoding="utf-8")
+    if SECRET.search(serialized):
+        fail(path, "possible credential material (value suppressed)")
+    identifiers = re.findall(r"\b[0-9a-fA-F]{12}\b", serialized)
+    if any(
+        value != "a1b2c3d4e5f6" and not value.startswith("000000")
+        for value in identifiers
+    ):
+        fail(path, "non-placeholder device identifier (value suppressed)")
+    if re.search(r"\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b", serialized):
+        fail(path, "possible household MAC address (value suppressed)")
 
 
 def check_cloud_example(path: Path, seen: set[str]) -> None:
@@ -146,32 +197,9 @@ def check_cloud_example(path: Path, seen: set[str]) -> None:
     if not isinstance(data, dict):
         fail(path, "example must be a JSON object")
         return
-    identifier = data.get("id")
-    if identifier != path.stem or identifier in seen:
-        fail(path, "missing, duplicate, or filename-mismatched ID")
-    elif isinstance(identifier, str):
-        seen.add(identifier)
-    if data.get("kind") not in KINDS:
-        fail(path, "unsupported evidence kind")
-    evidence = data.get("evidence")
-    required_evidence = {
-        "source",
-        "observationDate",
-        "model",
-        "firmware",
-        "confirmation",
-    }
-    if not isinstance(evidence, dict) or not required_evidence <= evidence.keys():
-        fail(path, "missing evidence metadata")
+    evidence = check_example_identity(path, data, seen)
+    if not isinstance(evidence, dict):
         return
-    check_link(path, str(evidence["source"]))
-    if (
-        data["kind"] == "app-derived"
-        and not {"appVersion", "sourceReference"} <= evidence.keys()
-    ):
-        fail(path, "app-derived evidence needs app version and source reference")
-    if data["kind"] == "live-sanitized" and not evidence["observationDate"]:
-        fail(path, "live capture needs an observation date")
     request = data.get("request")
     response = data.get("response")
     if not isinstance(request, dict) or not isinstance(response, dict):
@@ -179,11 +207,19 @@ def check_cloud_example(path: Path, seen: set[str]) -> None:
         return
     if not {"method", "baseUrl", "path", "authentication", "headers"} <= request.keys():
         fail(path, "incomplete HTTP request metadata")
-    if request.get("method") not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+    method = request.get("method")
+    if not isinstance(method, str) or method not in {
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+    }:
         fail(path, "unknown HTTP method")
     if not str(request.get("path", "")).startswith("/"):
         fail(path, "HTTP path must begin with slash")
-    if response.get("representation") not in REPRESENTATIONS:
+    representation = response.get("representation")
+    if not isinstance(representation, str) or representation not in REPRESENTATIONS:
         fail(path, "unknown response representation")
     status = response.get("status")
     if "status" not in response or (
@@ -194,17 +230,38 @@ def check_cloud_example(path: Path, seen: set[str]) -> None:
         fail(path, "HTTP evidence needs host metadata")
     check_body(path, request)
     check_body(path, response)
-    serialized = path.read_text(encoding="utf-8")
-    if SECRET.search(serialized):
-        fail(path, "possible credential material (value suppressed)")
-    identifiers = re.findall(r"\b[0-9a-fA-F]{12}\b", serialized)
-    if any(
-        value != "a1b2c3d4e5f6" and not value.startswith("000000")
-        for value in identifiers
-    ):
-        fail(path, "non-placeholder device identifier (value suppressed)")
-    if re.search(r"\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b", serialized):
-        fail(path, "possible household MAC address (value suppressed)")
+    check_sanitization(path)
+
+
+def check_mqtt_example(path: Path, seen: set[str]) -> None:
+    """Validate a sanitized MQTT record and its provenance metadata."""
+    try:
+        data = read_json(path)
+    except (ValueError, OSError):
+        fail(path, "invalid strict JSON")
+        return
+    if not isinstance(data, dict):
+        fail(path, "example must be a JSON object")
+        return
+    check_example_identity(path, data, seen)
+    if not {"direction", "topic", "qos", "retain", "payload"} <= data.keys():
+        fail(path, "incomplete MQTT metadata")
+    direction = data.get("direction")
+    if not isinstance(direction, str) or direction not in {
+        "client-to-cloud",
+        "cloud-to-client",
+    }:
+        fail(path, "unknown MQTT direction")
+    topic = data.get("topic")
+    if not isinstance(topic, str) or not topic.startswith("/"):
+        fail(path, "MQTT topic must be a non-empty absolute topic")
+    qos = data.get("qos")
+    if qos is not None and (type(qos) is not int or qos not in {0, 1, 2}):
+        fail(path, "MQTT QoS must be 0, 1, 2, or unknown")
+    retain = data.get("retain")
+    if retain is not None and type(retain) is not bool:
+        fail(path, "MQTT retain must be boolean or unknown")
+    check_sanitization(path)
 
 
 def main() -> int:
@@ -219,9 +276,12 @@ def main() -> int:
         targets.update(check_markdown(path))
 
     cloud_examples = sorted((ROOT / "examples/cloud").glob("*.json"))
+    mqtt_examples = sorted((ROOT / "examples/mqtt").glob("*.json"))
     seen: set[str] = set()
-    for path in cloud_examples:
-        check_cloud_example(path, seen)
+    examples = [(path, check_cloud_example) for path in cloud_examples]
+    examples += [(path, check_mqtt_example) for path in mqtt_examples]
+    for path, checker in examples:
+        checker(path, seen)
         if path not in targets:
             fail(path, "example has no incoming documentation link")
 
@@ -231,13 +291,20 @@ def main() -> int:
             read_json(path)
         except (ValueError, OSError):
             fail(path, "invalid strict fixture JSON")
+        if SECRET.search(path.read_text(encoding="utf-8")):
+            fail(path, "possible credential material (value suppressed)")
 
-    examples = sorted((ROOT / "examples").glob("*.py"))
-    for path in examples:
+    scripts = sorted((ROOT / "examples").glob("*.py"))
+    scripts += sorted((ROOT / "tools").glob("*.py"))
+    for path in scripts:
         try:
-            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeError):
-            fail(path, "Python example does not parse")
+            ast.parse(
+                path.read_text(encoding="utf-8"),
+                filename=str(path),
+                feature_version=(3, 11),
+            )
+        except (SyntaxError, UnicodeError, ValueError):
+            fail(path, "Python script does not parse as Python 3.11")
         if SECRET.search(path.read_text(encoding="utf-8")):
             fail(path, "possible credential material (value suppressed)")
 
@@ -247,8 +314,9 @@ def main() -> int:
         print(f"FAILED: {len(ERRORS)} documentation errors")
         return 1
     print(
-        f"OK: {len(markdown)} Markdown files, {len(cloud_examples)} cloud examples, "
-        f"{len(fixtures)} strict fixtures, {len(examples)} parsed scripts; all checks offline"
+        f"OK: {len(markdown)} Markdown files, {len(cloud_examples)} HTTP examples, "
+        f"{len(mqtt_examples)} MQTT examples, {len(fixtures)} strict fixtures, "
+        f"{len(scripts)} Python 3.11 scripts parsed; all checks offline"
     )
     return 0
 

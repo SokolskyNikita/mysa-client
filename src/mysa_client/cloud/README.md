@@ -5,12 +5,12 @@
 - [Read/write mappings](#readwrite-comparisons)
 - [Recommended reads](#recommended-reconciliation-of-cloud-reads)
 - [Recommended writes](#recommended-reconciliation-of-cloud-writes)
-- [Integration status and validation](#integration-status-and-validation)
+- [Client implementation and validation](#client-implementation-and-validation)
 
 Supporting references: [authentication](../../../docs/cloud-auth.md),
 [state and model fields](../../../docs/cloud-state.md),
 [workflows](../../../docs/cloud-workflows.md), and
-[firmware/connectivity](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/firmware-and-connectivity.md).
+[firmware/connectivity](../../../docs/firmware-and-connectivity.md).
 
 ## Context and conventions
 
@@ -117,49 +117,12 @@ Do not replace the entire client's base URL to obtain legacy telemetry.
 
 ## Operations and relevance to Home Assistant
 
-This is the consolidated operation inventory, independent of API flavor.
-**Include** means a normal client capability; **Consider** means optional or
-model-specific; **Skip** means no dedicated new client method or routine HA
-polling. Existing maintenance helpers can remain even when a full app feature
-is not recommended. Read/write labels describe the operation, not a host.
-
-| Operation | What it does | HA recommendation |
-| --- | --- | --- |
-| Account/device discovery · read | Finds homes, device IDs, models, names, and membership | **Include** the discovery needed for setup; do not build account administration |
-| Capabilities · read | Describes supported modes, controls, ranges, and model features | **Include**; combine with observed valid readings, rather than trusting every flag |
-| Room temperature / humidity · read | Reports ambient conditions | **Include**; climate and humidity entities |
-| Setpoint / operating mode · read/write | Selects the requested temperature and heating/cooling/off mode | **Include**; core climate controls |
-| AC fan / swing · read/write | Selects fan speed and vent direction | **Include when supported**; honor the AC remote's available commands |
-| Heating activity / runtime · read | Reports recent duty and accumulated heating time | **Include**; distinguish interval activity from an instantaneous relay state |
-| Measured electrical data · read | Reports power/current/energy on hardware that measures it | **Consider by model**; skip Lite's zero/unmeasured fields; label calculated energy as an estimate |
-| Setpoint limits · read/write | Restricts temperatures accepted at the thermostat | **Include**; hardware constraints remain useful with HA automations |
-| Temperature offset · read/write | Calibrates the thermostat's ambient reading/control | **Include**; do not substitute an HA display-only correction |
-| Button lock · read/write | Locks the physical controls | **Include** as device configuration |
-| Wake / idle brightness · read/write | Sets the physical display's two brightness levels | **Include** as device configuration |
-| Display units · read/write | Chooses Celsius/Fahrenheit on the thermostat screen | **Include**; independent of HA's display units |
-| Heater profile · read/write | Selects the installed heater's switching profile | **Include** as installation configuration, not a routine automation target |
-| Floor limits/probe, adaptive display, remote tracking, HVAC configuration · read/write | Configures model-specific sensors and control behavior | **Consider only on matching hardware**; Lite cannot validate these controls |
-| Identity / installed firmware · read | Identifies hardware and current firmware | **Include** as device metadata |
-| Device name / time zone · read/write | Stores Mysa's label and schedule time zone | **Read** for discovery/schedule interpretation; **skip cloud rename**, consider time-zone writes only for explicit Mysa schedule setup |
-| Firmware availability / update · read/write | Checks for an offered version and requests installation | **Include**; user-initiated update, not an automatic consequence of polling |
-| Cloud connection / data age · read | Describes API reachability and thermostat reporting freshness | **Include** separate health/freshness diagnostics |
-| RSSI / internal temperatures / free heap · read | Helps diagnose radio, sensor, or firmware behavior | **Consider** diagnostics, disabled by default; not extra climate readings |
-| Live reporting · write | Temporarily asks devices to upload more frequently | **Consider** for cloud responsiveness and troubleshooting; not a permanent background stream by default |
-| Usage / reading history · read | Supplies runtime totals and past measurements | **Include runtime**; **consider** history for gaps/troubleshooting, not a duplicate HA recorder |
-| State-change history · read | Explains what changed a target or mode | **Consider** on demand when Mysa and HA behavior disagree |
-| Device schedules · read/write | Stores timed thermostat actions | **Include inspection/removal** of conflicting existing schedules; **exclude** in-place schedule editing as a client feature. Prefer HA scheduling |
-| Hold / resume · read/write | Overrides a Mysa schedule temporarily or permanently, then resumes it | **Include when a Mysa schedule exists**; HA-only scheduling does not need a cloud hold for every command |
-| Home/Away/Vacation shortcuts · read/write | Applies a stored bundle of device actions | **Consider inspection/cleanup** for coexistence; **skip new shortcut creation/apply UI**, use HA scenes |
-| Demand-response state · read | Indicates a utility event that may affect behavior | **Consider** a read-only explanation/status; skip enrollment management |
-| Device claim / replacement / removal · write | Changes the device's association with a Mysa account | **Consider** explicit setup/recovery tools only; not normal thermostat control |
-| Saved schedule templates · read/write | Stores reusable schedules and applies copies to devices | **Skip** template management; recognize applied device schedules through the schedule operation above |
-| Mysa zones / aggregate energy · read/write | Groups devices and summarizes a Mysa home/zone | **Skip**; use HA areas/groups and validated energy sources |
-| Geofences / crossings · read/write | Runs Mysa actions when a phone enters or leaves | **Skip**; use HA presence and automations |
-| Alerts / reminders / notifications · read/write | Stores thresholds, reminders, push tokens, and notification preferences; sends notifications | **Skip**; use HA automations and notification services |
-| Mysa account/home/access management · read/write | Edits profiles/homes, transfers access, manages invitations, or deletes accounts | **Skip** beyond discovery required for setup |
-| App/third-party services · read/write | Handles app flags, phone diagnostics, analytics, localization, Alexa authorization, and property-manager features | **Skip**; they do not improve thermostat control in HA |
-| Obsolete provisioning helpers · read/write | Supplies legacy NFC or anonymous AC-setup credentials | **Skip**; separate from an authenticated HA thermostat client |
-| Mysa eco / Early On / animation settings · read/write | Supplies app-specific energy/schedule behavior and display animation | **Skip new methods**; prioritize HA scheduling and the explicit hardware controls above. Early On is unavailable on Lite; eco/animation effects were not established |
+The [raw API inventory](../../../docs/api-coverage.md) tracks callable library
+methods and known protocol gaps. A documented route is not necessarily exposed
+by this client. Consumer-specific choices about entities, scheduling, polling,
+and app-feature replacements belong to the application's own design; the
+[Home Assistant feature scope](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/cloud-scope.md)
+records those choices for Mysa Local.
 
 ## Read/write comparisons
 
@@ -293,11 +256,11 @@ to outrank another source; retain its unconfirmed/last-known status.
 | Schedules / holds | Read S schedules and holds, plus legacy schedule sources when inspecting existing Mysa automation. An empty S list does not establish that no legacy schedule exists. Do not use REC `Schedule` or LT hold hints as the complete resource |
 | Shortcuts / demand response | On-demand shortcut inspection through R/L. For demand response use ST when present, otherwise the dedicated R route; no merging of unrelated account mode fields |
 | Connection / health | Keep request success and data freshness separate for S and legacy reads. A 200 or connected flag cannot make stale measurements fresh; track selected source and age per field. Do not let one failing API mark both paths failed |
-| RSSI / internal temperatures / heap | Apply **Latest** only when diagnostics are requested/enabled. Discard from normal entity publication otherwise |
-| Lite electrical values, unreliable energy summaries, and **Skip** operations | Do not request extra endpoints or create entities for them. Ignore incidental fields returned in shared responses |
+| RSSI / internal temperatures / heap | Apply **Latest** when the application requests diagnostics; retain units and timestamps |
+| Lite electrical values and unreliable energy summaries | Do not interpret zero electrical fields or inconsistent summaries as measured heater power or reliable consumption |
 
-Cache records at a slower interval (the integration currently uses 10 minutes),
-usage at 15 minutes, firmware at six hours, and capabilities at 24 hours.
+Cache records and metadata at a slower interval than live state; choose refresh
+periods in the consuming application. The library does not schedule polling.
 Refresh affected configuration after a command and after rediscovery. Read
 optional schedules/history/diagnostics on demand or when that feature is
 actually enabled. These are cloud fetch rules, not local/cloud routing rules.
@@ -369,7 +332,9 @@ the [state and model reference](../../../docs/cloud-state.md) and
 [account/schedule workflows](../../../docs/cloud-workflows.md). This guide
 owns the reconciled protocol conclusions and selection recommendations.
 
-### Integration status and validation
+<a id="integration-status-and-validation"></a>
+
+### Client implementation and validation
 
 The client exposes the documented endpoints and semantic encoders, with
 model-specific mappings that remain app/code-derived unless hardware evidence is
@@ -402,7 +367,7 @@ The standalone package has no Home Assistant dependency. The integration owns
 polling, per-field freshness, command confirmation, and local/cloud
 reconciliation; see its
 [architecture guide](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/architecture.md).
-The project metadata says `0.1.0`, but no release has been published yet.
+Install the published package from [PyPI](https://pypi.org/project/mysa-client/).
 
 ### Public API and integration helpers
 

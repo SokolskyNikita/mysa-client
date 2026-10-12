@@ -1,6 +1,6 @@
 # Cloud account and schedule workflows
 
-The [cloud protocol reference](../src/mysa_client/cloud/README.md) owns endpoint availability, S/R/L terminology, observed limitations, and recommended client policy. This page supplies detailed wire mechanics; Home Assistant's implementation status belongs to its [cloud tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md).
+This is the canonical reference for observed account, schedule, hold, and shortcut request mechanics. The [cloud protocol reference](../src/mysa_client/cloud/README.md) describes endpoint availability, S/R/L terminology, limits, and general request policy. These findings are reverse-engineered observations, not a Mysa API contract; `mysa-client` wraps only a subset of the routes described here.
 
 The protocols were reverse-engineered from the original Mysa apps. Hardware observations cover Baseboard Lite `BB-V2-0-L`, firmware `3.17.5.13`. Other-model behavior remains app/code-derived unless explicitly stated.
 
@@ -16,7 +16,7 @@ The protocols were reverse-engineered from the original Mysa apps. Hardware obse
 
 [Full schedule creation exchange](../examples/cloud/schedule-create.full-body.json)
 
-Weekdays use Sunday = `"0"`; execution times use local `HH:MM:00`. Schedule times follow the device's `TimeZone`; the client does not convert from HA's time zone. `clientKey` identifies the submitting client.
+Weekdays use Sunday = `"0"`; execution times use local `HH:MM:00`. Schedule times follow the device's `TimeZone`; callers are responsible for choosing the intended local time. `clientKey` identifies the submitting client.
 
 Read schedules with `GET /schedule?homeId={home}&includeLegacyBaseboard=true&includeLegacyAc=true&includeLegacyInfloor=true`. It returns a list of objects with `id`, `name`, `reusable`, `homeId`, `deviceType`, `deviceIds`, `events`, `createdAt` and `updatedAt`. No schedule returned 404; Python converts that to an empty list.
 
@@ -30,10 +30,7 @@ schedule, the response was "Schedule unattached from device and deleted".
 In-place editing is verified through `PUT /schedule/{id}`; see the [full-body update example](../examples/cloud/schedule-update.full-body.json). Send all six fields:
 `name`, `events`, `deviceType`, `homeId`, `deviceIds`, and `reusable`. A body
 containing only name/events fails. Acceptance and record readback did not
-establish complete scheduled execution. This update operation is [outside client scope](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md#c-p07);
-its wire format is retained for reference. Mysa Local replaces schedules by detaching and recreating
-them; these calls are non-atomic. The Home Assistant integration's [schedule implementation](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/custom_components/mysa_local/schedule.py)
-backs up the original and reconciles ambiguous failures before restoring it.
+establish complete scheduled execution. `mysa-client` does not expose an in-place schedule-update method; the wire format is retained for reference. Detach-and-recreate replacement is non-atomic, so callers should preserve the original schedule and reconcile ambiguous failures before attempting restoration.
 
 ### Legacy schedules and saved templates
 
@@ -65,8 +62,8 @@ resources; deleting a template does not remove those device schedules. Event
 editing worked on L but returned 404 on R. Do not infer schedule absence from
 an empty modern list or an old REC `Schedule` pointer.
 
-These mechanics support inspection and cleanup. Dedicated template management
-and a second legacy schedule editor are [out of scope](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md#out-of-scope).
+These mechanics support inspection and cleanup. `mysa-client` does not expose
+dedicated saved-template management or a second legacy schedule editor.
 
 ### Holds
 
@@ -76,9 +73,9 @@ With a schedule active, a plain setpoint write held the new value until the next
 
 For a timed hold, use `"holdType":"temporary"` and add `"endTime":"<ISO UTC timestamp>"`. Both returned 201 with a `holdId`. Changing the hold kept the same ID.
 
-The server rejects a start time that has already passed with "Start time must be greater than current time". Python starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix. HA also applies its state immediately through the normal local-first control path.
+The server rejects a start time that has already passed with "Start time must be greater than current time". The Python client starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix.
 
-Mysa Local requires an active schedule for a hold. Its handling of a creation-time 404 as "hold needs schedule" is not hardware-verified.
+The observed hold workflow requires an active schedule. Treat a creation-time 404 as inconclusive unless the response confirms that no schedule is active.
 
 `GET /schedule/hold/{dev}` reads the active hold; 404 means none. `DELETE /schedule/hold/{dev}` resumes the schedule. In the test, it returned "Device restored to follow its schedule" and restored the scheduled setpoint. Python treats a missing hold on resume as already complete.
 
@@ -97,7 +94,7 @@ acceptance is not confirmation of the resulting thermostat state. The Python cli
 
 ## Adding and removing devices
 
-For Wi-Fi provisioning and its relationship to local pairing and account enrollment, see the [Bluetooth reference](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/bluetooth.md#scope-and-compatibility). The sections below cover cloud account operations.
+For Wi-Fi provisioning and its relationship to local pairing and account enrollment, see the [Bluetooth reference](bluetooth.md#scope-and-compatibility). The sections below cover cloud account operations.
 
 ### Claiming an older model
 
@@ -123,8 +120,8 @@ For the current legacy-device defaults, AC adds `SetupRequired: true`; BB1 uses
 A successful re-add returned 201. A 409 means the device is already on the
 account: the existing record is returned and the submitted fields are not
 written. Legacy replacement uses `POST app-prod /devices/purgeadd`, which still
-worked in validation. Current setup preserves the existing record after 409
-and writes `ecoMode: 1` separately through the settings endpoint.
+worked in validation. A 409 recovery flow may write settings separately; that
+is a distinct request and should be verified against the resulting record.
 
 An ownership conflict can produce "User is not allowed to access the specified
 home". Its HTTP status and another-account behavior remain unverified. The
@@ -148,7 +145,9 @@ A complete account-removal workflow includes:
 4. Delete sensor/HVAC links and clear `GroupName` on grouped devices.
 5. Delete the account record and remove the device from local app data.
 
-The client deletes only the account record. HA first attempts schedule and shortcut cleanup, but continues with deletion if that cleanup fails. Sensor/HVAC-link and group cleanup are not implemented.
+The `delete_device()` client method deletes only the account record. A complete
+account-removal workflow may also need to remove schedules, shortcut actions,
+sensor/HVAC links, and group membership; those resources are separate routes.
 
 After deletion, the Lite disappeared from `GET /devices` and bootstrap's `AllowedDevices`. Its individual state endpoint returned 404 with "User does not have access to this device"; the batch endpoint returned `PERMISSION_DENIED` for that ID. The thermostat stayed connected to Mysa and HomeKit control kept working.
 
@@ -159,13 +158,14 @@ cloud access. Supplied claim fields overwrite the settings record: including
 returned unchanged, but that does not guarantee retention of every omitted field.
 
 For returning devices, `add_device(app_defaults=False)` uses the minimal claim
-without heater defaults. HA uses that option. Name, home and time zone are still written;
-explicit `heater_type` and `extra` fields are also sent.
+without heater defaults. Name, home and time zone are still written; explicit
+`heater_type` and `extra` fields are also sent.
 
 ### Baseboard V3, Central HVAC and Climate Sensor
 
-These cloud steps supplement the [Bluetooth credential-transfer flow](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/bluetooth.md#credential-transfer-on-newer-models).
-This newer provisioning flow is untested on hardware here and not implemented by Mysa Local.
+These cloud steps supplement the [Bluetooth credential-transfer flow](bluetooth.md#credential-transfer-on-newer-models).
+This newer provisioning flow is app-derived and untested on hardware here. See
+the [newer-model API reference](new-cloud-models.md) for model and state shapes.
 
 | Stage | Request or condition |
 | --- | --- |
@@ -176,11 +176,11 @@ This newer provisioning flow is untested on hardware here and not implemented by
 | Obtain Matter setup code | `GET /matter/qr/{dev}` returns `{qrCode,pairingCode}` |
 
 Registration follows credential transfer at the "register device" setup stage. Subsequent
-firmware management uses the [newer OTA service](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/firmware-and-connectivity.md#newer-ota-service).
+firmware management uses the [newer OTA service](firmware-and-connectivity.md#newer-ota-service).
 
 ## Additional endpoints
 
-These additional routes have no dedicated Python client methods unless described earlier.
+These additional routes have no dedicated `mysa-client` methods unless described earlier.
 
 | Request | Finding |
 | --- | --- |
@@ -212,9 +212,8 @@ uses `GET /nfc/auth-key`; it has no identified role in current provisioning.
 ## Retained app-only workflow mechanics
 
 These are recovered legacy app request shapes, preserved for interpreting existing
-account data. Use the primary reference for live R/L availability and the tracker
-for scope decisions; this table does not select new HA features or claim delivery
-of alerts, notifications, geofence effects, or invitations.
+account data. Use the primary reference for live R/L availability. The table
+does not claim delivery of alerts, notifications, geofence effects, or invitations.
 
 | Workflow | App request mechanics |
 | --- | --- |

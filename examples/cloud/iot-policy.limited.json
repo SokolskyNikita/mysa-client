@@ -2,7 +2,7 @@
   "id": "iot-policy.limited",
   "kind": "constructed",
   "evidence": {
-    "source": "https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/mqtt.md#policy-inspection",
+    "source": "../../docs/mqtt.md#policy-inspection",
     "observationDate": null,
     "model": null,
     "firmware": null,

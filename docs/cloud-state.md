@@ -1,6 +1,6 @@
 # Cloud state, history, and model fields
 
-The [cloud protocol reference](../src/mysa_client/cloud/README.md) owns endpoint availability, S/R/L terminology, observed limitations, and recommended client policy. This page supplies detailed wire mechanics; Home Assistant's implementation status belongs to its [cloud tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md).
+This page records observed state, telemetry, history, and model-specific wire fields. The [cloud protocol reference](../src/mysa_client/cloud/README.md) describes endpoint availability, S/R/L terminology, limits, and general request policy. These findings are reverse-engineered observations, not a vendor contract.
 
 The protocols were reverse-engineered from the original Mysa apps. Hardware observations cover Baseboard Lite `BB-V2-0-L`, firmware `3.17.5.13`. Other-model behavior remains app/code-derived unless explicitly stated.
 
@@ -45,10 +45,11 @@ Legacy Baseboard, AC and In-floor devices are exposed through the current `/stat
 See the [cloud request table](../src/mysa_client/cloud/README.md#requests-and-state)
 for the single-device and batch endpoints. A single-device read returns the
 state object directly; a batch returns `{"{dev}":{"data":<state>}}`, with errors
-possible for individual IDs. `get_states()` returns successful entries and records per-device errors in
-`source_errors`. The coordinator retains previous missing observations and reads
-legacy `/devices/state` independently. Each selected field retains its own source
-and clock; the fetch time never makes a stale measurement fresh.
+possible for individual IDs. `MysaClient.get_states()` returns successful entries
+and records missing or invalid device responses in `source_errors`. It does not
+merge the legacy `/devices/state` response into structured state; retrieve and
+interpret each source separately. Each observation carries its source and
+timestamp, so fetching an old value does not make the measurement fresh.
 
 Online status can remain true while readings are stale. Assess each field/source timestamp rather than trusting the connection flag; the
 [live reporting behavior](#live-mode-and-liveness) explains the delay.
@@ -131,7 +132,7 @@ The examined mobile app requests raw readings only for a one-day range. The Pyth
 
 ### Humidity and Lite energy data
 
-The telemetry endpoint returns Lite usage data even when the client UI hides it.
+The telemetry endpoint returns Lite usage data even when the Mysa app does not display it.
 
 The Lite reports humidity despite `humiditySensor: false`, and its HomeKit
 service has no humidity characteristic. A comparison with a room sensor was
@@ -144,7 +145,9 @@ The usage response omitted `k` on the Lite. It has no current sensor, but `oH1` 
 energy_kWh = heating_seconds × heater_watts / 3_600_000
 ```
 
-HA can fetch the current local day's cloud runtime every 15 minutes when enabled for that thermostat. Its local runtime tracker also integrates heating state and can be raised to the cloud total. These are runtime-based estimates, not measured Lite power consumption.
+An integrating client can combine the current local day's cloud runtime with
+configured heater wattage to estimate energy. This is a runtime-based estimate,
+not measured Lite power consumption.
 
 ### State change history
 
@@ -172,7 +175,13 @@ The following values are `CONTROL_MODE_TYPE`, used in `modes.mode`. Capability d
 | 8 | dry | None |
 | 9 | sleep | None |
 
-Python defines these mode values, but its setpoint mapping implements heat, emergency heat and cool only. It has no `targetAuto` range implementation; other modes fall back to the heat setpoint in the current callers.
+The `Mode` enum defines these values. `DeviceState` retains AUTO's two targets
+as `auto_heat_setpoint` and `auto_cool_setpoint`; `setpoint_for(AUTO)` returns
+no scalar target. In `commands.py`, `temperature_changes()` encodes one heat,
+emergency-heat, or cool target, while `auto_temperature_changes()` builds both
+`targetAuto` range fields together. `MysaClient` currently exposes the scalar
+`set_temperature()` method; callers can pass the paired AUTO change to
+`update_state()` directly.
 
 `DutyCycleOpt` is a different enum: 0 is BB1 baseboard, 4 BB1 radiant, 5/6/7 BB1 fan forced short/medium/long, 8 BB2 fan forced and 9 BB2 baseboard. The Lite uses the BB2 values. The examined mobile app enables heater-type selection for V2 and Lite from firmware 3.17.0; that gate is not a hardware-verified minimum.
 
@@ -206,7 +215,7 @@ Here, shadow fan 2 is medium and shadow mode 3 is cool. Other capability-based m
 
 [AC swing request](../examples/cloud/state-update.ac-swing.json)
 
-Horizontal swing uses `horizontalSwingState`. Toggle-only remotes use `verticalSwingToggle` / `horizontalSwingToggle` with `SWING_TOGGLE_MODES` 1 off and 2 on. Mysa Local implements explicit states, not toggle-only commands.
+Horizontal swing uses `horizontalSwingState`. Toggle-only remotes use `verticalSwingToggle` / `horizontalSwingToggle` with `SWING_TOGGLE_MODES` 1 off and 2 on. `mysa-client` exposes explicit swing states through its command helper and does not implement toggle-only commands.
 
 The remote's supported controls come from its `GET /devices` record:
 
