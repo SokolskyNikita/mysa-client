@@ -1,5 +1,7 @@
 # Mysa Client
 
+> **Unofficial project.** This project is not affiliated with, endorsed by, or supported by Mysa. **Use at your own risk.** The software is provided "as is", without warranty.
+
 `mysa-client` is an asynchronous Python library for the reverse-engineered Mysa
 cloud API and the Mysa thermostat HomeKit interface. It exposes the two
 protocols independently; it does not choose between them or provide an
