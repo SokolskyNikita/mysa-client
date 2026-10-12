@@ -28,6 +28,7 @@ from .models import (
     HomeKitDiscovery,
     HomeKitEndpoint,
     HomeKitEvent,
+    HomeKitStateCache,
     LocalAction,
     LocalMode,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "HomeKitMaxTriesError",
     "HomeKitNotFoundError",
     "HomeKitProtocol",
+    "HomeKitStateCache",
     "HomeKitUnavailableError",
     "HomeKitWriteRejectedError",
     "LocalAction",

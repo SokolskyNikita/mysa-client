@@ -358,14 +358,16 @@ account discovery, reading, and an explicitly enabled setpoint write.
 | File | Responsibility |
 | --- | --- |
 | [`auth.py`](auth.py), [`srp.py`](srp.py) | Cognito authentication, serialized token refresh, SRP calculations |
-| [`client.py`](client.py) | HTTP requests, endpoint methods, response handling |
+| [`client.py`](client.py) | HTTP requests, endpoint methods, response handling, and explicit validated `execute_command()` |
 | [`commands.py`](commands.py) | Semantic controls, enum conversion, schedule encoding |
 | [`models.py`](models.py) | Typed response parsing, preserving original JSON in `raw` |
 | [`const.py`](const.py), [`exceptions.py`](exceptions.py) | Hosts, protocol constants/enums, errors |
 
-The standalone package has no Home Assistant dependency. The integration owns
-polling, per-field freshness, command confirmation, and local/cloud
-reconciliation; see its
+The standalone package has no Home Assistant dependency. The client includes
+reusable Mysa-specific validation, state reconciliation, command confirmation,
+device interpretation, and optional local/cloud routing; applications own
+polling cadence, source/freshness choices, durable storage, and lifecycle. See
+the [optional runtime guide](../../../docs/runtime.md) and the HA
 [architecture guide](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/architecture.md).
 Install the published package from [PyPI](https://pypi.org/project/mysa-client/).
 
@@ -384,13 +386,19 @@ Assistant consumer imports them directly:
 
 | Module | Supported names |
 | --- | --- |
-| [`commands.py`](commands.py) | `auto_temperature_changes`, `button_lock_changes`, `display_brightness_changes`, `display_unit_settings`, `fan_speed_changes`, `heater_type_settings`, `hvac_fan_changes`, `mode_changes`, `setpoint_limit_changes`, `swing_changes`, `temperature_changes`, `temperature_offset_changes` |
+| [`commands.py`](commands.py) | `CloudCommand`, `state_command`, `settings_command`, and field encoders including `auto_temperature_changes`, `button_lock_changes`, `display_brightness_changes`, `display_unit_settings`, `fan_speed_changes`, `heater_type_settings`, `hvac_fan_changes`, `mode_changes`, `setpoint_limit_changes`, `swing_changes`, `temperature_changes`, `temperature_offset_changes` |
+| [`device_commands.py`](device_commands.py) | `climate_command`, `brightness_command`, `hvac_fan_command`, `hvac_fan_speed_command` |
+| [`device.py`](device.py) | `basic_modes`, `brightness_pair`, `heating_range`, `hvac_activity`, `hvac_fan_operation` |
 | [`const.py`](const.py) | `API_BASE`, `EXPERIMENTAL_CLOUD_FAMILIES`, `SWING_VERTICAL`, `model_family`; public models and enums are also re-exported at the package level |
 | [`models.py`](models.py) | The response models exported by the package root, retained at this submodule path for direct imports |
 | [`exceptions.py`](exceptions.py) | The public `MysaError` exception hierarchy, retained at this submodule path for direct imports |
 | [`observations.py`](observations.py) | `MEASUREMENT_MAX_AGE`, `MEASUREMENTS`, `STATE_FIELDS`, `TELEMETRY_FIELDS`, `Observation`, `number`, `observe`, `valid_value` |
+| [`reconciliation.py`](reconciliation.py) | `reconcile`, `PendingCommand`, `PendingCommandTracker`, `pending_command` |
 | [`trace.py`](trace.py) | `route_template` for redacted request-route reporting |
-| [`validation.py`](validation.py) | `validate_basic_command` for conservative validation of experimental models |
+| [`validation.py`](validation.py) | `validate_basic_command` and `validate_cloud_command` for device/capability validation |
+| [`schedule_workflow.py`](schedule_workflow.py) | `ScheduleWorkflow`, `ScheduleJournal`, `ScheduleTransport`, and `MysaScheduleTransport` for replacement, clear, and recovery |
+| [`holds.py`](holds.py) | `resolve_hold`, `async_apply_hold` |
+| [`account_workflow.py`](account_workflow.py) | Model eligibility, minimal account claim, and best-effort cleanup before account removal |
 
 Other names prefixed with an underscore are private implementation details.
 
@@ -406,8 +414,13 @@ transport failure, or 5xx raises `MysaConnectionError`. There is no general
 transport retry loop. A 401 retry only follows a forced token refresh; ambiguous
 commands are never replayed after cancellation, timeout, or connection loss. The
 legacy host fallback is limited to known operations and eligible failures; it is
-not a general retry or a second measurement source. The caller owns polling,
-backoff, freshness, and deciding how to reconcile an uncertain command.
+not a general retry or a second measurement source. The client provides
+reusable helpers to reconcile supplied observations, validate semantic
+commands, track confirmation evidence, and coordinate explicitly supplied
+transports. The caller chooses polling/backoff cadence, source/freshness
+policy, durable storage, and when to run readbacks or recovery workflows. It
+must still treat ambiguous commands as uncertain until reported evidence is
+available.
 
 Cognito failures use the `MysaAuthError` hierarchy. The implementation handles
 the password-verifier SRP challenge; unsupported challenges raise

@@ -46,8 +46,10 @@ jobs:
           python examples/cloud_basic.py --help
           python examples/homekit_basic.py --help
           python examples/mqtt_basic.py --help
+          python examples/runtime_basic.py --help
+          python examples/runtime_basic.py
       - name: Verify a cloud-only installation
         run: |
           python -m venv /tmp/mysa-cloud-only
           /tmp/mysa-cloud-only/bin/python -m pip install dist/*.whl
-          /tmp/mysa-cloud-only/bin/python -I -c 'import importlib.util; import mysa_client.cloud; assert all(importlib.util.find_spec(name) is None for name in ("aiohomekit", "homeassistant", "boto3", "paho"))'
+          /tmp/mysa-cloud-only/bin/python -I -c 'import importlib.util; import mysa_client.cloud; import mysa_client.runtime.routing; import mysa_client.runtime.state; import mysa_client.runtime.telemetry; assert all(importlib.util.find_spec(name) is None for name in ("aiohomekit", "homeassistant", "boto3", "paho"))'

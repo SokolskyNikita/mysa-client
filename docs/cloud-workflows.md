@@ -30,7 +30,11 @@ schedule, the response was "Schedule unattached from device and deleted".
 In-place editing is verified through `PUT /schedule/{id}`; see the [full-body update example](../examples/cloud/schedule-update.full-body.json). Send all six fields:
 `name`, `events`, `deviceType`, `homeId`, `deviceIds`, and `reusable`. A body
 containing only name/events fails. Acceptance and record readback did not
-establish complete scheduled execution. `mysa-client` does not expose an in-place schedule-update method; the wire format is retained for reference. Detach-and-recreate replacement is non-atomic, so callers should preserve the original schedule and reconcile ambiguous failures before attempting restoration.
+establish complete scheduled execution. `mysa-client` does not expose an
+in-place schedule-update method; the wire format is retained for reference.
+Its opt-in `ScheduleWorkflow` performs detach-and-recreate replacement with a
+caller-supplied journal, readback, and recovery. Replacement is still
+non-atomic; inspect the device's schedule before retrying an uncertain result.
 
 ### Legacy schedules and saved templates
 
@@ -62,8 +66,12 @@ resources; deleting a template does not remove those device schedules. Event
 editing worked on L but returned 404 on R. Do not infer schedule absence from
 an empty modern list or an old REC `Schedule` pointer.
 
-These mechanics support inspection and cleanup. `mysa-client` does not expose
-dedicated saved-template management or a second legacy schedule editor.
+`cloud.schedule_workflow.ScheduleWorkflow` provides opt-in replacement,
+clearing, shared-device preservation, and restart recovery across the schedule
+formats supported by its transport. It does not provide saved-template
+management or a second legacy schedule editor. The caller supplies the
+transport and durable journal, chooses when to recover, and owns per-device
+locking and task cancellation; see the [runtime guide](runtime.md).
 
 ### Holds
 
@@ -78,6 +86,12 @@ The server rejects a start time that has already passed with "Start time must be
 The observed hold workflow requires an active schedule. Treat a creation-time 404 as inconclusive unless the response confirms that no schedule is active.
 
 `GET /schedule/hold/{dev}` reads the active hold; 404 means none. `DELETE /schedule/hold/{dev}` resumes the schedule. In the test, it returned "Device restored to follow its schedule" and restored the scheduled setpoint. Python treats a missing hold on resume as already complete.
+
+`cloud.holds.resolve_hold()` applies the Mysa-specific rules for an omitted
+mode, an existing OFF mode, and an optional target. `async_apply_hold()` uses
+caller callbacks to set the hold and immediately apply its state. These helpers
+do not fetch current state or choose a local/cloud route; see the [runtime
+guide](runtime.md).
 
 ### Home, Away and Vacation shortcuts
 
@@ -129,9 +143,11 @@ legacy-device claim body contains no possession proof beyond the device ID;
 validation covered re-adding a previously owned Lite, not claiming a device
 never associated with the account.
 
-`add_device()` returns `True` on success or `False` on 409. `replace_device()`
-uses `purgeadd`, where omitted settings may be reset. Both methods reject unknown
-models and families requiring Bluetooth credentials.
+`add_device()` returns `True` on success or `False` on 409. The optional
+`cloud.account_workflow.async_add_to_account()` uses the minimal claim body so
+existing device settings are not overwritten by app defaults. `replace_device()`
+uses `purgeadd`, where omitted settings may be reset. Both methods reject
+unknown models and families requiring Bluetooth credentials.
 
 ### Deletion and re-addition
 
@@ -145,9 +161,12 @@ A complete account-removal workflow includes:
 4. Delete sensor/HVAC links and clear `GroupName` on grouped devices.
 5. Delete the account record and remove the device from local app data.
 
-The `delete_device()` client method deletes only the account record. A complete
-account-removal workflow may also need to remove schedules, shortcut actions,
-sensor/HVAC links, and group membership; those resources are separate routes.
+`delete_device()` deletes only the account record. The opt-in
+`cloud.account_workflow.async_remove_from_account()` first attempts schedule
+and shortcut cleanup, returns a structured result if that best-effort cleanup
+fails, and then deletes the account record. Sensor/HVAC links, group membership,
+and local app data are outside this helper. Home Assistant chooses how to
+present cleanup errors; see the [runtime guide](runtime.md).
 
 After deletion, the Lite disappeared from `GET /devices` and bootstrap's `AllowedDevices`. Its individual state endpoint returned 404 with "User does not have access to this device"; the batch endpoint returned `PERMISSION_DENIED` for that ID. The thermostat stayed connected to Mysa and HomeKit control kept working.
 

@@ -6,10 +6,12 @@ Only this module translates that operation into Mysa's state/settings fields.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import time
-from typing import Any, TypedDict
+from types import MappingProxyType
+from typing import Any, Literal, TypedDict, cast
 
 from .const import (
     AC_FAN_TO_STATE,
@@ -22,9 +24,130 @@ from .const import (
     Mode,
     Swing,
 )
+from .observations import STATE_FIELDS
 
 StateChanges = dict[str, dict[str, Any]]
 SettingsChanges = dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _FrozenList:
+    """Distinguish frozen JSON arrays from immutable tuples."""
+
+    values: tuple[Any, ...]
+
+
+def _freeze(value: Any) -> Any:
+    """Take a recursively immutable snapshot of a JSON-like value."""
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return _FrozenList(tuple(_freeze(item) for item in value))
+    if isinstance(value, tuple):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(item) for item in value)
+    return deepcopy(value)
+
+
+def _thaw(value: Any) -> Any:
+    """Build a detached mutable payload from a command snapshot."""
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, _FrozenList):
+        return [_thaw(item) for item in value.values]
+    if isinstance(value, tuple):
+        return tuple(_thaw(item) for item in value)
+    if isinstance(value, frozenset):
+        return {_thaw(item) for item in value}
+    return deepcopy(value)
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class CloudCommand:
+    """One encoded write and the semantic effects used for validation/readback.
+
+    ``kind`` chooses the protocol operation: state commands are sent through
+    ``MysaClient.update_state`` and settings commands through
+    ``MysaClient.update_settings``. ``expected`` names normalized device
+    fields; ``stored_fields`` names settings-record wire keys and only confirms
+    that configuration was stored.
+    """
+
+    kind: Literal["state", "settings"]
+    _payload: Any = field(repr=False)
+    _expected: Any = field(repr=False)
+    _stored_fields: Any = field(repr=False)
+
+    def __init__(
+        self,
+        kind: Literal["state", "settings"],
+        payload: Mapping[str, Any],
+        expected: Mapping[str, Any],
+        stored_fields: Mapping[str, Any],
+    ) -> None:
+        """Freeze payload and semantic effects into one command snapshot."""
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "_payload", _freeze(payload))
+        object.__setattr__(self, "_expected", _freeze(expected))
+        object.__setattr__(self, "_stored_fields", _freeze(stored_fields))
+
+    @property
+    def payload(self) -> StateChanges | SettingsChanges:
+        """Return a detached payload, preserving the validated snapshot."""
+        return cast(StateChanges | SettingsChanges, _thaw(self._payload))
+
+    @property
+    def expected(self) -> dict[str, Any]:
+        """Return detached semantic effects derived when the command was built."""
+        return cast(dict[str, Any], _thaw(self._expected))
+
+    @property
+    def stored_fields(self) -> dict[str, Any]:
+        """Return detached settings fields used for storage readback."""
+        return cast(dict[str, Any], _thaw(self._stored_fields))
+
+
+_SETTINGS_TO_STATE = {
+    "Format": "display_unit",
+    "DutyCycleOpt": "control_type",
+    "MinSetpoint": "setpoint_min",
+    "MaxSetpoint": "setpoint_max",
+    "MaxBrightness": "active_brightness",
+    "MinBrightness": "idle_brightness",
+    "ButtonState": "button_lock",
+}
+
+
+def state_command(changes: StateChanges) -> CloudCommand:
+    """Describe a state-section write and derive its normalized expected values."""
+    payload = {section: dict(fields) for section, fields in changes.items()}
+    expected = {
+        name: payload[section][wire]
+        for name, (section, wire) in STATE_FIELDS.items()
+        if section in payload and wire in payload[section]
+    }
+    return CloudCommand("state", payload, expected, {})
+
+
+def settings_command(fields: SettingsChanges) -> CloudCommand:
+    """Describe a settings-record write and derive stored and semantic values."""
+    payload = dict(fields)
+    expected = {
+        _SETTINGS_TO_STATE[key]: value
+        for key, value in payload.items()
+        if key in _SETTINGS_TO_STATE
+    }
+    if "Format" in payload:
+        expected["display_unit"] = {
+            "celsius": "C",
+            "fahrenheit": "F",
+        }.get(payload["Format"])
+    if "ButtonState" in payload:
+        expected["button_lock"] = {"Locked": 3, "Unlocked": 0}.get(
+            payload["ButtonState"]
+        )
+    return CloudCommand("settings", payload, expected, payload.copy())
 
 
 class ScheduleWireEvent(TypedDict):

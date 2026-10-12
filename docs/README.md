@@ -13,6 +13,7 @@ has no implementation; it is not a promise of support.
 | Reference | Contents |
 | --- | --- |
 | [Cloud client and endpoint guide](../src/mysa_client/cloud/README.md) | Public API, S/R/L services, endpoints, timeouts, errors, and command semantics |
+| [Optional runtime](runtime.md) | Device views, command routing, telemetry freshness, reconciliation, workflow journals, and lifecycle ownership |
 | [Authentication](cloud-auth.md) | Cognito SRP and refresh exchanges, token roles, browser restrictions |
 | [State and models](cloud-state.md) | Discovery, response shapes, units, clocks, enums, capabilities, and history |
 | [Account and schedule workflows](cloud-workflows.md) | Claim/removal, schedules, holds, shortcuts, provisioning, and app-only operations |
@@ -43,9 +44,10 @@ live validation.
 ## Home Assistant consumer
 
 The [Mysa Local documentation](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md)
-owns HA setup, entities, MQTT session lifecycle and telemetry freshness,
-polling, routing, credential storage, command confirmation, recovery, and
-integration-level validation. Its
+owns HA setup, entities, Home Assistant polling and client lifecycle,
+credential and journal storage adapters, integration options, presentation,
+and integration-level validation. Reusable Mysa semantics and opt-in workflow
+logic live in this client. Its
 [management coverage](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md)
 is separate from this library's raw API coverage.
 

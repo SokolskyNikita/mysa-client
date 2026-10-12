@@ -6,7 +6,14 @@ import Home Assistant.
 
 from .auth import MysaAuth, Tokens, jwt_claims
 from .client import MysaClient, iso_utc
-from .commands import ScheduleEventSpec, encode_schedule_events, make_state
+from .commands import (
+    CloudCommand,
+    ScheduleEventSpec,
+    encode_schedule_events,
+    make_state,
+    settings_command,
+    state_command,
+)
 from .const import (
     MODEL_FAMILIES,
     MODEL_NAMES,
@@ -46,6 +53,7 @@ from .models import (
     UsageDay,
     value_range,
 )
+from .reconciliation import PendingCommand, PendingCommandTracker, reconcile
 
 __all__ = [
     "MODEL_FAMILIES",
@@ -59,6 +67,7 @@ __all__ = [
     "ButtonLock",
     "Capabilities",
     "ChangeSource",
+    "CloudCommand",
     "DeviceRecord",
     "DeviceState",
     "DutyCycleOpt",
@@ -77,6 +86,8 @@ __all__ = [
     "MysaNotFoundError",
     "MysaRateLimitError",
     "MysaUnsupportedChallengeError",
+    "PendingCommand",
+    "PendingCommandTracker",
     "ScheduleEventSpec",
     "StateChange",
     "Swing",
@@ -88,5 +99,8 @@ __all__ = [
     "jwt_claims",
     "make_state",
     "model_family",
+    "reconcile",
+    "settings_command",
+    "state_command",
     "value_range",
 ]

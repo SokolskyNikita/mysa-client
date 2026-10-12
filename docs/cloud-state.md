@@ -109,6 +109,15 @@ Display units changed locally while ST initially remained `C`. These bounded
 observations are compatible with lag and differing device behavior; an accepted
 write or REC echo alone does not establish physical application.
 
+The maintained client helpers encode this distinction. `cloud.reconciliation`
+keeps per-field observation clocks, preserves the difference between stored
+settings and reported values, and tracks pending commands until changed
+post-submission reports arrive. `PendingCommandTracker` also handles
+superseded intent and exposes pending values for dependent validation. These
+helpers consume observations supplied by the caller; they do not schedule
+readbacks. See the [runtime guide](runtime.md) for source selection and
+persistence ownership.
+
 ## Telemetry and history
 
 ### Usage
@@ -177,11 +186,13 @@ The following values are `CONTROL_MODE_TYPE`, used in `modes.mode`. Capability d
 
 The `Mode` enum defines these values. `DeviceState` retains AUTO's two targets
 as `auto_heat_setpoint` and `auto_cool_setpoint`; `setpoint_for(AUTO)` returns
-no scalar target. In `commands.py`, `temperature_changes()` encodes one heat,
-emergency-heat, or cool target, while `auto_temperature_changes()` builds both
-`targetAuto` range fields together. `MysaClient` currently exposes the scalar
-`set_temperature()` method; callers can pass the paired AUTO change to
-`update_state()` directly.
+no scalar target. `commands.py` contains field encoders, while
+`device_commands.climate_command()` builds a semantic command with both a
+protocol payload and normalized expected effects. Run it through
+`validation.validate_cloud_command()` before sending. The direct
+`MysaClient.set_temperature()` method remains available for simple callers;
+applications needing paired AUTO targets can use the command description and
+pass its payload to `update_state()`.
 
 `DutyCycleOpt` is a different enum: 0 is BB1 baseboard, 4 BB1 radiant, 5/6/7 BB1 fan forced short/medium/long, 8 BB2 fan forced and 9 BB2 baseboard. The Lite uses the BB2 values. The examined mobile app enables heater-type selection for V2 and Lite from firmware 3.17.0; that gate is not a hardware-verified minimum.
 

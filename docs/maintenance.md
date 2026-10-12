@@ -8,17 +8,21 @@ standalone client's API. Keep HA product behavior in the
 
 | Material | Maintained home |
 | --- | --- |
-| Public client APIs, lifecycle, errors, and ownership | [Cloud guide](../src/mysa_client/cloud/README.md), [HomeKit guide](../src/mysa_client/homekit/README.md), and [examples](../examples/README.md) |
+| Public protocol APIs, lifecycle, typed errors, and transport ownership | [Cloud guide](../src/mysa_client/cloud/README.md), [HomeKit guide](../src/mysa_client/homekit/README.md), and [examples](../examples/README.md) |
+| Mysa-specific device semantics, command validation/confirmation, reconciliation, and reusable workflows | [Runtime guide](runtime.md), [cloud state](cloud-state.md), and [cloud workflows](cloud-workflows.md) |
+| Optional runtime composition and caller-owned scheduling, persistence, and application lifecycle | [Runtime guide](runtime.md) |
 | Wire formats, endpoints, device behavior, and app-derived research | References in the [protocol index](README.md) |
 | Raw method coverage and protocol implementation gaps | [API inventory](api-coverage.md) |
 | Sanitized HTTP/MQTT exchanges | [Examples](../examples/README.md) |
-| HA configuration, entities, orchestration, and recovery | [Integration docs](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md) |
+| HA configuration, entities, polling choices, HA lifecycle and storage adapters, and presentation | [Integration docs](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md) |
 | HA acceptance criteria and hardware workflow checks | [Management inventory](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md) |
 
 Protocol research can include operations this library does not implement.
 Clearly distinguish a recovered route or field from a supported public method.
-HA roadmap exclusions do not automatically exclude a protocol from research or
-make it a library policy.
+The client owns reusable Mysa semantics and workflow correctness, while each
+application chooses scheduling, source/freshness policy, lifecycle, storage,
+and presentation. HA roadmap exclusions do not automatically exclude a
+protocol from research or make it a library policy.
 
 ## Issue format
 

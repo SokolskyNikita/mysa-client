@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
@@ -100,6 +100,7 @@ class HomeKitEvent:
     reconnected: bool = False
     refresh_required: bool = False
     capabilities_changed: bool = False
+    changed_fields: frozenset[Field] = frozenset()
 
     @classmethod
     def create(
@@ -107,6 +108,7 @@ class HomeKitEvent:
         values: Mapping[Field, Any] | None = None,
         failed_fields: Mapping[Field, str] | None = None,
         *,
+        changed_fields: Iterable[Field] | None = None,
         reconnected: bool = False,
         refresh_required: bool = False,
         capabilities_changed: bool = False,
@@ -118,7 +120,66 @@ class HomeKitEvent:
             reconnected,
             refresh_required,
             capabilities_changed,
+            frozenset(changed_fields or ()),
         )
+
+
+class HomeKitStateCache:
+    """Single semantic cache for current values and field read health."""
+
+    def __init__(self) -> None:
+        """Create an empty observation cache."""
+        self._values: dict[Field, Any] = {}
+        self._failed_fields: dict[Field, str] = {}
+
+    @property
+    def values(self) -> Mapping[Field, Any]:
+        """Return an immutable snapshot of observed semantic values."""
+        return MappingProxyType(dict(self._values))
+
+    @property
+    def failed_fields(self) -> Mapping[Field, str]:
+        """Return an immutable snapshot of fields that need a successful reread."""
+        return MappingProxyType(dict(self._failed_fields))
+
+    def replace(self, values: Mapping[Field, Any]) -> frozenset[Field]:
+        """Replace metadata observations and drop failures for removed fields."""
+        changed = frozenset(
+            field
+            for field in self._values.keys() | values.keys()
+            if self._values.get(field) != values.get(field)
+            or (field in self._values) != (field in values)
+        )
+        self._values = dict(values)
+        self._failed_fields = {
+            field: reason
+            for field, reason in self._failed_fields.items()
+            if field in values
+        }
+        return changed
+
+    def update(
+        self, values: Mapping[Field, Any], *, clear_failures: bool = False
+    ) -> frozenset[Field]:
+        """Apply observations and optionally clear errors after an active read."""
+        changed = frozenset(
+            field
+            for field, value in values.items()
+            if field not in self._values or self._values[field] != value
+        )
+        self._values.update(values)
+        if clear_failures:
+            for field in values:
+                self._failed_fields.pop(field, None)
+        return changed
+
+    def fail(self, failures: Mapping[Field, str]) -> None:
+        """Remember failed reads without replacing the last good field values."""
+        self._failed_fields.update(failures)
+
+    def fail_fields(self, fields: Iterable[Field], reason: str) -> None:
+        """Mark a group of fields unhealthy after a shared transport failure."""
+        self._failed_fields.update(dict.fromkeys(fields, reason))
 
 
 @dataclass(frozen=True, slots=True)

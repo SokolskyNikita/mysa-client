@@ -34,6 +34,7 @@ from .models import (
     Field,
     HomeKitEndpoint,
     HomeKitEvent,
+    HomeKitStateCache,
     LocalAction,
     LocalMode,
 )
@@ -242,7 +243,7 @@ class HomeKitDevice:
         self.__pairing_data = dict(pairing_data)
         self.__info = AccessoryInfo()
         self.__fields: dict[Field, _CharacteristicAddress] = {}
-        self.__values: dict[Field, Any] = {}
+        self.__state = HomeKitStateCache()
         self.__identify_address: tuple[int, int] | None = None
         self.__listeners: set[Callable[[HomeKitEvent], None]] = set()
         self.__endpoint_listeners: set[Callable[[HomeKitEndpoint], None]] = set()
@@ -268,7 +269,12 @@ class HomeKitDevice:
     @property
     def state(self) -> Mapping[Field, Any]:
         """Current semantic values as an immutable view."""
-        return MappingProxyType(self.__values)
+        return self.__state.values
+
+    @property
+    def failed_fields(self) -> Mapping[Field, str]:
+        """Fields whose latest required observation failed."""
+        return self.__state.failed_fields
 
     @property
     def capabilities(self) -> Mapping[Field, CharacteristicInfo]:
@@ -347,9 +353,10 @@ class HomeKitDevice:
         accessories = self.__pairing.accessories
         if accessories is None:
             raise HomeKitError("HomeKit accessory did not provide its database")
-        self.__info, self.__fields, self.__values, self.__identify_address = (
+        self.__info, self.__fields, values, self.__identify_address = (
             _parse_accessories(accessories)
         )
+        self.__state.replace(values)
         return self.__info
 
     async def async_connect(self) -> None:
@@ -381,9 +388,13 @@ class HomeKitDevice:
                 await self.__refresh_metadata()
         except _KNOWN_PROTOCOL_ERRORS as error:
             self.__refresh_pending = True
-            raise _translate_error(error) from error
-        except (HomeKitError, asyncio.CancelledError):
+            translated = _translate_error(error)
+            self.__mark_fields_failed(_ESSENTIAL_FIELDS, str(translated))
+            raise translated from error
+        except (HomeKitError, asyncio.CancelledError) as error:
             self.__refresh_pending = True
+            if isinstance(error, HomeKitError):
+                self.__mark_fields_failed(_ESSENTIAL_FIELDS, str(error))
             raise
         finally:
             self.__refreshing = False
@@ -411,7 +422,7 @@ class HomeKitDevice:
                 # leave aiohomekit's reconnect subscription set in that case.
                 self.__pairing.subscriptions.difference_update(stale)
         self.__info, self.__fields, self.__identify_address = info, fields, identify
-        self.__values = values
+        changed_values = self.__state.replace(values)
         if self.__dispatcher_unsubscribe is None:
             self.__dispatcher_unsubscribe = self.__pairing.dispatcher_connect(
                 self.__handle_events
@@ -431,7 +442,13 @@ class HomeKitDevice:
                 _LOGGER.debug(
                     "HomeKit event subscription failed (%s)", type(error).__name__
                 )
-        self.__notify(HomeKitEvent.create(values, capabilities_changed=changed))
+        self.__notify(
+            HomeKitEvent.create(
+                values,
+                changed_fields=changed_values,
+                capabilities_changed=changed,
+            )
+        )
 
     def __handle_config_changed(self, _config_num: int) -> None:
         self.__refresh_pending = True
@@ -473,6 +490,9 @@ class HomeKitDevice:
         }
         absent = set(fields) - self.__fields.keys()
         if absent & _ESSENTIAL_FIELDS:
+            failures = dict.fromkeys(absent & _ESSENTIAL_FIELDS, "missing")
+            self.__state.fail(failures)
+            self.__notify(HomeKitEvent.create(failed_fields=failures))
             raise HomeKitCharacteristicReadError(
                 "HomeKit is missing required fields",
                 absent & _ESSENTIAL_FIELDS,
@@ -485,16 +505,23 @@ class HomeKitDevice:
             async with asyncio.timeout(timeout or 3.0):
                 result: Any = await self.__pairing.get_characteristics(list(wanted))
         except _KNOWN_PROTOCOL_ERRORS as error:
-            raise _translate_error(error) from error
+            translated = _translate_error(error)
+            failures = dict.fromkeys(required, str(translated))
+            self.__state.fail(failures)
+            self.__notify(HomeKitEvent.create(failed_fields=failures))
+            raise translated from error
         self.__refresh_pairing_data()
         if not isinstance(result, Mapping):
+            failures = dict.fromkeys(required, "invalid response")
+            self.__state.fail(failures)
+            self.__notify(HomeKitEvent.create(failed_fields=failures))
             raise HomeKitCharacteristicReadError(
                 "HomeKit returned an invalid response", required
             )
 
         values: dict[Field, Any] = {}
-        failures: list[str] = []
         failed_required: set[Field] = set()
+        failed_fields: dict[Field, str] = {}
         missing = False
         for address, field in wanted.items():
             payload = result.get(address)
@@ -503,29 +530,43 @@ class HomeKitDevice:
                     not isinstance(payload, Mapping)
                     or _status_text(payload) == "-70409"
                 )
+                status = (
+                    _status_text(payload) if isinstance(payload, Mapping) else "missing"
+                )
+                failed_fields[field] = status
                 if field in _ESSENTIAL_FIELDS:
-                    status = (
-                        _status_text(payload)
-                        if isinstance(payload, Mapping)
-                        else "missing"
-                    )
-                    failures.append(f"{field.value}: {status}")
                     failed_required.add(field)
                 continue
             if "value" not in payload:
+                failed_fields[field] = "missing value"
                 if field in _ESSENTIAL_FIELDS:
-                    failures.append(f"{field.value}: missing value")
                     failed_required.add(field)
                 continue
             values[field] = _decode(field, payload["value"])
 
-        if failures:
+        if failed_fields:
+            self.__state.fail(failed_fields)
+        if failed_required:
+            self.__notify(HomeKitEvent.create(failed_fields=failed_fields))
             raise HomeKitCharacteristicReadError(
-                "HomeKit failed to read required fields: " + ", ".join(failures),
+                "HomeKit failed to read required fields: "
+                + ", ".join(
+                    f"{field.value}: {failed_fields[field]}"
+                    for field in sorted(failed_required, key=lambda item: item.value)
+                ),
                 failed_required,
                 missing=missing,
             )
-        self.__values.update(values)
+        recovered = bool(set(values) & self.__state.failed_fields.keys())
+        changed = self.__state.update(values, clear_failures=True)
+        if changed or recovered or failed_fields:
+            self.__notify(
+                HomeKitEvent.create(
+                    values,
+                    failed_fields,
+                    changed_fields=changed,
+                )
+            )
         return values, missing
 
     async def async_write(self, values: Mapping[Field, Any]) -> None:
@@ -578,8 +619,8 @@ class HomeKitDevice:
             if (current := self.__fields.get(field)) is not None
             and (current.aid, current.iid) == key
         }
-        self.__values.update(semantic_values)
-        self.__notify(HomeKitEvent.create(semantic_values))
+        changed = self.__state.update(semantic_values)
+        self.__notify(HomeKitEvent.create(semantic_values, changed_fields=changed))
 
     async def async_identify(self) -> None:
         """Ask the accessory to identify itself."""
@@ -627,7 +668,7 @@ class HomeKitDevice:
             "firmware": self.__info.firmware,
             "fields": {
                 field.value: {
-                    "value": self.__values.get(field),
+                    "value": self.__state.values.get(field),
                     "min_value": address.info.min_value,
                     "max_value": address.info.max_value,
                     "min_step": address.info.min_step,
@@ -671,8 +712,11 @@ class HomeKitDevice:
             elif field is not None and "value" in payload:
                 value = _decode(field, payload["value"])
                 values[field] = value
-                self.__values[field] = value
             accessory_changes[address] = model_payload
+
+        if failures:
+            self.__state.fail(failures)
+        changed_fields = self.__state.update(values, clear_failures=True)
 
         if events and (accessories := self.__pairing.accessories) is not None:
             try:
@@ -684,7 +728,22 @@ class HomeKitDevice:
                     "HomeKit accessory cache update failed (%s)",
                     type(error).__name__,
                 )
-        self.__notify(HomeKitEvent.create(values, failures, reconnected=not events))
+        self.__notify(
+            HomeKitEvent.create(
+                values,
+                failures,
+                changed_fields=changed_fields,
+                reconnected=not events,
+            )
+        )
+
+    def __mark_fields_failed(self, fields: Iterable[Field], reason: str) -> None:
+        """Record failed semantic observations while keeping last good values."""
+        failures = dict.fromkeys(fields, reason or "HomeKit read failed")
+        if not failures:
+            return
+        self.__state.fail(failures)
+        self.__notify(HomeKitEvent.create(failed_fields=failures))
 
     def __notify(self, event: HomeKitEvent) -> None:
         for listener in tuple(self.__listeners):

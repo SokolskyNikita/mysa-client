@@ -5,15 +5,18 @@
 `mysa-client` is an asynchronous Python library for the reverse-engineered Mysa
 cloud API, thermostat HomeKit interface, and optional legacy MQTT client. It
 exposes these protocols independently; standalone callers must explicitly
-create an MQTT client and request live reporting.
-The library does not provide an application polling, persistence, or
-device-state confirmation policy.
+create an MQTT client and request live reporting. The package also provides
+reusable Mysa device semantics and opt-in workflows for state reconciliation,
+command validation and confirmation, routing, telemetry freshness, schedules,
+holds, and account cleanup. These helpers do not start polling, connect
+transports, or choose an application's persistence and lifecycle policy.
 
 **Powers [Mysa Local for Home Assistant](https://github.com/SokolskyNikita/mysa-homeassistant).**
 For Home Assistant / HACS installation, setup, and thermostat entities, use that
-integration. This repository owns the shared cloud and HomeKit communication
-logic, the opt-in MQTT client, API documentation, and standalone Python
-examples.
+integration. This repository owns shared protocol communication, Mysa-specific
+device semantics and workflows, opt-in runtime helpers, API documentation, and
+standalone Python examples. The integration owns Home Assistant lifecycle,
+entities, durable storage adapters, polling cadence, and presentation.
 
 The API is based on behavior observed in the Mysa apps and, where noted, on
 Baseboard Lite hardware. It is not a vendor API contract. The only hardware
@@ -111,6 +114,23 @@ The command's successful HTTP response means the API accepted the request. It
 does not prove that the thermostat applied it. Read reported state separately
 and use an application-specific confirmation policy.
 
+## Device semantics and optional runtime example
+
+The [runtime example](examples/runtime_basic.py) uses synthetic, in-memory
+state to show `DeviceView`, semantic command construction, validation, and
+reported-state confirmation. It makes no network requests and needs no
+credentials:
+
+```sh
+python examples/runtime_basic.py
+```
+
+`mysa_client.runtime` contains optional composition helpers. Importing it does
+not import HomeKit or MQTT transports, connect to a device, or start a task.
+Callers explicitly construct each protocol client and pass the transports,
+policy choices, callbacks, clocks, and persistence they want to use. See the
+[runtime guide](docs/runtime.md) for ownership and composition details.
+
 ## MQTT example
 
 The [MQTT example](https://github.com/SokolskyNikita/mysa-client/blob/main/examples/mqtt_basic.py)
@@ -200,23 +220,39 @@ Lite setpoint/mode commands. A `CommandResult` reports broker acceptance and
 device confirmation separately; a matching device acknowledgement still does
 not prove physical heater operation.
 
-The caller owns long-term refresh-token and pairing-data storage, polling,
-freshness, retries after ambiguous outcomes, validation against advertised
-capabilities, and command confirmation. HomeKit `state` is a cached view, not
-a freshness guarantee. Cloud reported state can lag behind a successful
-response. A fresh read after a write is useful evidence, but may still not
-prove the device's physical behavior.
+The client provides reusable helpers for capability validation, independent
+observation reconciliation, pending-command tracking, device-state selection,
+and optional command routing. The application still chooses when to poll and
+read back, which source and freshness policy to use, how long to retain
+commands, and how to persist workflow journals and credentials. HomeKit
+`state` is a cached view, not a freshness guarantee. Cloud reported state can
+lag behind a successful response. A matching report is evidence of device
+state, but does not prove physical operation.
 
 ## Public API
 
 The public cloud surface is exported from `mysa_client.cloud`: `MysaAuth`,
 `Tokens`, `MysaClient`, response models, model and command enums, typed errors,
-and the documented command helpers. HomeKit's public semantic API is exported
+`CloudCommand`, `state_command`, `settings_command`, `reconcile`,
+`PendingCommand`, `PendingCommandTracker`, and the documented command helpers.
+`MysaClient.execute_command()` validates and sends one explicit semantic
+command using caller-supplied device context; it does not fetch capabilities or
+read state automatically. HomeKit's public semantic API is exported
 from `mysa_client.homekit`: `HomeKitProtocol`, `HomeKitDevice`, `PairingSession`,
 `Field`, mode/action and event models, discovery records, and typed errors.
 The optional MQTT API is exported from `mysa_client.mqtt`: `MysaMqttClient`,
 `MqttMessage`, `MqttTelemetry`, `DeviceCommandState`, echo/publish/command
 result types, message kinds, and typed errors.
+
+Reusable cloud-domain helpers are available from their documented modules:
+`cloud.reconciliation` for per-field state selection and pending command
+tracking; `cloud.commands`, `.device_commands`, and `.validation` for semantic
+commands and capability checks; `cloud.device` for model/device
+interpretation; and `cloud.schedule_workflow`, `.holds`, and
+`.account_workflow` for opt-in Mysa workflows. `runtime.state.DeviceView`,
+`runtime.routing.CommandRouter`, and `runtime.telemetry` compose caller-owned
+state sources and transports. Import these modules explicitly. None starts a
+connection or background task.
 
 The Home Assistant consumer also uses supported helpers from
 `mysa_client.cloud.commands`, `.const`, `.observations`, `.trace`, and
@@ -227,7 +263,7 @@ at `mysa_client.cloud`. Other underscored names and implementation details are
 private.
 
 See the [documentation index](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/README.md)
-for cloud and HomeKit APIs, Bluetooth/SoftAP, MQTT, firmware/connectivity,
+for cloud and HomeKit APIs, the optional runtime, Bluetooth/SoftAP, MQTT, firmware/connectivity,
 Matter research, raw API coverage, and diagnostic tools. Runnable scripts and
 sanitized protocol exchanges live in [examples](https://github.com/SokolskyNikita/mysa-client/tree/main/examples).
 See the [changelog](https://github.com/SokolskyNikita/mysa-client/blob/main/CHANGELOG.md) for releases.

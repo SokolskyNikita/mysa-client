@@ -63,6 +63,11 @@ async def test_device_reads_and_writes_semantic_values() -> None:
         Field.TARGET_TEMPERATURE: 19.5,
         Field.DISPLAY_UNIT: "F",
     }
+    assert {
+        Field.TARGET_MODE,
+        Field.TARGET_TEMPERATURE,
+        Field.DISPLAY_UNIT,
+    } <= set().union(*(event.changed_fields for event in events))
     diagnostics = device.diagnostics()
     assert diagnostics["fields"][Field.TARGET_MODE.value]["valid_values"] == (
         LocalMode.OFF,
@@ -131,6 +136,9 @@ async def test_required_read_failures_report_semantic_fields() -> None:
 
     assert error.value.fields == {Field.TARGET_TEMPERATURE}
     assert str(target_address) not in str(error.value)
+    assert device.failed_fields == {Field.TARGET_TEMPERATURE: "-70402"}
+    await device.async_read((Field.TARGET_TEMPERATURE,))
+    assert not device.failed_fields
     await device.async_close()
 
 

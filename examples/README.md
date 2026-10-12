@@ -1,12 +1,15 @@
 # Examples
 
-The Python scripts are runnable consumer examples. They create network
-connections only when executed without `--help`; automated documentation checks
-parse source and JSON but never run them or contact a Mysa account/accessory.
+The Python scripts are runnable consumer examples. The cloud, HomeKit, and
+MQTT examples create network connections only when executed without `--help`;
+`runtime_basic.py` uses synthetic state and never connects. Automated
+documentation checks parse source and JSON but never run them or contact a Mysa
+account/accessory.
 
 - [Cloud login, discovery, read, and optional heating target](cloud_basic.py)
 - [HomeKit discovery, pairing, saved-pairing read, events, and optional write](homekit_basic.py)
 - [Opt-in MQTT connection, events, echo, and optional Lite setpoint](mqtt_basic.py)
+- [In-memory device view, semantic command, and confirmation](runtime_basic.py)
 - [Sanitized cloud request/response data](cloud/README.md)
 - [Sanitized MQTT message formats](mqtt/README.md)
 
@@ -16,6 +19,11 @@ in the cloud and HomeKit examples. Keep these unset during routine reads and
 never use them as an automated smoke test. Commands can affect thermostat
 operation even when a network response only confirms that the request was
 accepted.
+
+`runtime_basic.py` has no credentials, transport, or write side effect. It
+demonstrates reusable client semantics with fabricated device reports. See the
+[runtime guide](../docs/runtime.md) for caller-owned policy, persistence, and
+transport lifecycle.
 
 ## Inert cloud exchanges
 

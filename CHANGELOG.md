@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0 (2026-10-12)
+
+- Add reusable cloud-domain helpers for per-field observation reconciliation,
+  pending-command confirmation and supersession, capability validation,
+  device interpretation, and semantic command construction with expected
+  effects derived from the same command description.
+- Add opt-in runtime helpers for device views, local/cloud command routing,
+  MQTT telemetry freshness and live-status renewal. They accept caller-owned
+  state, transports, policy inputs, and callbacks; importing or constructing
+  them does not connect, poll, persist, or start tasks.
+- Add journal-backed schedule replacement/recovery, reusable hold resolution
+  and application, and account claim/removal cleanup workflows. Existing
+  Home Assistant schedule journal records remain compatible through the
+  caller-supplied journal interface.
+- Add a synthetic, in-memory runtime example that demonstrates state
+  selection, semantic command validation, and reported-state confirmation
+  without network access or hardware.
+
 ## 0.1.3 (2026-10-12)
 
 - Add `get_device(id)` for a typed single settings record and

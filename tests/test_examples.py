@@ -484,3 +484,17 @@ async def test_homekit_failure_still_unsubscribes_and_shuts_down(
     ]
     assert protocol.stopped
     assert homekit_example.zeroconf.closed
+
+
+def test_runtime_example_confirms_synthetic_command_without_network(
+    monkeypatch, capsys
+):
+    """The standalone domain example exercises real helpers without a session."""
+    module = importlib.import_module("examples.runtime_basic")
+    monkeypatch.setattr(sys, "argv", ["runtime_basic.py"])
+    module.main()
+    result = json.loads(capsys.readouterr().out)
+    assert result["network"] == "none"
+    assert result["selected_state"]["temperature"] == 19.8
+    assert result["semantic_command"]["expected"] == {"heat_setpoint": 21}
+    assert result["confirmation"]["status"] == "confirmed"

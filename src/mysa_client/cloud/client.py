@@ -16,6 +16,7 @@ import aiohttp
 
 from .auth import MysaAuth
 from .commands import (
+    CloudCommand,
     button_lock_changes,
     display_brightness_changes,
     display_unit_settings,
@@ -61,6 +62,7 @@ from .models import (
     UsageDay,
 )
 from .trace import route_template
+from .validation import validate_cloud_command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -551,6 +553,38 @@ class MysaClient:
             msg = "Unexpected state response"
             raise MysaApiError(msg)
         return DeviceState.from_api(device_id, data)
+
+    async def execute_command(
+        self,
+        device_id: str,
+        command: CloudCommand,
+        *,
+        family: ModelFamily | None,
+        capabilities: Capabilities | None,
+        state: DeviceState | None,
+        command_value: Callable[[str, Any], Any] | None = None,
+    ) -> None:
+        """Validate and send an explicit command using caller-owned context.
+
+        This performs no discovery or implicit reads. Callers serialize related
+        operations and provide pending intent through ``command_value`` when
+        needed. Acceptance is not device confirmation; feed subsequent reports
+        to ``PendingCommandTracker`` to track that separately.
+        """
+        validate_cloud_command(
+            family,
+            capabilities,
+            state,
+            command.expected,
+            command_value or (lambda _name, fallback: fallback),
+            command_kind=command.kind,
+        )
+        if command.kind == "state":
+            await self.update_state(device_id, command.payload)
+        elif command.kind == "settings":
+            await self.update_settings(device_id, command.payload)
+        else:
+            raise ValueError(f"Unsupported command kind: {command.kind}")
 
     async def update_state(
         self, device_id: str, changes: Mapping[str, Mapping[str, Any]]

@@ -90,3 +90,52 @@ from mysa_client.mqtt import MysaMqttClient, parse_message
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_entire_distribution_is_framework_independent() -> None:
+    """New domain and runtime modules must stay usable outside HA."""
+    for path in PACKAGE.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom):
+                modules = [node.module or ""]
+            elif isinstance(node, ast.Import):
+                modules = [name.name for name in node.names]
+            else:
+                continue
+            assert not any(
+                module.startswith(("homeassistant", "custom_components"))
+                for module in modules
+            ), path
+
+
+def test_runtime_imports_do_not_load_transport_sdks_or_start_tasks() -> None:
+    """State, workflow and routing APIs work in a cloud-only installation."""
+    script = """
+import importlib.abc
+import sys
+
+class RejectSDK(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'homeassistant', 'aiohomekit', 'zeroconf', 'boto3', 'botocore', 'paho'}:
+            raise AssertionError(f'Unexpected optional import: {fullname}')
+
+sys.meta_path.insert(0, RejectSDK())
+from mysa_client.runtime.routing import CommandRouter
+from mysa_client.runtime.state import DeviceView
+from mysa_client.runtime.telemetry import MqttTelemetryState
+from mysa_client.cloud.schedule_workflow import ScheduleWorkflow
+from mysa_client.cloud.account_workflow import can_claim
+from mysa_client.cloud.device_commands import climate_command
+from mysa_client.cloud.reconciliation import PendingCommandTracker
+assert 'mysa_client.homekit' not in sys.modules
+assert DeviceView().temperature is None
+MqttTelemetryState()
+PendingCommandTracker()
+"""
+    result = subprocess.run(  # noqa: S603 - fixed interpreter and import check
+        [sys.executable, "-I", "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
