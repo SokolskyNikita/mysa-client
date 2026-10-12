@@ -1,15 +1,21 @@
 # Legacy Mysa MQTT protocol
 
-**Evidence reviewed: October 10–11, 2026.** Hardware tests used two Mysa
+**Evidence reviewed: October 10–12, 2026.** Hardware tests used two Mysa
 Baseboard Lite thermostats (`BB-V2-0-L`, firmware `3.17.5.13`) on one Mysa
 account. `mysa-client` has no runtime MQTT implementation.
 
-Direct MQTT control was not established. Fresh credentials successfully opened
-the broker connection and subscribed to both thermostats, but the tested
-Cognito identity's attached policy allowed neither publishing commands nor
-receiving messages. Publishing was rejected; passive MQTT received no
-telemetry while HTTPS readings advanced. The earlier failure before CONNACK
-was not reproduced, so its exact cause remains unresolved.
+**MQTT can work, but its availability remains unexplained.** On October 12,
+direct MQTT setpoint and off/heat commands worked on one of the two Lites,
+with changes independently observed through local HomeKit. The other Lite
+did not apply the tested setpoint change despite a successful publish.
+
+This differs from the October 11 result: fresh credentials opened the broker
+connection and subscribed to both thermostats, but the inspected Cognito
+identity's attached policy allowed neither publishing commands nor receiving
+messages. Publishing was rejected; passive MQTT received no telemetry while
+HTTPS readings advanced. The earlier failure before CONNACK was not reproduced.
+The cause of these differing outcomes needs further investigation; no stable
+workaround or general restoration of MQTT access has been established.
 
 This is a finding about one Mysa-issued identity, not a claim that MQTT is
 disabled for every Mysa user or every Lite thermostat. `mysa-client` provides
@@ -53,7 +59,7 @@ broker access. See [AWS's Cognito authorization model](https://docs.aws.amazon.c
 
 The legacy client exercises four independent MQTT data-plane permissions:
 
-| AWS action | Checked when | Resource needed by this client | Observed attached policy |
+| AWS action | Checked when | Resource needed by this client | October 11 attached policy |
 | --- | --- | --- | --- |
 | `iot:Connect` | MQTT CONNECT | `client/<clientId>` | Allowed |
 | `iot:Subscribe` | MQTT SUBSCRIBE | `topicfilter//v1/dev/<deviceId>/out` | Allowed |
@@ -68,8 +74,11 @@ and Receive use **topic** resources. See AWS's
 and [resource mapping](https://docs.aws.amazon.com/iot/latest/developerguide/iot-action-resources.html).
 This explains why a successful SUBACK can coexist with no delivered messages.
 
-Restoring this path would require Mysa to grant Publish and Receive for the
-owned devices, with compatible IAM permissions. An attachment operation such
+For an identity restricted as in the October 11 inspection, restoring this path
+would require Publish and Receive grants for the owned devices, with compatible
+IAM permissions. The successful October 12 session was not accompanied by a
+fresh policy/IAM comparison, so that earlier inspection does not explain its
+effective authorization. An attachment operation such
 as [`AttachPolicy`](https://docs.aws.amazon.com/iot/latest/apireference/API_AttachPolicy.html)
 associates an existing policy with an identity; it does not expand that policy.
 These are controls in Mysa's AWS deployment, not settings in the thermostat
@@ -79,7 +88,7 @@ owner's personal AWS account.
 
 ### Policy inspection
 
-The tested identity had exactly one attached policy, `default`.
+On October 11, the tested identity had exactly one attached policy, `default`.
 `GetPolicy(default)` returned:
 
 [Policy document projection](../examples/cloud/iot-policy.limited.json).
@@ -89,6 +98,9 @@ other actions. The absence of `iot:Publish` and `iot:Receive` is therefore
 material even though connection and subscription requests succeed.
 
 ### Test results
+
+The following results are from October 11; preserve them as a dated observation,
+not a statement of current access for every session.
 
 | Check | Observed result | What it establishes |
 | --- | --- | --- |
@@ -102,10 +114,45 @@ latter remains usable. See [live-mode and liveness](cloud-state.md#live-mode-and
 An earlier connection failed before CONNACK; its cause remains unresolved and
 does not change the later authorization findings.
 
+### October 12: MQTT control succeeded on one Lite
+
+A follow-up used the unchanged source of
+[`mysa2mqtt` PR #306 at `f872d79`](https://github.com/bourquep/mysa2mqtt/pull/306/commits/f872d790d296061c1dd9dcb08804e875ec24a98d).
+Its SDK tries AWS IoT MQTT first and falls back to Mysa's REST API only when
+publishing fails. During this run, MQTT publishes returned successfully and
+the normal command path did not invoke REST fallback.
+
+- On one Lite, a 0.5 °C setpoint decrease, off, heat, and restoration all worked.
+  Each change was independently observed through local HomeKit in about two
+  seconds. This establishes actual MQTT control in that session, beyond broker
+  acceptance or an optimistic UI update.
+- On the other Lite, the setpoint publish returned successfully, but its local
+  target remained unchanged during an approximately 57-second observation.
+  The MQTT climate entity initially displayed the requested target, then
+  reverted on a subsequent state update. Local HomeKit control still worked.
+- In a separate test, simulated MQTT rejection exercised the same SDK's fallback
+  with real REST requests. Setpoint/off/heat worked on the first Lite; the second
+  still did not apply the REST setpoint within approximately 45 seconds. This
+  validates that fallback path under an injected failure, not automatic fallback
+  after a real broker rejection. Both devices ended at their original settings.
+
+The REST request matched `mysa-client`'s heating-state encoding. Our integration's
+successful local control uses HomeKit, so it is not evidence of a different or
+more reliable REST payload. Transport acceptance alone remains insufficient to
+confirm that a thermostat applied a command.
+
+The reason MQTT worked in this session after the earlier authorization failures
+is unknown. The successful session's exact Cognito identity, effective grants,
+client/session behavior, and device-side conditions were not compared with the
+earlier probe. These are investigation targets, not established explanations.
+Do not assume that refreshing credentials, changing clients, or reattaching a
+policy reliably restores access.
+
 ## Legacy wire protocol
 
 The following wire protocol was reverse-engineered from the original Mysa apps.
-MQTT setpoint control remains unverified on the tested devices.
+The October 12 follow-up confirmed MQTT setpoint control on one tested Lite;
+reliability across devices and sessions remains unresolved.
 
 ### Session and topics
 
@@ -203,7 +250,14 @@ or publishes, and it does not request live reporting.
 
 ## Validation criteria for a future fix
 
-If access changes, a meaningful validation should first confirm delivery of
+Further investigation should capture authorization and session evidence during
+both successful and failing runs on the same account: compare the Cognito
+identity, attached policy versions and available IAM evidence, client ID/session
+settings, and command encoding. Separately record broker acceptance, correlated
+device responses, and fresh device-reported state. Keep credentials and account
+or device identifiers out of public reports.
+
+A meaningful validation should first confirm delivery of
 the safe echo and fresh telemetry, then test a controlled state change and
 read it back from the device. CONNACK, SUBACK, or a broker-level publish
 acknowledgement alone must not be reported as successful thermostat control.
@@ -220,9 +274,13 @@ The missing-policy hypothesis is superseded for the inspected identity: `default
 was already attached. No extra per-device attachment or identity registration
 step was found in the inspected sign-in path. Refreshing credentials, changing
 payloads, or reattaching that same policy cannot supply its absent grants.
-Why or when permissions differed remains unknown; community reports had different
-failure stages and do not establish one universal cutoff. No direct-MQTT runtime
-project is selected. Useful further validation requires new authorization evidence.
+The October 12 successful control session means the earlier denial cannot be
+generalized to permanent MQTT unavailability. Whether authorization changed,
+the clients used different identities or session behavior, or device conditions
+contributed remains unknown. Community reports also describe different failure
+stages and do not establish one universal cutoff. More investigation and paired
+successful/failing evidence are needed before selecting a reliable MQTT strategy.
+No direct-MQTT runtime implementation has been added to `mysa-client`.
 
 The later port-8883 credential attempt failed during TLS; see
 [device connectivity](firmware-and-connectivity.md#time-transport-and-validation-limits).
