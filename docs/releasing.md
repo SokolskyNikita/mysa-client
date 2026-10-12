@@ -42,5 +42,6 @@ tag, merge changes, or publish automatically on a push.
 
 For a maintainer publishing locally with an existing PyPI upload credential,
 run the same checks and build steps, then `python -m twine upload dist/*`.
-Keep that credential outside the checkout. The initial 0.1.0 release uses this
-local upload path; GitHub Trusted Publishing requires the setup above.
+Keep that credential outside the checkout. It must authorize this project or
+new-project creation; a token scoped to a different project cannot publish it.
+GitHub Trusted Publishing requires the setup above.
