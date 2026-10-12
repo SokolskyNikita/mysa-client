@@ -1,0 +1,54 @@
+name: Publish client
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag matching the package version (for example v0.1.0)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  validate:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Verify the tag names the validated commit and package version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          tag = os.environ["RELEASE_TAG"]
+          assert tag == f"v{version}", "Release tag must match package metadata"
+          def revision(ref):
+              return subprocess.check_output(["git", "rev-parse", "--verify", ref], text=True).strip()
+          assert revision(f"refs/tags/{tag}^{{commit}}") == revision("HEAD"), "Tag must identify the validated commit"
+          PY
+      - name: Build, inspect, and publish through PyPI trusted publishing
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --group build
+          python -m build
+          python -m twine check --strict dist/*
+          python tools/check_distribution.py
+          python -m twine upload --non-interactive dist/*

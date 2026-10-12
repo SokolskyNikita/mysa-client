@@ -1,0 +1,1 @@
+"""Standalone HomeKit protocol tests."""

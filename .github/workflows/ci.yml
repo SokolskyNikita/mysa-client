@@ -1,0 +1,51 @@
+name: Validate client
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install '.[homekit]' --group test --group lint --group build
+      - name: Check formatting, lint, types, and docs
+        run: |
+          ruff format --check .
+          ruff check .
+          mypy --python-version '${{ matrix.python }}'
+          python tools/check_docs.py
+      - name: Build and inspect release artifacts
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+          python tools/check_distribution.py
+      - name: Test the installed wheel
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+          python -m pytest --cov=mysa_client --cov-report=term-missing
+          python examples/cloud_basic.py --help
+          python examples/homekit_basic.py --help
+      - name: Verify a cloud-only installation
+        run: |
+          python -m venv /tmp/mysa-cloud-only
+          /tmp/mysa-cloud-only/bin/python -m pip install dist/*.whl
+          /tmp/mysa-cloud-only/bin/python -I -c 'import importlib.util; import mysa_client.cloud; assert importlib.util.find_spec("aiohomekit") is None; assert importlib.util.find_spec("homeassistant") is None'
