@@ -1,0 +1,39 @@
+name: Bug report
+description: Report unexpected behavior in the standalone Mysa client.
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: State what failed and the impact.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Identify the client API or protocol, package and Python versions, operating system, and thermostat model/firmware if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Describe expected and actual behavior, plus the smallest reproducible example or steps.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: List checks already run and results. Mark evidence as live, simulated, or app-derived; remove credentials and private identifiers from logs.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Link source tracker IDs, related issues or PRs, docs, fixtures, and dependencies. For Home Assistant integration behavior, use the HA repository.
+    validations:
+      required: false

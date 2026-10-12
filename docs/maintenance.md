@@ -20,6 +20,16 @@ Clearly distinguish a recovered route or field from a supported public method.
 HA roadmap exclusions do not automatically exclude a protocol from research or
 make it a library policy.
 
+## Issue format
+
+Use the issue form's five sections—Summary, Scope, Acceptance criteria,
+Validation, and References—for every issue. Keep observed evidence and
+implementation scope distinct, and make acceptance criteria observable. Link
+dependencies and the stable source tracker ID. Put each task in its owning
+repository: client API/protocol work here, and HA integration behavior in the
+[Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/issues).
+Cross-link shared work instead of creating duplicate tasks.
+
 ## Evidence and sanitization
 
 Keep the source app version, observation date, model, firmware, host, and

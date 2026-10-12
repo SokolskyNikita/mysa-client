@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Home Assistant integration reports
+    url: https://github.com/SokolskyNikita/mysa-homeassistant/issues/new/choose
+    about: For HA setup, entities, polling, routing, persistence, and recovery behavior.
