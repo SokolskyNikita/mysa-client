@@ -13,15 +13,11 @@ incoming-message examples are sanitized live messages; device identifiers,
 timestamps, and message/correlation IDs were replaced. The probe did not retain
 incoming QoS or retain flags, so those fields are marked unknown. For the
 single source of hardware and authorization findings, see the
-[MQTT protocol reference](../../docs/mqtt.md).
+[MQTT protocol reference](../../docs/reference/protocol/mqtt.md).
 
 For a runnable opt-in consumer, see [`examples/mqtt_basic.py`](../mqtt_basic.py).
-Install the optional MQTT extra from PyPI with
-`python -m pip install 'mysa-client[mqtt]'`; see the root
-[installation instructions](../../README.md#installation).
-The example subscribes only to discovered account devices, prints parsed
-events, requests echo and live telemetry, and sends a Lite setpoint only when
-both `MYSA_DEVICE_ID` and `MYSA_SET_CELSIUS` are explicitly set.
+For installation, execution and explicit command opt-in, follow the
+[MQTT connection guide](../../docs/guides/connect.md#mqtt).
 
-See the [MQTT reference](../../docs/mqtt.md) for hardware scope and the limits
+See the [MQTT reference](../../docs/reference/protocol/mqtt.md) for hardware scope and the limits
 of broker acceptance, echo replies, and command acknowledgements.

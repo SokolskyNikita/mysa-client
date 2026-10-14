@@ -2,7 +2,7 @@
   "id": "state-update.ac-fan",
   "kind": "app-derived",
   "evidence": {
-    "source": "../../docs/cloud-state.md#ac-fan-speed",
+    "source": "../../docs/reference/protocol/cloud-state.md#ac-fan-speed",
     "observationDate": null,
     "model": "AC",
     "firmware": null,

@@ -21,7 +21,9 @@ Publishing. Do not add a long-lived PyPI API token to repository secrets.
 ## Publish sequence
 
 1. Update `[project].version` in `pyproject.toml` and add the user-facing
-   changes to `CHANGELOG.md`.
+   changes to `CHANGELOG.md`. Review `docs/api-coverage.md` against the release,
+   update its client baseline/review date, and regenerate API summaries and the
+   callable index as described in [documentation maintenance](maintenance.md#offline-checks).
 2. Run the full CI workflow. It checks Python versions 3.11–3.14, protocol and
    lifecycle tests, examples' offline help paths, documentation links, and
    built distribution contents.

@@ -2,7 +2,7 @@
   "id": "firmware-trigger.no-body-error",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/firmware-and-connectivity.md#legacy-devices",
+    "source": "../../docs/reference/protocol/firmware-and-connectivity.md#legacy-devices",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

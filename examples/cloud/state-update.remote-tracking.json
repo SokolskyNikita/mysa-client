@@ -2,7 +2,7 @@
   "id": "state-update.remote-tracking",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-state.md#remote-temperature-tracking",
+    "source": "../../docs/reference/protocol/cloud-state.md#remote-temperature-tracking",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

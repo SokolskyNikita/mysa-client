@@ -2,7 +2,7 @@
   "id": "schedule-v1-clear.modern-host",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-workflows.md#legacy-schedules-and-saved-templates",
+    "source": "../../docs/reference/protocol/cloud-workflows.md#legacy-schedules-and-saved-templates",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

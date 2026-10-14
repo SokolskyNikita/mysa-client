@@ -2,7 +2,7 @@
   "id": "shortcut.replace-actions",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-workflows.md#home-away-and-vacation-shortcuts",
+    "source": "../../docs/reference/protocol/cloud-workflows.md#home-away-and-vacation-shortcuts",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

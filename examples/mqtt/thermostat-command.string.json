@@ -2,7 +2,7 @@
   "id": "thermostat-command.string",
   "kind": "app-derived",
   "evidence": {
-    "source": "../../docs/mqtt.md#lite-commands-and-responses",
+    "source": "../../docs/reference/protocol/mqtt.md#lite-commands-and-responses",
     "appVersion": "3.54.1",
     "sourceReference": "Reverse-engineered from the original Mysa app: generateThermostatCommandMessage / publishCommandMsg.",
     "observationDate": null,

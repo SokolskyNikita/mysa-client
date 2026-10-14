@@ -2,7 +2,7 @@
   "id": "echo-reply",
   "kind": "live-sanitized",
   "evidence": {
-    "source": "../../docs/mqtt.md#october-12-pool-comparison-and-device-control",
+    "source": "../../docs/evidence/mqtt.md#october-12-pool-comparison-and-device-control",
     "appVersion": null,
     "sourceReference": "Direct Paho MQTT 3.1.1/WSS probe using the legacy Identity Pool and a modern MysaAuth token.",
     "observationDate": "2026-10-12",

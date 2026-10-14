@@ -2,7 +2,7 @@
   "id": "schedule-update.full-body",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-workflows.md#weekly-schedules",
+    "source": "../../docs/reference/protocol/cloud-workflows.md#weekly-schedules",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

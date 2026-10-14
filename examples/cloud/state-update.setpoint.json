@@ -2,7 +2,7 @@
   "id": "state-update.setpoint",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-state.md#state-and-settings-confirmation",
+    "source": "../../docs/reference/protocol/cloud-state.md#state-and-settings-confirmation",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

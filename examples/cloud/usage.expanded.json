@@ -2,7 +2,7 @@
   "id": "usage.expanded",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-state.md#usage",
+    "source": "../../docs/reference/protocol/cloud-state.md#usage",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

@@ -2,7 +2,7 @@
   "id": "legacy-state.mixed-time",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-state.md#state-reads",
+    "source": "../../docs/reference/protocol/cloud-state.md#state-reads",
     "observationDate": null,
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",

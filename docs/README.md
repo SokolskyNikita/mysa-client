@@ -1,61 +1,69 @@
-# Mysa client and protocol documentation
+# Mysa client documentation
 
-> **Unofficial project.** This project is not affiliated with, endorsed by, or supported by Mysa. **Use at your own risk.** The software is provided "as is", without warranty.
+<a id="mysa-client-and-protocol-documentation"></a>
+<a id="home-assistant-consumer"></a>
 
-This repository owns the reusable client API, Mysa wire-protocol references,
-sanitized example data, diagnostic tools, and raw API coverage. Start with the
-[client README](../README.md) for installation, lifecycle ownership, and runnable
-examples. Protocol research describes known behavior even where this client
-has no implementation; it is not a promise of support.
+Start here for the standalone Python library and reverse-engineered protocols.
+[Install the package](../README.md#installation). For Home Assistant setup,
+entities and integration settings, use [Mysa Local](https://github.com/SokolskyNikita/mysa-homeassistant).
 
-## Client API and cloud references
+## Find a task
 
-| Reference | Contents |
+| I want to… | Start here |
 | --- | --- |
-| [Cloud client and endpoint guide](../src/mysa_client/cloud/README.md) | Public API, S/R/L services, endpoints, timeouts, errors, and command semantics |
-| [Optional runtime](runtime.md) | Device views, command routing, telemetry freshness, reconciliation, workflow journals, and lifecycle ownership |
-| [Authentication](cloud-auth.md) | Cognito SRP and refresh exchanges, token roles, browser restrictions |
-| [State and models](cloud-state.md) | Discovery, response shapes, units, clocks, enums, capabilities, and history |
-| [Account and schedule workflows](cloud-workflows.md) | Claim/removal, schedules, holds, shortcuts, provisioning, and app-only operations |
-| [Newer cloud models](new-cloud-models.md) | Model-specific protocol mappings, capabilities, and evidence limits |
-| [HomeKit client API](../src/mysa_client/homekit/README.md) | Discovery, pairing, persistence callbacks, reads, writes, events, and cleanup |
-| [Raw API coverage](api-coverage.md) | Callable client operations and known gaps, separate from HA behavior |
+| Sign in, discover devices, pair HomeKit, or open MQTT | [Connect a client](guides/connect.md) |
+| Send a command and distinguish acceptance from confirmation | [Select state and confirm commands](guides/state-and-commands.md) |
+| Combine cloud, HomeKit and MQTT in my application | [Compose the runtime](guides/runtime.md) |
+| Replace or clear schedules and recover interrupted work | [Schedule workflows](guides/schedules.md) |
+| Apply a hold or clean up an account device | [Hold and account workflows](guides/schedules.md#holds-and-account-cleanup) |
+| Diagnose stale readings, a failed write, or missing discovery | [Troubleshooting](guides/troubleshooting.md) |
+| Diagnose MQTT credentials and publish/receive permissions | [MQTT diagnostic probe](guides/mqtt-diagnostics.md) |
+| Check whether an operation is implemented | [API inventory](api-coverage.md) |
+| Check which hardware and behavior were validated | [Evidence and compatibility](evidence/README.md) |
+| Run or inspect an example | [Runnable scripts and sanitized exchanges](../examples/README.md) |
 
-## Other device protocols and research
+<a id="client-api-and-cloud-references"></a>
 
-| Reference | Contents |
+## Python API contracts
+
+These references own imports, parameters, return values, errors, lifecycle and
+helper guarantees. Research routes without client wrappers belong below.
+
+| API | Reference |
 | --- | --- |
-| [HomeKit accessory behavior](homekit.md) | HAP characteristics and observed Mysa-specific behavior |
-| [Bluetooth and SoftAP](bluetooth.md) | Wi-Fi setup, scanning, and newer-model credential transfer |
-| [MQTT](mqtt.md) | Opt-in runtime client, Identity Pool behavior, events, message formats, validation limits, and diagnostic probing |
-| [Firmware and connectivity](firmware-and-connectivity.md) | Startup, connections, update routes, and observed limits |
-| [Matter](matter.md) | Research status and commissioning/validation gaps; no client implementation |
-| [Examples](../examples/README.md) | Runnable consumer scripts and inert cloud/MQTT evidence records |
+| Cloud | [Authentication, HTTP client, public helpers and errors](reference/python/cloud.md) |
+| HomeKit | [Discovery, pairing persistence, semantic reads/writes and lifecycle](reference/python/homekit.md) |
+| MQTT | [Explicit sessions, events, live reporting and command results](reference/python/mqtt.md) |
+| Domain helpers and runtime | [Validation, reconciliation, views, routing and workflow adapters](reference/python/runtime.md) |
+| Callable lookup | [Generated signatures and cloud exports](reference/python/symbols.md) |
 
-The [Wi-Fi setup application](https://github.com/SokolskyNikita/mysa-wifi-setup)
-is a separate product. BLE, SoftAP, and Matter remain research-only here.
-MQTT is an optional, experimental client transport: standalone consumers opt
-in explicitly. Mysa Local uses it for read-only telemetry when account and
-cloud access are enabled and both its global and per-thermostat Live MQTT
-readings options are on; both default to on. The [MQTT reference](mqtt.md)
-covers the shared protocol, while the HA guide owns integration behavior and
-live validation.
+<a id="other-device-protocols-and-research"></a>
 
-## Home Assistant consumer
+## Protocol references
 
-The [Mysa Local documentation](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md)
-owns HA setup, entities, Home Assistant polling and client lifecycle,
-credential and journal storage adapters, integration options, presentation,
-and integration-level validation. Reusable Mysa semantics and opt-in workflow
-logic live in this client. Its
-[management coverage](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md)
-is separate from this library's raw API coverage.
+These pages own wire formats and device behavior, including research-only
+operations. A documented endpoint is not a promise of a supported method.
+
+| Subject | Reference |
+| --- | --- |
+| Cloud services | [S/R/L terminology and cross-service mappings](reference/protocol/cloud.md) |
+| Authentication | [Cognito, HTTP headers, token roles and browser restrictions](reference/protocol/cloud-auth.md) |
+| State and history | [Response shapes, clocks, enums, capabilities and model fields](reference/protocol/cloud-state.md) |
+| Account and schedules | [Schedules, holds, shortcuts, enrollment and app-only routes](reference/protocol/cloud-workflows.md) |
+| Newer models | [Baseboard V3, Central HVAC and Climate Sensor](reference/protocol/new-cloud-models.md) |
+| HomeKit | [Accessory characteristics and Wi-Fi switching observations](reference/protocol/homekit.md) |
+| MQTT | [Authorization model, topics, messages and command encodings](reference/protocol/mqtt.md) |
+| Firmware and network | [Startup connections, update routes and observed limits](reference/protocol/firmware-and-connectivity.md) |
+| BLE and SoftAP | [Wi-Fi provisioning and credential transfer](reference/protocol/bluetooth.md) |
+| Matter | [Vendor claims and commissioning research](reference/protocol/matter.md) |
+
+BLE, SoftAP and Matter have no client transport here. The separate
+[Wi-Fi setup application](https://github.com/SokolskyNikita/mysa-wifi-setup)
+owns its browser implementation. MQTT is optional and experimental.
 
 ## Evidence and upkeep
 
-References distinguish app-derived behavior, synthetic fixtures, and hardware
-observations. Most live evidence is from two Baseboard Lites (`BB-V2-0-L`,
-firmware `3.17.5.13`); it does not establish behavior on other models. API
-acceptance, stored configuration, device reports, and physical operation are
-separate claims. See [documentation maintenance](maintenance.md),
-[release instructions](releasing.md), and the [changelog](../CHANGELOG.md).
+[Evidence index](evidence/README.md) · [Documentation maintenance](maintenance.md) ·
+[Release instructions](releasing.md) · [Changelog](../CHANGELOG.md)
+
+Older documentation paths remain as forwarding pages for published links.

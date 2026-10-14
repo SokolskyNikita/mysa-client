@@ -22,12 +22,12 @@ accepted.
 
 `runtime_basic.py` has no credentials, transport, or write side effect. It
 demonstrates reusable client semantics with fabricated device reports. See the
-[runtime guide](../docs/runtime.md) for caller-owned policy, persistence, and
+[runtime guide](../docs/reference/python/runtime.md) for caller-owned policy, persistence, and
 transport lifecycle.
 
 ## Inert cloud exchanges
 
-Files in [cloud/](cloud/) are evidence records, not replay scripts. They separate
+Files in [cloud/](cloud) are evidence records, not replay scripts. They separate
 request metadata from response data and mark whether a body is complete, a
 projection, a fixture, or unknown. Constructed examples illustrate shapes and
 must not be counted as additional validation. App-derived examples reflect
@@ -38,7 +38,7 @@ payloads are synthetic or sanitized and do not imply broader hardware support.
 Public Cognito pool and app-client identifiers are configuration values, not
 secrets. Any token shown in an example is a nonfunctional placeholder.
 
-The passive Paho MQTT diagnostic tool and HomeKit diagnostic tools remain
+The Paho MQTT diagnostic tool and HomeKit diagnostic tools remain
 maintainer tools; the optional MQTT client is a separate consumer API. Their
-dependencies and limits are documented in the [MQTT reference](../docs/mqtt.md)
-and [HomeKit reference](../docs/homekit.md).
+dependencies and limits are documented in the [MQTT diagnostic guide](../docs/guides/mqtt-diagnostics.md)
+and [HomeKit reference](../docs/reference/protocol/homekit.md).

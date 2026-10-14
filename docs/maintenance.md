@@ -8,14 +8,21 @@ standalone client's API. Keep HA product behavior in the
 
 | Material | Maintained home |
 | --- | --- |
-| Public protocol APIs, lifecycle, typed errors, and transport ownership | [Cloud guide](../src/mysa_client/cloud/README.md), [HomeKit guide](../src/mysa_client/homekit/README.md), and [examples](../examples/README.md) |
-| Mysa-specific device semantics, command validation/confirmation, reconciliation, and reusable workflows | [Runtime guide](runtime.md), [cloud state](cloud-state.md), and [cloud workflows](cloud-workflows.md) |
-| Optional runtime composition and caller-owned scheduling, persistence, and application lifecycle | [Runtime guide](runtime.md) |
-| Wire formats, endpoints, device behavior, and app-derived research | References in the [protocol index](README.md) |
-| Raw method coverage and protocol implementation gaps | [API inventory](api-coverage.md) |
-| Sanitized HTTP/MQTT exchanges | [Examples](../examples/README.md) |
-| HA configuration, entities, polling choices, HA lifecycle and storage adapters, and presentation | [Integration docs](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md) |
-| HA acceptance criteria and hardware workflow checks | [Management inventory](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md) |
+| Entry points and task navigation | [Documentation index](README.md); root README is the package landing page |
+| Python imports, callable signatures, return values, errors and lifecycle | [Python references](README.md#python-api-contracts); [generated symbol index](reference/python/symbols.md) derives signatures/exports from source |
+| State selection and command-confirmation procedure | [State and commands guide](guides/state-and-commands.md) |
+| Application assembly and workflow procedures | [Runtime composition](guides/runtime.md) and [schedule workflows](guides/schedules.md) |
+| Wire formats, endpoints, enums and device behavior | [Protocol references](README.md#protocol-references), one owner per topic |
+| Dated validation and scope overview | [Evidence index](evidence/README.md); detailed observations stay beside their protocol context or dated record |
+| Implementation status and remaining gaps | [API inventory](api-coverage.md); generated summaries are derived views |
+| Runnable usage and sanitized exchange records | [Examples](../examples/README.md), linked from the owning guide/reference |
+| HA settings, entities, polling, storage adapters and presentation | [Integration docs](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/README.md) |
+
+Each behavior has one authoritative explanation. Other pages give a short summary
+and a section link. Keep side-effect cautions at their point of use, preserve
+model-specific evidence qualifiers, and leave release notes historical. Do not
+copy application-specific defaults into client references. Move a topic only
+with its incoming links and published anchors accounted for.
 
 Protocol research can include operations this library does not implement.
 Clearly distinguish a recovered route or field from a supported public method.
@@ -54,11 +61,27 @@ provenance when moving an example; update its relative links and fixture paths.
 ## Offline checks
 
 Run `python tools/check_docs.py` and `git diff --check`. The checker validates
-Markdown links/anchors, fences and tables, strict JSON fixtures, cloud/MQTT
+Markdown links/anchors (including same-repository GitHub `main` URLs), reader-page
+reachability, inventory baseline, declared API symbols, fences and tables, strict JSON fixtures, cloud/MQTT
 exchange metadata, incoming example links, and obvious secret
 patterns. It parses runnable examples and diagnostic scripts without executing
-them. It never signs in, discovers devices, or contacts a thermostat. External
+them. It never signs in, discovers devices, or contacts a thermostat. Other external
 URLs need a separate review; local checks cannot establish protocol accuracy.
+
+After changing public callables or cloud exports, run
+`python tools/update_api_reference.py`; CI uses `--check` to detect stale
+signatures. Use `<!-- api-symbol: mysa_client.module:Class.method -->` beside
+important hand-written contracts to check symbol existence without importing
+transports. This does not verify behavioral claims.
+
+Use relative links within the repository. The root README uses absolute GitHub
+links because it is also the PyPI long description; the checker resolves those
+against the checkout. New canonical pages must be reachable from `docs/README.md`.
+The [published-anchor manifest](published-anchors.json) protects paths and
+fragments that existed before the restructure; retain its entries when moving
+content. Add published anchors when establishing new compatibility promises.
+Forwarding pages retain old anchors and are explicitly marked as compatibility
+pages; they do not own current prose.
 
 After changing the raw API inventory, run `python tools/update_api_coverage.py`.
 CI uses `--check` to validate API IDs and verify the inventory summary, detailed

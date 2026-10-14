@@ -2,7 +2,7 @@
   "id": "state-update.ac-swing",
   "kind": "app-derived",
   "evidence": {
-    "source": "../../docs/cloud-state.md#ac-swing-and-supported-remote-commands",
+    "source": "../../docs/reference/protocol/cloud-state.md#ac-swing-and-supported-remote-commands",
     "observationDate": null,
     "model": "AC",
     "firmware": null,

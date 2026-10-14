@@ -2,7 +2,7 @@
   "id": "iot-policy.limited",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/mqtt.md#policy-inspection",
+    "source": "../../docs/evidence/mqtt.md#policy-inspection",
     "observationDate": null,
     "model": null,
     "firmware": null,

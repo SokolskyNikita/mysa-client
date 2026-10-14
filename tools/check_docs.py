@@ -7,6 +7,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+import tomllib
 from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,8 @@ SECRET = re.compile(
 )
 KINDS = {"live-sanitized", "app-derived", "constructed"}
 REPRESENTATIONS = {"complete", "projection", "fixture", "unknown"}
+REPO_URL = "https://github.com/SokolskyNikita/mysa-client/"
+API_SYMBOL = re.compile(r"^<!-- api-symbol: ([\w.]+):([\w.]+) -->$", re.M)
 
 
 def fail(path: Path, message: str) -> None:
@@ -73,23 +76,29 @@ def anchors(text: str) -> set[str]:
 def check_link(source: Path, raw_url: str) -> Path | None:
     """Resolve local Markdown links while preventing repository escapes."""
     url = raw_url.strip("<>")
-    if re.match(r"(?:[a-z][a-z0-9+.-]*:|//)", url, re.I):
+    repository_url = url.startswith((REPO_URL + "blob/main/", REPO_URL + "tree/main/"))
+    if repository_url:
+        url = url.split("/main/", 1)[1]
+    elif re.match(r"(?:[a-z][a-z0-9+.-]*:|//)", url, re.I):
         return None
     path_text, _, fragment = unquote(url).partition("#")
-    target = (source.parent / path_text).resolve() if path_text else source
+    base = ROOT if repository_url else source.parent
+    target = (base / path_text).resolve() if path_text else source
     if not target.is_relative_to(ROOT):
         fail(source, "local link escapes the repository")
         return None
     if not target.exists():
         fail(source, f"missing target: {url}")
         return None
+    if target.is_dir() and (target / "README.md").is_file():
+        target /= "README.md"
     if (
         fragment
         and target.suffix == ".md"
         and fragment not in anchors(target.read_text(encoding="utf-8"))
     ):
         fail(source, f"missing heading anchor: {url}")
-    if fragment and re.fullmatch(r"L\d+(?:-L\d+)?", fragment):
+    if target.is_file() and fragment and re.fullmatch(r"L\d+(?:-L\d+)?", fragment):
         line = int(fragment.split("-L")[-1].lstrip("L"))
         if line > len(target.read_text(encoding="utf-8").splitlines()):
             fail(source, f"source line anchor exceeds file length: {url}")
@@ -118,7 +127,82 @@ def check_markdown(path: Path) -> set[Path]:
         width = cells
     if SECRET.search(text):
         fail(path, "possible credential material (value suppressed)")
+    check_api_symbols(path, text)
     return targets
+
+
+def check_api_symbols(path: Path, text: str) -> None:
+    """Check explicitly declared API references using AST, without imports."""
+    for module, symbol in API_SYMBOL.findall(prose(text)):
+        source = ROOT / "src" / (module.replace(".", "/") + ".py")
+        if not source.is_file():
+            fail(path, f"missing API module: {module}")
+            continue
+        body = ast.parse(source.read_text(encoding="utf-8")).body
+        for name in symbol.split("."):
+            found = next(
+                (
+                    node
+                    for node in body
+                    if isinstance(
+                        node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+                    )
+                    and node.name == name
+                ),
+                None,
+            )
+            if found is None:
+                fail(path, f"missing API symbol: {module}:{symbol}")
+                break
+            body = found.body
+
+
+def check_navigation(graph: dict[Path, set[Path]]) -> None:
+    """Require every canonical reader page to be reachable from the docs index."""
+    reached: set[Path] = set()
+    pending = [ROOT / "docs/README.md"]
+    while pending:
+        current = pending.pop()
+        if current not in reached:
+            reached.add(current)
+            pending.extend(graph.get(current, set()) - reached)
+    for path in graph:
+        if any(part.startswith(".") for part in path.relative_to(ROOT).parts):
+            continue
+        if "<!-- compatibility-forwarder -->" in path.read_text(encoding="utf-8"):
+            continue
+        if path not in reached:
+            fail(path, "reader page is unreachable from docs/README.md")
+
+
+def check_inventory_baseline() -> None:
+    """Keep the inventory's current-client baseline aligned with the package."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    path = ROOT / "docs/api-coverage.md"
+    baseline = re.search(
+        r"^Client baseline: \*\*mysa-client ([^*]+)\*\*$",
+        path.read_text(encoding="utf-8"),
+        re.M,
+    )
+    if baseline is None or baseline[1] != project["project"]["version"]:
+        fail(
+            path,
+            "client baseline must match pyproject.toml; review inventory on release",
+        )
+
+
+def check_published_anchors() -> None:
+    """Protect previously published paths and fragments during restructuring."""
+    manifest = ROOT / "docs/published-anchors.json"
+    for name, published in read_json(manifest).items():
+        path = ROOT / name
+        if not path.is_file():
+            fail(manifest, f"published document was removed: {name}")
+            continue
+        current = anchors(path.read_text(encoding="utf-8"))
+        for fragment in published:
+            if fragment not in current:
+                fail(path, f"published anchor was removed: #{fragment}")
 
 
 def check_body(path: Path, value: dict[str, object]) -> None:
@@ -266,14 +350,20 @@ def check_mqtt_example(path: Path, seen: set[str]) -> None:
 
 def main() -> int:
     """Run all local checks without importing or executing protocol code."""
+    ERRORS.clear()
     markdown = sorted(
         path
         for path in ROOT.rglob("*.md")
         if ".git" not in path.parts and "dist" not in path.parts
     )
     targets: set[Path] = set()
+    graph: dict[Path, set[Path]] = {}
     for path in markdown:
-        targets.update(check_markdown(path))
+        graph[path] = check_markdown(path)
+        targets.update(graph[path])
+    check_navigation(graph)
+    check_inventory_baseline()
+    check_published_anchors()
 
     cloud_examples = sorted((ROOT / "examples/cloud").glob("*.json"))
     mqtt_examples = sorted((ROOT / "examples/mqtt").glob("*.json"))

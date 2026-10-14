@@ -2,7 +2,7 @@
   "id": "cognito-refresh.request",
   "kind": "constructed",
   "evidence": {
-    "source": "../../docs/cloud-auth.md#cognito-sign-in",
+    "source": "../../docs/reference/protocol/cloud-auth.md#cognito-sign-in",
     "observationDate": null,
     "model": null,
     "firmware": null,
