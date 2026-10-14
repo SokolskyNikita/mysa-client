@@ -88,16 +88,19 @@ def test_mixed_clocks_and_enum_namespaces() -> None:
 
 
 def test_partial_invalid_state_and_future_clock() -> None:
-    state = structured(
-        targetHeat={"reported": {"timestamp": 10**400, "setpoint": 24}},
-        modes={"desired": {"mode": 0}},
-        physicalInterface={
-            "reported": {
-                "timestamp": (NOW + timedelta(days=1)).timestamp(),
-                "lockout": 3,
-            }
-        },
-    )
+    # Keep the future sample ahead of the parser's clock as calendar time advances.
+    with patch("mysa_client.cloud.models.datetime", wraps=datetime) as clock:
+        clock.now.return_value = NOW
+        state = structured(
+            targetHeat={"reported": {"timestamp": 10**400, "setpoint": 24}},
+            modes={"desired": {"mode": 0}},
+            physicalInterface={
+                "reported": {
+                    "timestamp": (NOW + timedelta(days=1)).timestamp(),
+                    "lockout": 3,
+                }
+            },
+        )
     assert state.room_temperature == 21
     assert state.heat_setpoint is None
     assert state.mode is None
