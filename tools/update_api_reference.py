@@ -19,6 +19,7 @@ SECTIONS = {
     },
     "MQTT": {"mqtt/client.py": ("MysaMqttClient",)},
     "Runtime and domain helpers": {
+        "cloud/setpoints.py": ("SetpointRules",),
         "cloud/device_commands.py": (),
         "cloud/reconciliation.py": ("PendingCommand", "PendingCommandTracker"),
         "cloud/validation.py": (),
