@@ -85,6 +85,7 @@ Testing goal: 100% unit-test coverage of client business logic, including failur
 
 Use the [Python API index](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/README.md#python-api-contracts) for cloud,
 HomeKit, MQTT, and runtime contracts, including supported submodule imports.
+Every temperature write takes a `Setpoint` from [`SetpointRules`](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/reference/python/cloud.md#setpoint-rules).
 
 ## Ownership and error handling
 

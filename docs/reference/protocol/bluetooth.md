@@ -260,7 +260,7 @@ An advertisement establishes that the accessory is discoverable; bit 0 of its
 `sf` field indicates that it is unpaired when set. A cleared bit reports an
 existing pairing but does not identify the controller or prove that its saved
 keys still work. A successful authenticated HomeKit read is the stronger check.
-See the [HomeKit protocol reference](../python/homekit.md).
+See the [HomeKit protocol reference](homekit.md#discovery-and-pairing).
 
 The standalone setup webpage cannot perform ordinary mDNS discovery itself. A
 Home Assistant backend or local helper could perform that check after BLE setup.
@@ -277,8 +277,7 @@ mode. Runtime control remains through [HomeKit](../python/homekit.md) or the
 
 ## Temporary Wi-Fi access point setup
 
-For Bluetooth setup, use the [protocol reference](bluetooth.md)
-or [Wi-Fi setup page](https://sokolskynikita.github.io/mysa-wifi-setup/).
+For Bluetooth setup, use the [Wi-Fi setup page](https://sokolskynikita.github.io/mysa-wifi-setup/).
 SoftAP is a separate local HTTP provisioning path:
 
 The setup server is `http://192.168.4.1:57961`. Read `/pubkey`, `/hwid` and
