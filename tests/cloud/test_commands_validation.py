@@ -129,7 +129,7 @@ def test_common_validation_checks_choices_pairs_and_brightness_order() -> None:
             {"display_unit": "X"},
             _command_value,
         )
-    with pytest.raises(ValueError, match="Minimum setpoint exceeds maximum"):
+    with pytest.raises(ValueError, match="Minimum setpoint must be below the maximum"):
         validate_cloud_command(
             ModelFamily.BASEBOARD_LITE,
             capabilities,
@@ -145,7 +145,7 @@ def test_common_validation_checks_choices_pairs_and_brightness_order() -> None:
             {"active_brightness": 20, "idle_brightness": 30},
             _command_value,
         )
-    with pytest.raises(ValueError, match="Minimum setpoint exceeds maximum"):
+    with pytest.raises(ValueError, match="Minimum setpoint must be below the maximum"):
         validate_cloud_command(
             ModelFamily.BASEBOARD_LITE,
             capabilities,
@@ -153,15 +153,15 @@ def test_common_validation_checks_choices_pairs_and_brightness_order() -> None:
             {"setpoint_min": 24, "setpoint_max": 20},
             _command_value,
         )
-    # The protocol accepts equal bounds, though Home Assistant's number
-    # controls can impose the stricter UI invariant independently.
-    validate_cloud_command(
-        ModelFamily.BASEBOARD_LITE,
-        capabilities,
-        None,
-        {"setpoint_min": 20, "setpoint_max": 20},
-        _command_value,
-    )
+    # Equal limits are refused, the same rule as SetpointRules.limit.
+    with pytest.raises(ValueError, match="Minimum setpoint must be below the maximum"):
+        validate_cloud_command(
+            ModelFamily.BASEBOARD_LITE,
+            capabilities,
+            None,
+            {"setpoint_min": 20, "setpoint_max": 20},
+            _command_value,
+        )
 
 
 def test_experimental_validation_requires_capabilities_and_restricts_sensor() -> None:

@@ -33,6 +33,41 @@
 - Add `fahrenheit_label`, `fahrenheit_offset`, and
   `SetpointRules.fahrenheit_bounds` for whole-°F display that matches the Mysa
   app, which rounds 22.5 °C up to 73 °F.
+- `SetpointOutOfRangeError` names what failed: `limits` (the violated
+  `SetpointRange`), `kind` (its `SetpointKind`, or `None` for the hardware
+  limit and offset ranges), `side` (`"heat"`/`"cool"` for a `heat_cool` pair,
+  correct even when low equals high) and `delta` (an offset), plus
+  `fahrenheit_limit`, the closest allowed whole °F.
+- `SetpointRules.fahrenheit_bounds` also takes any `SetpointRange` and
+  `delta=True`; add `offset_fahrenheit_bounds()`, `envelope(kinds)` and
+  `fahrenheit_envelope(kinds)`, and the module-level `fahrenheit_bounds`. An
+  envelope assumes `DEFAULT_MINIMUM`/`DEFAULT_MAXIMUM` (5–30 °C, the Mysa
+  app's and the MQTT protocol's range) for an unknown bound; validation still
+  checks only advertised bounds.
+- **Breaking:** owner limits must be strictly ordered. `SetpointRules.limit`
+  checks the new value against the other current limit and raises the new
+  `SetpointLimitOrderError`; `validate_command` now also refuses equal limits,
+  with the message "Minimum setpoint must be below the maximum".
+  `limits_ordered()` is the shared comparison.
+- **Breaking:** in heat/cool mode a single setpoint is the heat target
+  everywhere. `kind_for_mode(Mode.AUTO)` and `SetpointRules.setpoint(Mode.AUTO,
+  ...)` no longer raise, and `DeviceState.setpoint_for(Mode.AUTO)` returns the
+  heat setpoint instead of `None`, matching `temperature_changes`.
+- `resolve_hold` and `build_schedule_events` take `rules=` and `unit=` and
+  normalise plain-number temperatures themselves (a hold's requested
+  temperature strictly, its current target with `strict=False`). Typed
+  `Setpoint` values still work. A temperature on a heat/cool hold or event
+  raises the new `SetpointModeError`; an `off` schedule event's temperature is
+  dropped.
+- Fix: a Mini-Split AC (and any thermostat without a capability cool range)
+  had no cool range. `SetpointRules(record=...)` reads the AC's remote ranges
+  through the new `DeviceRecord.ac_temperature_range(mode)`
+  (`SupportedModes[<mode>].temperatures`, else `TempRange`), and cooling falls
+  back to the HomeKit range.
+- Fix: `CommandRouter` now confirms a timed-out local `Setpoint` write that
+  landed, matching the device's float or int read-back against `.celsius`, and
+  records plain `.celsius` values instead of `Setpoint` objects in history,
+  pending and reconciliation records.
 
 ## 0.2.1 (2026-10-12)
 

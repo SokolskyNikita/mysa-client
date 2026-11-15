@@ -8,6 +8,9 @@ from typing import Any
 
 import pytest
 
+from mysa_client.cloud import Mode
+from mysa_client.cloud.setpoints import Setpoint, SetpointRules
+from mysa_client.runtime.events import NullHistory
 from mysa_client.runtime.routing import (
     CommandRouter,
     RouteOutcome,
@@ -484,3 +487,131 @@ async def test_preparation_runs_under_the_command_lock() -> None:
 
 async def _raise(error: BaseException) -> None:
     raise error
+
+
+class _RecordingHistory(NullHistory):
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def record(
+        self,
+        event: str,
+        *,
+        device_id: str | None = None,
+        noisy: bool = False,
+        **fields: Any,
+    ) -> None:
+        self.events.append({"event": event, **fields})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reading", [22.0, 22])
+async def test_timed_out_setpoint_write_that_landed_is_confirmed(
+    reading: float,
+) -> None:
+    """A typed Setpoint matches the device's float or int read-back."""
+    local = _Local()
+    cloud = _Cloud()
+    release = asyncio.Event()
+    local.write = lambda _values: release.wait()
+    local.read = lambda _fields: asyncio.sleep(0, result={"setpoint": reading})
+    history = _RecordingHistory()
+    router = _router(local, cloud, timeout=0.001)
+    router.history = history
+    setpoint = SetpointRules().setpoint(Mode.HEAT, 22)
+
+    async def write_cloud(_cloud: _Cloud) -> None:
+        pytest.fail("a confirmed local write must not fall back to cloud")
+
+    result = await router.async_route(
+        local_values={"setpoint": setpoint},
+        cloud_write=write_cloud,
+        cloud_applied=None,
+    )
+
+    assert result.outcome is RouteOutcome.LOCAL_CONFIRMED
+    # History and pending records hold plain °C values, not Setpoint objects.
+    submitted = next(e for e in history.events if e.get("status") == "submitted")
+    assert submitted["requested"] == {"setpoint": 22.0}
+    assert type(submitted["requested"]["setpoint"]) is float
+    assert router.pending_values == {"setpoint": 22.0}
+    assert not any(
+        isinstance(value, Setpoint)
+        for event in history.events
+        for value in event.get("requested", {}).values()
+    )
+    release.set()
+    assert router.pending_local is not None
+    await asyncio.gather(router.pending_local, return_exceptions=True)
+    await router.async_reconcile()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reading", [22.5, True, "22", None])
+async def test_timed_out_setpoint_write_with_other_reading_falls_back(
+    reading: Any,
+) -> None:
+    """An off-value, boolean or missing reading does not confirm a Setpoint."""
+    local = _Local()
+    cloud = _Cloud()
+    release = asyncio.Event()
+    local.write = lambda _values: release.wait()
+    local.read = lambda _fields: asyncio.sleep(0, result={"setpoint": reading})
+    router = _router(local, cloud, timeout=0.001)
+    rules = SetpointRules()
+    cloud_writes: list[float] = []
+
+    async def write_cloud(_cloud: _Cloud) -> None:
+        cloud_writes.append(1)
+
+    result = await router.async_route(
+        local_values={"setpoint": rules.setpoint(Mode.HEAT, 22)},
+        cloud_write=write_cloud,
+        cloud_applied=None,
+    )
+
+    assert result.outcome is RouteOutcome.CLOUD_WRITTEN
+    assert cloud_writes == [1]
+    release.set()
+    assert router.pending_local is not None
+    await asyncio.gather(router.pending_local, return_exceptions=True)
+    await router.async_reconcile()
+
+
+@pytest.mark.asyncio
+async def test_newer_setpoint_intent_compares_plain_values() -> None:
+    """Re-sending the pending Setpoint is not a newer intent to reconcile."""
+    local = _Local()
+    cloud = _Cloud()
+    release = asyncio.Event()
+    local.write = lambda _values: release.wait()
+    local.read = _unavailable_read
+    router = _router(local, cloud, timeout=0.001)
+    rules = SetpointRules()
+
+    async def write_cloud(_cloud: _Cloud) -> None:
+        return None
+
+    await router.async_route(
+        local_values={"setpoint": rules.setpoint(Mode.HEAT, 21)},
+        cloud_write=write_cloud,
+        cloud_applied=None,
+    )
+    await router.async_route(
+        local_values=None,
+        cloud_write=write_cloud,
+        cloud_applied=None,
+        intent={"setpoint": rules.setpoint(Mode.HEAT, 21)},
+    )
+    assert router.reconcile == {}
+    await router.async_route(
+        local_values=None,
+        cloud_write=write_cloud,
+        cloud_applied=None,
+        intent={"setpoint": rules.setpoint(Mode.HEAT, 23)},
+    )
+    assert set(router.reconcile) == {"setpoint"}
+    release.set()
+    assert router.pending_local is not None
+    await asyncio.gather(router.pending_local, return_exceptions=True)
+    await router.async_reconcile()

@@ -8,6 +8,7 @@ from typing import Any, Literal
 from .const import EXPERIMENTAL_CLOUD_FAMILIES, Mode, ModelFamily
 from .models import Capabilities, DeviceState
 from .observations import number
+from .setpoints import limits_ordered
 
 
 def validate_cloud_command(
@@ -90,12 +91,13 @@ def validate_cloud_command(
             command_value("setpoint_max", state.setpoint_max if state else None),
         )
         low_number, high_number = number(low), number(high)
+        # Same rule as SetpointRules.limit: equal limits are refused too.
         if (
             low_number is not None
             and high_number is not None
-            and low_number > high_number
+            and not limits_ordered(low_number, high_number)
         ):
-            raise ValueError("Minimum setpoint exceeds maximum")
+            raise ValueError("Minimum setpoint must be below the maximum")
 
 
 def validate_basic_command(

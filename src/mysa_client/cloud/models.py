@@ -46,6 +46,20 @@ def _float(value: Any) -> float | None:
     return number(value)
 
 
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _temperature(value: Any) -> float | None:
+    """A JSON number, or a numeric string as some remote records hold."""
+    if isinstance(value, str):
+        try:
+            return number(float(value))
+        except ValueError:
+            return None
+    return _float(value)
+
+
 def _int(value: Any) -> int | None:
     numeric = number(value)
     return int(numeric) if numeric is not None and numeric.is_integer() else None
@@ -304,9 +318,13 @@ class DeviceState:
         return self.duty_cycle > 0
 
     def setpoint_for(self, mode: Mode | None) -> float | None:
-        """The setpoint that applies in a mode (heat setpoint by default)."""
-        if mode == Mode.AUTO:
-            return None
+        """The single setpoint that applies in a mode (heat setpoint by default).
+
+        In heat/cool mode a single setpoint means the heat target, the same
+        rule as ``kind_for_mode`` and ``temperature_changes``, which write it to
+        ``targetHeat``. A heat/cool pair is ``auto_heat_setpoint`` /
+        ``auto_cool_setpoint``.
+        """
         if mode is not None and SETPOINT_SECTION_BY_MODE.get(mode) == "targetCool":
             return self.cool_setpoint
         return self.heat_setpoint
@@ -551,6 +569,38 @@ class DeviceRecord:
             speeds = {s for s in speeds if AC_FAN_KEYS[s] in keys}
         # AC_FAN_TO_STATE numbers them auto, low, medium, high, 1-7, sleep.
         return tuple(sorted(speeds, key=AC_FAN_TO_STATE.__getitem__))
+
+    def ac_temperature_range(self, mode: Mode) -> tuple[float, float, float] | None:
+        """The (min, max, step) in °C the AC's remote offers in a mode.
+
+        Mysa's app 4.21.1 reads ``SupportedModes[<mode>].temperatures``, a list
+        of the remote's whole-degree targets, and falls back to the record's
+        ``TempRange`` ``[min, max]`` (``[16, 30]`` by default). The step is the
+        smallest gap in that list, or 1 °C (the app's ``stepIncrement``) when
+        the list has fewer than two values. Values outside 0-50 °C are ignored,
+        so a list in another unit is never taken for °C. ``None`` when the
+        record advertises neither.
+        """
+        values = sorted(
+            {
+                v
+                for v in map(
+                    _temperature, _list(self._ac_mode(mode).get("temperatures"))
+                )
+                if v is not None and 0 <= v <= 50
+            }
+        )
+        if values:
+            gaps = [round(b - a, 4) for a, b in itertools.pairwise(values)]
+            return values[0], values[-1], min(gaps) if gaps else 1.0
+        pair = [
+            v
+            for v in map(_temperature, _list(self.raw.get("TempRange")))
+            if v is not None and 0 <= v <= 50
+        ]
+        if len(pair) == 2:
+            return min(pair), max(pair), 1.0
+        return None
 
     def ac_swing(self, mode: Mode, direction: str) -> tuple[Swing, ...]:
         """Swing settings the AC's remote offers in a mode (vertical or horizontal)."""

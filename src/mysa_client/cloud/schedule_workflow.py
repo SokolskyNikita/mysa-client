@@ -19,7 +19,13 @@ from typing import Any, NoReturn, Protocol
 from .client import MysaClient
 from .commands import ScheduleEventSpec, encode_schedule_events
 from .const import Mode
-from .setpoints import require_setpoint
+from .setpoints import (
+    Setpoint,
+    SetpointModeError,
+    SetpointRules,
+    Unit,
+    require_setpoint,
+)
 
 
 class ScheduleJournal(Protocol):
@@ -112,22 +118,42 @@ def build_schedule_events(
     *,
     default_mode: Mode = Mode.HEAT,
     client_key: str = "mysa-client",
+    rules: SetpointRules | None = None,
+    unit: Unit = "C",
 ) -> list[dict[str, Any]]:
     """Encode semantic weekday events in the cloud schedule representation.
 
-    Each event's ``temperature`` must be ``None`` or a ``Setpoint`` from
-    ``SetpointRules.schedule_event``; a plain number raises ``TypeError``.
+    Each event has ``days``, ``time``, an optional ``hvac_mode`` (a ``Mode``
+    name, else ``default_mode``) and an optional ``temperature``. With
+    ``rules``, a temperature may be a plain number in ``unit``; it is rounded
+    and strictly checked for the event's mode
+    (``SetpointRules.schedule_event``), so an out-of-range value raises
+    ``SetpointOutOfRangeError``. A ``Setpoint`` is used as given. Without
+    ``rules`` a plain number raises ``TypeError``. A temperature on a
+    heat/cool (``auto``) event raises ``SetpointModeError``, since an event
+    stores a single setpoint; an ``off`` event's temperature is dropped.
     """
     specs: list[ScheduleEventSpec] = []
     for event in events:
-        temperature = event.get("temperature")
+        mode = Mode[str(event.get("hvac_mode", default_mode.name)).upper()]
+        # An OFF event carries no setpoint, like an OFF hold.
+        temperature = None if mode == Mode.OFF else event.get("temperature")
         if temperature is not None:
-            require_setpoint(temperature, "Schedule event temperature")
+            if mode == Mode.AUTO:
+                raise SetpointModeError(
+                    mode,
+                    "A schedule event in heat/cool mode can't carry a temperature",
+                )
+            if not isinstance(temperature, Setpoint):
+                if rules is None:
+                    require_setpoint(temperature, "Schedule event temperature")
+                assert rules is not None
+                temperature = rules.schedule_event(mode, temperature, unit=unit)
         specs.append(
             ScheduleEventSpec(
                 days=tuple(event["days"]),
                 at=event["time"],
-                mode=Mode[str(event.get("hvac_mode", default_mode.name)).upper()],
+                mode=mode,
                 temperature=temperature,
                 client_key=client_key,
             )
