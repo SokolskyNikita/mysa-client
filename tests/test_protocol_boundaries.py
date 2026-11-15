@@ -10,6 +10,10 @@ import pytest
 import mysa_client
 
 PACKAGE = Path(mysa_client.__file__).parent
+# The one module every protocol may share: typed temperatures that each write
+# path must recognise by identity. It may depend only on the standard library.
+SHARED_MODULE = "mysa_client._temperature"
+PACKAGES = {"cloud", "homekit", "mqtt", "runtime"}
 
 
 @pytest.mark.parametrize("protocol", ["cloud", "homekit", "mqtt"])
@@ -26,12 +30,45 @@ def test_protocol_import_boundary(protocol: str) -> None:
                 continue
             for module in modules:
                 assert not module.startswith(("homeassistant", "custom_components"))
+                if module.startswith("mysa_client.") and not module.startswith(
+                    f"mysa_client.{protocol}"
+                ):
+                    assert module == SHARED_MODULE, (path, module)
                 for other in {"cloud", "homekit", "mqtt"} - {protocol}:
                     assert not module.startswith(f"mysa_client.{other}"), path
                 if protocol == "cloud":
                     assert not module.startswith(
                         ("aiohomekit", "zeroconf", "boto3", "botocore", "paho")
                     ), path
+
+
+def test_shared_module_uses_only_the_standard_library() -> None:
+    """The shared layer stays a leaf: no package of ours and no third party."""
+    path = PACKAGE / "_temperature.py"
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.ImportFrom):
+            assert node.level == 0, "the shared module uses absolute imports"
+            modules = [node.module or ""]
+        elif isinstance(node, ast.Import):
+            modules = [name.name for name in node.names]
+        else:
+            continue
+        for module in modules:
+            assert module.split(".")[0] in sys.stdlib_module_names | {"__future__"}, (
+                module
+            )
+
+
+def test_shared_module_is_the_public_cloud_type() -> None:
+    """Protocols and cloud callers see the very same classes and checks."""
+    from mysa_client import _temperature
+    from mysa_client.cloud import Setpoint, SetpointClamp, TemperatureOffset, setpoints
+
+    assert Setpoint is _temperature.Setpoint
+    assert TemperatureOffset is _temperature.TemperatureOffset
+    assert SetpointClamp is _temperature.SetpointClamp
+    assert setpoints.require_setpoint is _temperature.require_setpoint
+    assert setpoints.require_offset is _temperature.require_offset
 
 
 def test_cloud_imports_without_optional_dependencies() -> None:

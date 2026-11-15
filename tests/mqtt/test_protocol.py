@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from mysa_client.cloud import Setpoint, SetpointRules
 from mysa_client.mqtt import (
     MessageKind,
     MqttProtocolError,
@@ -130,6 +131,11 @@ def test_retained_marker_survives_parsing() -> None:
     assert event.retained
 
 
+def ruled(celsius: float) -> Setpoint:
+    """A setpoint from rules with no advertised bounds, so range checks stay ours."""
+    return SetpointRules().setpoint(None, celsius)
+
+
 def command(**kwargs):
     """Build an envelope for an explicitly chosen device and user subject."""
     return encode_thermostat_command(
@@ -142,7 +148,7 @@ def command(**kwargs):
 
 
 def test_command_uses_app_array_form_and_preserves_hold_unless_requested() -> None:
-    payload, expected = command(setpoint=21.5)
+    payload, expected = command(setpoint=ruled(21.5))
     original = fixture("thermostat-command.array")
     original["src"]["ref"] = "user-pool-subject"
     assert payload == original
@@ -160,7 +166,7 @@ def test_mode_uses_the_mqtt_numbering(mode: str, wire: int) -> None:
 
 
 def test_explicit_hold_is_encoded() -> None:
-    payload, expected = command(setpoint=20, hold=True)
+    payload, expected = command(setpoint=ruled(20), hold=True)
     assert payload["body"]["cmd"][0]["ho"] == 2
     assert expected["ho"] == 2
 
@@ -169,19 +175,31 @@ def test_explicit_hold_is_encoded() -> None:
     "kwargs",
     [
         {},
-        {"setpoint": True},
-        {"setpoint": float("nan")},
-        {"setpoint": float("inf")},
-        {"setpoint": 4},
-        {"setpoint": 31},
+        {"setpoint": ruled(4.5)},
+        {"setpoint": ruled(30.5)},
         {"mode": "cool"},
         {"mode": "auto"},
-        {"setpoint": 20, "hold": 1},
+        {"setpoint": ruled(20), "hold": 1},
     ],
 )
 def test_unsupported_commands_are_rejected_before_publication(kwargs: dict) -> None:
     with pytest.raises(MqttProtocolError):
         command(**kwargs)
+
+
+@pytest.mark.parametrize("value", [21.5, 21, True, float("nan"), float("inf"), "21.5"])
+def test_command_setpoint_must_come_from_rules(value: object) -> None:
+    """Plain numbers, including on-grid ones, never reach the wire."""
+    with pytest.raises(TypeError, match="setpoint must be a Setpoint from"):
+        command(setpoint=value)
+
+
+def test_command_writes_the_ruled_celsius() -> None:
+    """An off-grid request is sent as the rules' rounded value."""
+    setpoint = SetpointRules(homekit_range=(5, 30, 0.5)).setpoint(None, 22.78)
+    payload, expected = command(setpoint=setpoint)
+    assert payload["body"]["cmd"][0]["sp"] == 23.0
+    assert expected == {"sp": 23.0}
 
 
 @pytest.mark.parametrize(

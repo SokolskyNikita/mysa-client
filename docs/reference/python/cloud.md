@@ -52,7 +52,12 @@ code that can create `Setpoint` and `TemperatureOffset` values. The builders
 `build_schedule_events`, `ScheduleEventSpec`, `HoldCommand`/`resolve_hold`,
 `async_apply_hold`, and the matching `MysaClient` setters accept nothing else
 and raise `TypeError` for a plain number; constructing `Setpoint(21.5)` directly
-also raises `TypeError`. Read the value back with `.celsius`.
+also raises `TypeError`. Read the value back with `.celsius`. The value types
+and checks are defined in the dependency-free `mysa_client._temperature`, so
+the HomeKit and MQTT packages can share them without importing cloud. Local
+writes follow the same rule: `HomeKitDevice.async_write` for `Field.TARGET_TEMPERATURE`
+and the MQTT `set_setpoint`, `set_mode(setpoint=...)` and
+`encode_thermostat_command(setpoint=...)` take a `Setpoint` too.
 
 `SetpointRules(capabilities=None, homekit_range=None, *, setpoint_min=None,
 setpoint_max=None)` derives one `SetpointRange(minimum, maximum, step)` per
@@ -107,6 +112,7 @@ delta.
 | [`client.py`](../../../src/mysa_client/cloud/client.py) | HTTP requests, endpoint methods, response handling, and explicit validated `execute_command()` |
 | [`commands.py`](../../../src/mysa_client/cloud/commands.py) | Semantic controls, enum conversion, schedule encoding |
 | [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | Setpoint rounding, range validation, and Fahrenheit display rules |
+| [`_temperature.py`](../../../src/mysa_client/_temperature.py) | The `Setpoint`, `TemperatureOffset` and `SetpointClamp` types and the `require_setpoint`/`require_offset` checks, outside every protocol package so HomeKit and MQTT can check them without importing cloud; it uses only the standard library. Import them from `setpoints.py`, which re-exports them and alone creates values. |
 | [`models.py`](../../../src/mysa_client/cloud/models.py) | Typed response parsing, preserving original JSON in `raw` |
 | [`const.py`](../../../src/mysa_client/cloud/const.py), [`exceptions.py`](../../../src/mysa_client/cloud/exceptions.py) | Hosts, protocol constants/enums, errors |
 

@@ -13,7 +13,7 @@ import time
 
 import aiohttp
 
-from mysa_client.cloud import MysaAuth, MysaClient
+from mysa_client.cloud import Mode, MysaAuth, MysaClient, Setpoint, SetpointRules
 from mysa_client.mqtt import MessageKind, MysaMqttClient, supports_commands
 
 USER_AGENT = "mysa-client-mqtt-example/0.1"
@@ -153,6 +153,7 @@ async def main(args: argparse.Namespace) -> None:
             raise RuntimeError("MYSA_DEVICE_ID was not found in account discovery")
 
         selected_ids = [requested_id] if requested_id else list(devices)
+        setpoint: Setpoint | None = None
         if target is not None:
             model = devices[requested_id or ""]
             if not supports_commands(model):
@@ -160,11 +161,11 @@ async def main(args: argparse.Namespace) -> None:
                     "MQTT setpoint commands currently support Baseboard Lite only"
                 )
             capabilities = await cloud.get_capabilities(requested_id or "")
-            limits = capabilities.heat_setpoint_range
-            if limits is None or not limits[0] <= target <= limits[1]:
-                raise ValueError(
-                    "MYSA_SET_CELSIUS is outside the device's advertised heat range"
-                )
+            if capabilities.heat_setpoint_range is None:
+                raise ValueError("This thermostat does not advertise a heating range")
+            # Rounds to the advertised step and raises SetpointOutOfRangeError
+            # outside the heating range. MQTT writes accept only this Setpoint.
+            setpoint = SetpointRules(capabilities).setpoint(Mode.HEAT, target)
 
         print(f"Discovered {len(devices)} thermostat(s).")
         print("Connecting to the legacy Mysa MQTT Identity Pool and subscribing.")
@@ -185,8 +186,8 @@ async def main(args: argparse.Namespace) -> None:
                         f"reply received={echo.echoed}, timed out={echo.timed_out}"
                     )
 
-                if target is not None and requested_id is not None:
-                    result = await mqtt.set_setpoint(requested_id, target)
+                if setpoint is not None and requested_id is not None:
+                    result = await mqtt.set_setpoint(requested_id, setpoint)
                     print(
                         "Setpoint result: "
                         f"broker accepted={result.broker_accepted!r}, "

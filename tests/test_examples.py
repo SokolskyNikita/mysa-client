@@ -492,6 +492,30 @@ async def test_homekit_reuses_saved_pairing_reads_events_and_shuts_down(
     assert '"reconnected": true' in capsys.readouterr().out
 
 
+async def test_homekit_setpoint_goes_through_the_rules(
+    homekit_example, tmp_path: Path
+) -> None:
+    """A requested target is rounded to the accessory's step before writing."""
+    pairing_file = tmp_path / "pairing.json"
+    pairing_file.write_text(json.dumps({"AccessoryPairingID": "AA:BB"}))
+
+    await homekit_example.module.run(
+        _homekit_args(pairing_file, use_saved_pairing=True, set_target_c=21.3)
+    )
+    device = homekit_example.protocol.device
+    ((values,),) = [args for name, args in device.calls if name == "write"]
+    setpoint = values[Field.TARGET_TEMPERATURE]
+    assert isinstance(setpoint, Setpoint)
+    assert setpoint.celsius == 21.0
+
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        await homekit_example.module.run(
+            _homekit_args(pairing_file, use_saved_pairing=True, set_target_c=28.5)
+        )
+    assert error.value.limit == 28
+    assert error.value.bound == "max"
+
+
 async def test_homekit_failure_still_unsubscribes_and_shuts_down(
     homekit_example, tmp_path: Path
 ) -> None:

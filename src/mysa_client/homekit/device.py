@@ -20,6 +20,8 @@ from aiohomekit.exceptions import (
 from aiohomekit.model.characteristics import CharacteristicsTypes
 from aiohomekit.model.services import ServicesTypes
 
+from mysa_client._temperature import require_setpoint
+
 from .exceptions import (
     HomeKitAuthenticationError,
     HomeKitCharacteristicReadError,
@@ -71,7 +73,9 @@ _SERVICE_FIELDS: dict[str, dict[str, Field]] = {
         _AMBIENT_LIGHT: Field.AMBIENT_LIGHT,
     },
 }
-_READ_ONLY_FIELDS = frozenset({Field.AMBIENT_LIGHT})
+# Measured values. The current temperature is read-only in HAP and is not a
+# normalised setpoint, so it never reaches the thermostat as a write.
+_READ_ONLY_FIELDS = frozenset({Field.CURRENT_TEMPERATURE, Field.AMBIENT_LIGHT})
 _INFO_CHAR_FIELDS = {
     CharacteristicsTypes.NAME: "name",
     CharacteristicsTypes.MODEL: "model",
@@ -177,6 +181,16 @@ def _encode(field: Field, value: Any) -> Any:
             return 1
         raise HomeKitWriteRejectedError("Display unit must be C or F")
     return value
+
+
+def _semantic_write_values(values: Mapping[Field, Any]) -> dict[Field, Any]:
+    """Unwrap ruled temperatures, refusing any temperature that skipped them."""
+    semantic = dict(values)
+    if Field.TARGET_TEMPERATURE in semantic:
+        semantic[Field.TARGET_TEMPERATURE] = require_setpoint(
+            semantic[Field.TARGET_TEMPERATURE], Field.TARGET_TEMPERATURE.value
+        )
+    return semantic
 
 
 @dataclass(frozen=True, slots=True)
@@ -588,7 +602,14 @@ class HomeKitDevice:
         return values, missing
 
     async def async_write(self, values: Mapping[Field, Any]) -> None:
-        """Write semantic fields, rejecting unsupported or failed operations."""
+        """Write semantic fields, rejecting unsupported or failed operations.
+
+        ``Field.TARGET_TEMPERATURE`` takes a
+        :class:`~mysa_client.cloud.setpoints.Setpoint` from ``SetpointRules``
+        and writes its ``.celsius``; a plain number raises ``TypeError`` before
+        anything is sent.
+        """
+        values = _semantic_write_values(values)
         async with self.__operation_lock:
             await self.__refresh_if_needed()
         # A timed-out write stays alive while HA independently reads back its

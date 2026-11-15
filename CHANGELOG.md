@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- **Breaking:** every temperature write now requires a typed value from the new
-  `SetpointRules` (in `mysa_client.cloud.setpoints`, also exported from
+- **Breaking:** every temperature write now requires a typed value from the
+  new `SetpointRules` (in `mysa_client.cloud.setpoints`, also exported from
   `mysa_client.cloud`). `temperature_changes`, `auto_temperature_changes`,
   `make_state`, `setpoint_limit_changes`, `climate_command` (`temperature`,
   `low`, `high`), `ScheduleEventSpec.temperature`, `build_schedule_events`
@@ -16,7 +16,14 @@
   homekit_range, setpoint_min=..., setpoint_max=...)` and
   `rules.setpoint(mode, value)`, `rules.heat_cool(low, high)`,
   `rules.limit(value, minimum=...)`, `rules.offset(delta)` or
-  `rules.schedule_event(mode, value)`.
+  `rules.schedule_event(mode, value)`. Local writes follow the same rule:
+  `HomeKitDevice.async_write` takes a `Setpoint` for
+  `Field.TARGET_TEMPERATURE` and writes its `.celsius`;
+  `Field.CURRENT_TEMPERATURE` is now refused as read-only. MQTT
+  `MysaMqttClient.set_setpoint` (whose `celsius` parameter is renamed
+  `setpoint`), `set_mode(setpoint=...)` and
+  `encode_thermostat_command(setpoint=...)` take a `Setpoint`. A plain number
+  raises `TypeError` before anything is sent.
 - `SetpointRules` rounds to each range's own step (0.5 °C when none is
   advertised), anchored at 0 with halfway values rounded up, accepts °C or °F
   input, and either raises `SetpointOutOfRangeError` or, with `strict=False`,

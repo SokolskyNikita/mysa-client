@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from aiohomekit.model.characteristics import CharacteristicsTypes
 import pytest
 
+from mysa_client.cloud import SetpointRules
 from mysa_client.homekit import (
     Field,
     HomeKitCharacteristicReadError,
@@ -50,7 +51,9 @@ async def test_device_reads_and_writes_semantic_values() -> None:
     await device.async_write(
         {
             Field.TARGET_MODE: LocalMode.OFF,
-            Field.TARGET_TEMPERATURE: 19.5,
+            Field.TARGET_TEMPERATURE: SetpointRules(
+                homekit_range=device.temperature_range
+            ).setpoint(None, 19.5),
             Field.DISPLAY_UNIT: "F",
         }
     )
@@ -77,6 +80,74 @@ async def test_device_reads_and_writes_semantic_values() -> None:
     assert "AccessoryPairingID" not in str(diagnostics)
     assert "serial" not in diagnostics
     unsubscribe()
+    await device.async_close()
+
+
+async def test_target_temperature_writes_the_ruled_celsius() -> None:
+    """An off-grid request (HA's 73 °F) reaches HAP as the rules' float."""
+    controller = await make_controller(paired=True)
+    pairing = controller.aliases[PAIRING_DATA["AccessoryPairingID"]]
+    device = HomeKitProtocol.from_controller(controller).load_pairing(PAIRING_DATA)
+    events = []
+    device.add_listener(events.append)
+    await device.async_connect()
+    target = fake_characteristic_address(
+        pairing, CharacteristicsTypes.TEMPERATURE_TARGET
+    )
+    setpoint = SetpointRules(homekit_range=device.temperature_range).setpoint(
+        None, 73, unit="F"
+    )
+
+    with patch.object(
+        pairing, "put_characteristics", wraps=pairing.put_characteristics
+    ) as put:
+        await device.async_write({Field.TARGET_TEMPERATURE: setpoint})
+
+    put.assert_awaited_once_with([(*target, 23.0)])
+    assert type(device.state[Field.TARGET_TEMPERATURE]) is float
+    assert device.state[Field.TARGET_TEMPERATURE] == 23.0
+    assert events[-1].values == {Field.TARGET_TEMPERATURE: 23.0}
+    await device.async_close()
+
+
+@pytest.mark.parametrize("value", [19.5, 20, True, float("nan"), "20", None])
+async def test_target_temperature_rejects_plain_values(value: Any) -> None:
+    """A temperature that skipped SetpointRules is refused before any I/O."""
+    controller = await make_controller(paired=True)
+    pairing = controller.aliases[PAIRING_DATA["AccessoryPairingID"]]
+    device = HomeKitProtocol.from_controller(controller).load_pairing(PAIRING_DATA)
+    await device.async_connect()
+    before = dict(device.state)
+
+    with (
+        patch.object(pairing, "put_characteristics", new=AsyncMock()) as put,
+        pytest.raises(
+            TypeError, match="target_temperature must be a Setpoint from SetpointRules"
+        ),
+    ):
+        await device.async_write(
+            {Field.TARGET_MODE: LocalMode.OFF, Field.TARGET_TEMPERATURE: value}
+        )
+
+    put.assert_not_called()
+    assert dict(device.state) == before
+    await device.async_close()
+
+
+async def test_current_temperature_cannot_be_written() -> None:
+    """The measured temperature is read-only, so no raw value can be sent."""
+    controller = await make_controller(paired=True)
+    pairing = controller.aliases[PAIRING_DATA["AccessoryPairingID"]]
+    device = HomeKitProtocol.from_controller(controller).load_pairing(PAIRING_DATA)
+    await device.async_connect()
+
+    with (
+        patch.object(pairing, "put_characteristics", new=AsyncMock()) as put,
+        pytest.raises(HomeKitWriteRejectedError, match="read-only"),
+    ):
+        await device.async_write({Field.CURRENT_TEMPERATURE: 20.0})
+
+    put.assert_not_called()
     await device.async_close()
 
 

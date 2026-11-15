@@ -29,7 +29,10 @@ construction and TLS setup run off the asyncio event loop.
 
 The client also provides a non-mutating `echo()` check. `set_setpoint()` and
 `set_mode()` send real thermostat commands and should be used only when a
-consumer intentionally wants to change a supported Lite. `CommandResult`
+consumer intentionally wants to change a supported Lite. Their setpoint, like
+`encode_thermostat_command(setpoint=...)`, must be a `Setpoint` from
+[`SetpointRules`](cloud.md#setpoint-rules); a plain number raises `TypeError`,
+and the `.celsius` value is sent. `CommandResult`
 reports `broker_accepted` and `device_confirmed` separately: the first reflects
 the QoS 1 PUBACK, while the second requires a matching successful device
 acknowledgement. A timeout can leave the outcome uncertain, and the client does

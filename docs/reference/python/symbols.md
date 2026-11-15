@@ -171,26 +171,26 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [HomeKitDevice.__init__](../../../src/mysa_client/homekit/device.py#L248) | `(self, pairing: Any, pairing_data: Mapping[str, Any]) -> None` | Wrap a raw pairing without exposing it to callers. |
-| [HomeKitDevice.pairing_data](../../../src/mysa_client/homekit/device.py#L269) | `(self) -> dict[str, Any]` | Return a copy for persistence and endpoint updates. |
-| [HomeKitDevice.info](../../../src/mysa_client/homekit/device.py#L274) | `(self) -> AccessoryInfo` | Current accessory information, if it has been read. |
-| [HomeKitDevice.state](../../../src/mysa_client/homekit/device.py#L279) | `(self) -> Mapping[Field, Any]` | Current semantic values as an immutable view. |
-| [HomeKitDevice.failed_fields](../../../src/mysa_client/homekit/device.py#L284) | `(self) -> Mapping[Field, str]` | Fields whose latest required observation failed. |
-| [HomeKitDevice.capabilities](../../../src/mysa_client/homekit/device.py#L289) | `(self) -> Mapping[Field, CharacteristicInfo]` | Supported semantic fields and their advertised limits. |
-| [HomeKitDevice.supported_fields](../../../src/mysa_client/homekit/device.py#L296) | `(self) -> frozenset[Field]` | Fields present in this accessory's thermostat and sensor services. |
-| [HomeKitDevice.ready](../../../src/mysa_client/homekit/device.py#L301) | `(self) -> bool` | Whether the essential thermostat fields were discovered. |
-| [HomeKitDevice.host](../../../src/mysa_client/homekit/device.py#L306) | `(self) -> str \| None` | Last known accessory address, used by the HA repair message. |
-| [HomeKitDevice.supported_modes](../../../src/mysa_client/homekit/device.py#L312) | `(self) -> tuple[LocalMode, ...]` | Modes advertised by the thermostat, with a safe baseboard default. |
-| [HomeKitDevice.temperature_range](../../../src/mysa_client/homekit/device.py#L322) | `(self) -> tuple[float \| None, float \| None, float \| None]` | Setpoint minimum, maximum and step advertised by the accessory. |
-| [HomeKitDevice.add_listener](../../../src/mysa_client/homekit/device.py#L330) | `(self, listener: Callable[[HomeKitEvent], None]) -> Callable[[], None]` | Subscribe to semantic value and connection events. |
-| [HomeKitDevice.add_endpoint_listener](../../../src/mysa_client/homekit/device.py#L341) | `(self, listener: Callable[[HomeKitEndpoint], None]) -> Callable[[], None]` | Subscribe to changes in the saved accessory address and port. |
-| [HomeKitDevice.async_get_info](../../../src/mysa_client/homekit/device.py#L352) | `async (self) -> AccessoryInfo` | Refresh the accessory database and return its identity values. |
-| [HomeKitDevice.async_connect](../../../src/mysa_client/homekit/device.py#L371) | `async (self) -> None` | Refresh characteristics and subscriptions, with bounded retries. |
-| [HomeKitDevice.async_read](../../../src/mysa_client/homekit/device.py#L469) | `async (self, fields: Iterable[Field], *, timeout: float \| None=None) -> dict[Field, Any]` | Read semantic fields and update the cached values on success. |
-| [HomeKitDevice.async_write](../../../src/mysa_client/homekit/device.py#L590) | `async (self, values: Mapping[Field, Any]) -> None` | Write semantic fields, rejecting unsupported or failed operations. |
-| [HomeKitDevice.async_identify](../../../src/mysa_client/homekit/device.py#L645) | `async (self) -> None` | Ask the accessory to identify itself. |
-| [HomeKitDevice.async_close](../../../src/mysa_client/homekit/device.py#L667) | `async (self) -> None` | Unsubscribe and close this pairing session. |
-| [HomeKitDevice.diagnostics](../../../src/mysa_client/homekit/device.py#L683) | `(self) -> dict[str, Any]` | Return safe, semantic values without IDs or pairing credentials. |
+| [HomeKitDevice.__init__](../../../src/mysa_client/homekit/device.py#L262) | `(self, pairing: Any, pairing_data: Mapping[str, Any]) -> None` | Wrap a raw pairing without exposing it to callers. |
+| [HomeKitDevice.pairing_data](../../../src/mysa_client/homekit/device.py#L283) | `(self) -> dict[str, Any]` | Return a copy for persistence and endpoint updates. |
+| [HomeKitDevice.info](../../../src/mysa_client/homekit/device.py#L288) | `(self) -> AccessoryInfo` | Current accessory information, if it has been read. |
+| [HomeKitDevice.state](../../../src/mysa_client/homekit/device.py#L293) | `(self) -> Mapping[Field, Any]` | Current semantic values as an immutable view. |
+| [HomeKitDevice.failed_fields](../../../src/mysa_client/homekit/device.py#L298) | `(self) -> Mapping[Field, str]` | Fields whose latest required observation failed. |
+| [HomeKitDevice.capabilities](../../../src/mysa_client/homekit/device.py#L303) | `(self) -> Mapping[Field, CharacteristicInfo]` | Supported semantic fields and their advertised limits. |
+| [HomeKitDevice.supported_fields](../../../src/mysa_client/homekit/device.py#L310) | `(self) -> frozenset[Field]` | Fields present in this accessory's thermostat and sensor services. |
+| [HomeKitDevice.ready](../../../src/mysa_client/homekit/device.py#L315) | `(self) -> bool` | Whether the essential thermostat fields were discovered. |
+| [HomeKitDevice.host](../../../src/mysa_client/homekit/device.py#L320) | `(self) -> str \| None` | Last known accessory address, used by the HA repair message. |
+| [HomeKitDevice.supported_modes](../../../src/mysa_client/homekit/device.py#L326) | `(self) -> tuple[LocalMode, ...]` | Modes advertised by the thermostat, with a safe baseboard default. |
+| [HomeKitDevice.temperature_range](../../../src/mysa_client/homekit/device.py#L336) | `(self) -> tuple[float \| None, float \| None, float \| None]` | Setpoint minimum, maximum and step advertised by the accessory. |
+| [HomeKitDevice.add_listener](../../../src/mysa_client/homekit/device.py#L344) | `(self, listener: Callable[[HomeKitEvent], None]) -> Callable[[], None]` | Subscribe to semantic value and connection events. |
+| [HomeKitDevice.add_endpoint_listener](../../../src/mysa_client/homekit/device.py#L355) | `(self, listener: Callable[[HomeKitEndpoint], None]) -> Callable[[], None]` | Subscribe to changes in the saved accessory address and port. |
+| [HomeKitDevice.async_get_info](../../../src/mysa_client/homekit/device.py#L366) | `async (self) -> AccessoryInfo` | Refresh the accessory database and return its identity values. |
+| [HomeKitDevice.async_connect](../../../src/mysa_client/homekit/device.py#L385) | `async (self) -> None` | Refresh characteristics and subscriptions, with bounded retries. |
+| [HomeKitDevice.async_read](../../../src/mysa_client/homekit/device.py#L483) | `async (self, fields: Iterable[Field], *, timeout: float \| None=None) -> dict[Field, Any]` | Read semantic fields and update the cached values on success. |
+| [HomeKitDevice.async_write](../../../src/mysa_client/homekit/device.py#L604) | `async (self, values: Mapping[Field, Any]) -> None` | Write semantic fields, rejecting unsupported or failed operations. |
+| [HomeKitDevice.async_identify](../../../src/mysa_client/homekit/device.py#L666) | `async (self) -> None` | Ask the accessory to identify itself. |
+| [HomeKitDevice.async_close](../../../src/mysa_client/homekit/device.py#L688) | `async (self) -> None` | Unsubscribe and close this pairing session. |
+| [HomeKitDevice.diagnostics](../../../src/mysa_client/homekit/device.py#L704) | `(self) -> dict[str, Any]` | Return safe, semantic values without IDs or pairing credentials. |
 
 
 ## MQTT
@@ -201,19 +201,19 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [MysaMqttClient.__init__](../../../src/mysa_client/mqtt/client.py#L123) | `(self, token_provider: Callable[[], Awaitable[str]], devices: Mapping[str, str], *, region: str=REGION, endpoint: str=ENDPOINT, identity_pool_id: str=IDENTITY_POOL_ID, user_pool_id: str=USER_POOL_ID, event_queue_size: int=100, connect_timeout: float=20, publish_timeout: float=5, command_timeout: float=15, shutdown_timeout: float=7, reconnect_min_delay: float=1, reconnect_max_delay: float=20, _client_factory: Callable[[], Any] \| None=None, _identity_credentials_provider: Callable[[str], AwsCredentials] \| None=None, _sign_path: Callable[[AwsCredentials], str] \| None=None) -> None` | Configure an allowlisted MQTT connection without opening it. |
-| [MysaMqttClient.connected](../../../src/mysa_client/mqtt/client.py#L213) | `(self) -> bool` | Whether CONNECT and all allowlisted SUBACKs have succeeded. |
-| [MysaMqttClient.connection_generation](../../../src/mysa_client/mqtt/client.py#L218) | `(self) -> int` | Count of MQTT sessions that completed CONNECT and all SUBACKs. |
-| [MysaMqttClient.dropped_events](../../../src/mysa_client/mqtt/client.py#L229) | `(self) -> int` | Number of events dropped because the bounded queue was full. |
-| [MysaMqttClient.connect](../../../src/mysa_client/mqtt/client.py#L233) | `async (self) -> None` | Connect and wait for broker acceptance of all device subscriptions. |
-| [MysaMqttClient.close](../../../src/mysa_client/mqtt/client.py#L261) | `async (self) -> None` | Stop reconnecting and bound cleanup of the Paho network worker. |
-| [MysaMqttClient.__aenter__](../../../src/mysa_client/mqtt/client.py#L292) | `async (self) -> Self` | Connect and return this client for an async context. |
-| [MysaMqttClient.__aexit__](../../../src/mysa_client/mqtt/client.py#L297) | `async (self, *_: object) -> None` | Close the connection when leaving an async context. |
-| [MysaMqttClient.events](../../../src/mysa_client/mqtt/client.py#L301) | `async (self) -> AsyncIterator[MqttMessage]` | Yield parsed events from the bounded queue; one consumer owns it. |
-| [MysaMqttClient.request_live_status](../../../src/mysa_client/mqtt/client.py#L309) | `async (self, device_id: str, *, timeout_seconds: int=180) -> PublishResult` | Ask an allowlisted device to publish live telemetry for 180 seconds. |
-| [MysaMqttClient.echo](../../../src/mysa_client/mqtt/client.py#L332) | `async (self, device_id: str, *, timeout_seconds: float \| None=None) -> EchoResult` | Send the legacy echo probe and wait for the matching device reply. |
-| [MysaMqttClient.set_setpoint](../../../src/mysa_client/mqtt/client.py#L378) | `async (self, device_id: str, celsius: float, *, mode: str \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set a Lite target and optionally include mode or hold state. |
-| [MysaMqttClient.set_mode](../../../src/mysa_client/mqtt/client.py#L396) | `async (self, device_id: str, mode: str, *, setpoint: float \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set Lite mode to off or heat, optionally with a target or hold. |
+| [MysaMqttClient.__init__](../../../src/mysa_client/mqtt/client.py#L125) | `(self, token_provider: Callable[[], Awaitable[str]], devices: Mapping[str, str], *, region: str=REGION, endpoint: str=ENDPOINT, identity_pool_id: str=IDENTITY_POOL_ID, user_pool_id: str=USER_POOL_ID, event_queue_size: int=100, connect_timeout: float=20, publish_timeout: float=5, command_timeout: float=15, shutdown_timeout: float=7, reconnect_min_delay: float=1, reconnect_max_delay: float=20, _client_factory: Callable[[], Any] \| None=None, _identity_credentials_provider: Callable[[str], AwsCredentials] \| None=None, _sign_path: Callable[[AwsCredentials], str] \| None=None) -> None` | Configure an allowlisted MQTT connection without opening it. |
+| [MysaMqttClient.connected](../../../src/mysa_client/mqtt/client.py#L215) | `(self) -> bool` | Whether CONNECT and all allowlisted SUBACKs have succeeded. |
+| [MysaMqttClient.connection_generation](../../../src/mysa_client/mqtt/client.py#L220) | `(self) -> int` | Count of MQTT sessions that completed CONNECT and all SUBACKs. |
+| [MysaMqttClient.dropped_events](../../../src/mysa_client/mqtt/client.py#L231) | `(self) -> int` | Number of events dropped because the bounded queue was full. |
+| [MysaMqttClient.connect](../../../src/mysa_client/mqtt/client.py#L235) | `async (self) -> None` | Connect and wait for broker acceptance of all device subscriptions. |
+| [MysaMqttClient.close](../../../src/mysa_client/mqtt/client.py#L263) | `async (self) -> None` | Stop reconnecting and bound cleanup of the Paho network worker. |
+| [MysaMqttClient.__aenter__](../../../src/mysa_client/mqtt/client.py#L294) | `async (self) -> Self` | Connect and return this client for an async context. |
+| [MysaMqttClient.__aexit__](../../../src/mysa_client/mqtt/client.py#L299) | `async (self, *_: object) -> None` | Close the connection when leaving an async context. |
+| [MysaMqttClient.events](../../../src/mysa_client/mqtt/client.py#L303) | `async (self) -> AsyncIterator[MqttMessage]` | Yield parsed events from the bounded queue; one consumer owns it. |
+| [MysaMqttClient.request_live_status](../../../src/mysa_client/mqtt/client.py#L311) | `async (self, device_id: str, *, timeout_seconds: int=180) -> PublishResult` | Ask an allowlisted device to publish live telemetry for 180 seconds. |
+| [MysaMqttClient.echo](../../../src/mysa_client/mqtt/client.py#L334) | `async (self, device_id: str, *, timeout_seconds: float \| None=None) -> EchoResult` | Send the legacy echo probe and wait for the matching device reply. |
+| [MysaMqttClient.set_setpoint](../../../src/mysa_client/mqtt/client.py#L380) | `async (self, device_id: str, setpoint: Setpoint, *, mode: str \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set a Lite target and optionally include mode or hold state. |
+| [MysaMqttClient.set_mode](../../../src/mysa_client/mqtt/client.py#L403) | `async (self, device_id: str, mode: str, *, setpoint: Setpoint \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set Lite mode to off or heat, optionally with a target or hold. |
 
 
 ## Runtime and domain helpers
@@ -224,22 +224,29 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [round_half_up](../../../src/mysa_client/cloud/setpoints.py#L188) | `(value: float) -> int` | Round halfway values up, like JavaScript's Math.round. |
-| [round_to_step](../../../src/mysa_client/cloud/setpoints.py#L193) | `(value: float, step: float) -> float` | Round to a multiple of step anchored at 0, halfway values up. |
-| [to_celsius](../../../src/mysa_client/cloud/setpoints.py#L198) | `(value: float, unit: Unit) -> float` | Convert an absolute temperature to °C. |
-| [fahrenheit_label](../../../src/mysa_client/cloud/setpoints.py#L203) | `(celsius: float \| Setpoint) -> int` | Whole °F as the Mysa app shows it: Math.round(c * 1.8 + 32). |
-| [fahrenheit_offset](../../../src/mysa_client/cloud/setpoints.py#L209) | `(delta_c: float \| TemperatureOffset) -> int` | Whole °F for a temperature delta, halfway values rounded up. |
-| [require_setpoint](../../../src/mysa_client/cloud/setpoints.py#L215) | `(value: object, name: str='temperature') -> float` | Return a Setpoint's °C value, or raise TypeError for anything else. |
-| [require_offset](../../../src/mysa_client/cloud/setpoints.py#L224) | `(value: object, name: str='offset') -> float` | Return a TemperatureOffset's °C value, or raise TypeError. |
-| [kind_for_mode](../../../src/mysa_client/cloud/setpoints.py#L272) | `(mode: Mode \| None) -> SetpointKind` | The single-setpoint range a mode writes, matching the command encoder. |
-| [SetpointRules.__init__](../../../src/mysa_client/cloud/setpoints.py#L298) | `(self, capabilities: Capabilities \| None=None, homekit_range: RangeTuple \| None=None, *, setpoint_min: float \| None=None, setpoint_max: float \| None=None) -> None` | Derive every range once from the thermostat's advertised limits. |
-| [SetpointRules.range_for](../../../src/mysa_client/cloud/setpoints.py#L323) | `(self, kind: SetpointKind \| Mode \| None) -> SetpointRange` | The normalised range for a setpoint kind or a single-setpoint mode. |
-| [SetpointRules.setpoint](../../../src/mysa_client/cloud/setpoints.py#L329) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a single heat or cool target for mode. |
-| [SetpointRules.heat_cool](../../../src/mysa_client/cloud/setpoints.py#L342) | `(self, low: float, high: float, *, unit: Unit='C', strict: bool=True) -> tuple[Setpoint, Setpoint]` | Normalise a heat/cool pair; the gap is checked, never adjusted. |
-| [SetpointRules.limit](../../../src/mysa_client/cloud/setpoints.py#L371) | `(self, value: float, *, minimum: bool, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise an owner minimum or maximum against the hardware heat range. |
-| [SetpointRules.offset](../../../src/mysa_client/cloud/setpoints.py#L385) | `(self, delta: float, *, unit: Unit='C', strict: bool=True) -> TemperatureOffset` | Normalise a calibration delta; a °F delta converts by / 1.8. |
-| [SetpointRules.schedule_event](../../../src/mysa_client/cloud/setpoints.py#L399) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a schedule event's temperature exactly like setpoint. |
-| [SetpointRules.fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L410) | `(self, kind: SetpointKind \| Mode \| None) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in range. |
+| [round_half_up](../../../src/mysa_client/cloud/setpoints.py#L125) | `(value: float) -> int` | Round halfway values up, like JavaScript's Math.round. |
+| [round_to_step](../../../src/mysa_client/cloud/setpoints.py#L130) | `(value: float, step: float) -> float` | Round to a multiple of step anchored at 0, halfway values up. |
+| [to_celsius](../../../src/mysa_client/cloud/setpoints.py#L135) | `(value: float, unit: Unit) -> float` | Convert an absolute temperature to °C. |
+| [fahrenheit_label](../../../src/mysa_client/cloud/setpoints.py#L140) | `(celsius: float \| Setpoint) -> int` | Whole °F as the Mysa app shows it: Math.round(c * 1.8 + 32). |
+| [fahrenheit_offset](../../../src/mysa_client/cloud/setpoints.py#L146) | `(delta_c: float \| TemperatureOffset) -> int` | Whole °F for a temperature delta, halfway values rounded up. |
+| [kind_for_mode](../../../src/mysa_client/cloud/setpoints.py#L190) | `(mode: Mode \| None) -> SetpointKind` | The single-setpoint range a mode writes, matching the command encoder. |
+| [SetpointRules.__init__](../../../src/mysa_client/cloud/setpoints.py#L216) | `(self, capabilities: Capabilities \| None=None, homekit_range: RangeTuple \| None=None, *, setpoint_min: float \| None=None, setpoint_max: float \| None=None) -> None` | Derive every range once from the thermostat's advertised limits. |
+| [SetpointRules.range_for](../../../src/mysa_client/cloud/setpoints.py#L241) | `(self, kind: SetpointKind \| Mode \| None) -> SetpointRange` | The normalised range for a setpoint kind or a single-setpoint mode. |
+| [SetpointRules.setpoint](../../../src/mysa_client/cloud/setpoints.py#L247) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a single heat or cool target for mode. |
+| [SetpointRules.heat_cool](../../../src/mysa_client/cloud/setpoints.py#L260) | `(self, low: float, high: float, *, unit: Unit='C', strict: bool=True) -> tuple[Setpoint, Setpoint]` | Normalise a heat/cool pair; the gap is checked, never adjusted. |
+| [SetpointRules.limit](../../../src/mysa_client/cloud/setpoints.py#L289) | `(self, value: float, *, minimum: bool, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise an owner minimum or maximum against the hardware heat range. |
+| [SetpointRules.offset](../../../src/mysa_client/cloud/setpoints.py#L303) | `(self, delta: float, *, unit: Unit='C', strict: bool=True) -> TemperatureOffset` | Normalise a calibration delta; a °F delta converts by / 1.8. |
+| [SetpointRules.schedule_event](../../../src/mysa_client/cloud/setpoints.py#L317) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a schedule event's temperature exactly like setpoint. |
+| [SetpointRules.fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L328) | `(self, kind: SetpointKind \| Mode \| None) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in range. |
+
+### `mysa_client._temperature`
+
+[Source](../../../src/mysa_client/_temperature.py)
+
+| Callable | Declared signature and return type | Purpose |
+| --- | --- | --- |
+| [require_setpoint](../../../src/mysa_client/_temperature.py#L118) | `(value: object, name: str='temperature') -> float` | Return a Setpoint's °C value, or raise TypeError for anything else. |
+| [require_offset](../../../src/mysa_client/_temperature.py#L127) | `(value: object, name: str='offset') -> float` | Return a TemperatureOffset's °C value, or raise TypeError. |
 
 ### `mysa_client.cloud.device_commands`
 

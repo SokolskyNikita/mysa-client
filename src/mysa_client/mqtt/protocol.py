@@ -10,6 +10,8 @@ import json
 import math
 from typing import Any
 
+from mysa_client._temperature import Setpoint, require_setpoint
+
 from .errors import MqttProtocolError
 
 
@@ -275,24 +277,24 @@ def encode_thermostat_command(
     user_sub: str,
     request_id: int,
     command_time: int,
-    setpoint: float | None = None,
+    setpoint: Setpoint | None = None,
     mode: str | None = None,
     hold: bool | None = None,
 ) -> tuple[dict[str, Any], dict[str, int | float]]:
-    """Build a Lite msg 44 request and the state fields required to confirm it."""
+    """Build a Lite msg 44 request and the state fields required to confirm it.
+
+    ``setpoint`` must be a :class:`~mysa_client.cloud.setpoints.Setpoint` from
+    ``SetpointRules``; a plain number raises ``TypeError``.
+    """
     if setpoint is None and mode is None:
         raise MqttProtocolError("A setpoint or mode is required")
     command: dict[str, int | float] = {"tm": -1}
     expected: dict[str, int | float] = {}
     if setpoint is not None:
-        if (
-            isinstance(setpoint, bool)
-            or not isinstance(setpoint, int | float)
-            or not math.isfinite(setpoint)
-            or not 5 <= setpoint <= 30
-        ):
+        celsius = require_setpoint(setpoint, "setpoint")
+        if not math.isfinite(celsius) or not 5 <= celsius <= 30:
             raise MqttProtocolError("Setpoint must be finite and between 5 and 30 °C")
-        value = round(float(setpoint), 2)
+        value = round(celsius, 2)
         command["sp"] = value
         expected["sp"] = value
     if mode is not None:
