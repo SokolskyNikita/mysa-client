@@ -69,7 +69,7 @@ The [state fixture](../../../tests/fixtures/state_batch.json) shows the full res
 
 | Section | Fields and interpretation |
 | --- | --- |
-| `latestTelemetry.reading` | `roomTemperature`, `humidity`, `rawTemperature`, `coreTemperature`, `heatSetpoint`, `effectiveSetpoint`, `mode`, `dutyCycle`, `onTime`, `rssi`, `freeHeap`, `voltage`, `maxCurrent`, `powerConsumed`, `instantLoad` |
+| `latestTelemetry.reading` | `roomTemperature`, `humidity`, `rawTemperature`, `coreTemperature`, `heatSetpoint`, `effectiveSetpoint`, `mode`, `dutyCycle`, `onTime`, `rssi`, `freeHeap`, `voltage`, `maxCurrent`, `powerConsumed`, `instantLoad`; probe and In-Floor models also have `probeTemperature` (°C, app-derived) |
 | `targetHeat` / `targetCool` | `setpoint`; the Lite's `targetHeat.reported` also has hardware limits `lockoutMin` / `lockoutMax` |
 | `modes` | `mode`; AC also uses `fan_mode` and swing fields |
 | `physicalInterface` | `lockout`, `activeIntensity`, `idleIntensity`, `format`, `intensityMode` |
@@ -78,13 +78,25 @@ The [state fixture](../../../tests/fixtures/state_batch.json) shows the full res
 | `bbConfig.reported` | `controlType`: 8 fan forced, 9 baseboard |
 | `power.reported` | `voltage`, `current`, `wattage`, `dutyCycle`; all were zero on the Lite |
 | `diagnostics.reported` | `freeHeap`; demand-response `drState` was also recorded here |
-| `drState` | `inEvent`, `state`; a top-level object in the fixture, used by the Python parser |
+| `drState` | `inEvent`, `state`; a top-level object in the fixture, used by the Python parser. The separate [demand-response state](#demand-response-state) endpoint is another read |
 
 Telemetry voltage was 240 V, a configured value. The Lite has no current sensor; zero power fields do not show whether its heater is running. Python uses telemetry `dutyCycle > 0` for heating. The value is the relay's share of the reading interval, so it can be fractional.
+
+On 2026-11-15 an idle Lite reported `rawTemperature` 28.3 and `coreTemperature` 31.1 with `roomTemperature` 22.9, so both read as °C sensor temperatures above the corrected room value. The same reading had `freeHeap` 69320 (also in `diagnostics.reported`), `voltage` 240, and `effectiveSetpoint` 23 while the setpoint was 10; what `effectiveSetpoint` means is unconfirmed. `onTime`, `maxCurrent`, `powerConsumed`, `instantLoad` and every `power.reported` value except voltage were 0, so their units are unknown.
+
+Mysa's app 4.21.1 reads `power.reported.dutyCycle` as a percentage (0–100, unlike the 0–1 telemetry `dutyCycle`), `power.reported.wattage` as watts, and displays `round(dutyCycle × wattage / 100)` W, so `wattage` behaves as rated load. It treats `power.reported.voltage` 0 on an In-Floor as a ground fault, and stores `power.reported.current` as `currentMa` for the water-heater controller only. It never reads `freeHeap`, `rawTemperature`, `coreTemperature`, `maxCurrent`, `powerConsumed`, `instantLoad` or `onTime`. The [Python field names](../python/cloud.md#device-health-and-electrical-fields) record which of these are confirmed.
 
 Do not apply the `modes.mode` enum to `latestTelemetry.reading.mode`. On the Lite, heating appeared as telemetry mode 3 while `modes.reported.mode` was 4.
 
 Additional state-section names include `latestTelemetry`, `targetHeat`, `targetCool`, `targetAuto`, `modes`, `tracking`, `physicalInterface`, `hvacConfig`, `identity` and `telemetry`. The response can contain further sections, as the table shows.
+
+### Demand-response state
+
+`GET /devices/{dev}/drstate` returns `{"DeviceDrState": {...}}`. Mysa's app 4.21.1 calls it for every device when a home loads and keys the result by `DeviceDrState.Device`. Both Lites, not enrolled in demand response, returned HTTP 200 with an empty object on both the modern and the legacy host on 2026-11-15:
+
+[Not-enrolled demand-response state](../../../examples/cloud/drstate.not-enrolled.json)
+
+A populated record, from the app only, has `Device`, `NewState` (`event`, `none`, `preheat` or `precool`) and `Timestamp` (unix seconds), and passes through `DeviceTime`, `CurrentState`, `CurrentSetpoint` and `NewSetpoint`, whose types and setpoint unit are not established. The app counts a device as in an event when `NewState` is `event`, `preheat` or `precool` and the timestamp is no more than 8 whole hours old. An empty object (no data) differs from an explicit `none`. This record is separate from the structured `drState` section. See the [Python method](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads).
 
 ### Live mode and liveness
 
@@ -261,7 +273,7 @@ The newer sensor-linking flow uses `GET/POST /linking` with `{sourceId,targetId,
 
 Tracking modes are 0 ambient, 1 probe and 2 remote; 480 seconds is the reference TTL. The request does not submit a replacement temperature. The cloud supplies the linked sensor's readings.
 
-The Lite advertises `sensing.temperature.sensors.remote: false`, `trackingSensor.validValues: ["internal"]` and no external temperature probe connector. `GET /linking?targetId={dev}` returned an empty list. A direct remote-tracking write reached `desired`, but no `tracking` value appeared in `reported`, in either normal or live mode.
+The Lite advertises `sensing.temperature.sensors.remote: false`, `trackingSensor.validValues: ["internal"]` and no external temperature probe connector. `GET /linking?targetId={dev}` returned an empty list ([example](../../../examples/cloud/linking.empty.json), again on 2026-11-15). In Mysa's app 4.21.1 each entry has `linkId`, `sourceId`, `targetId`, `weight` and `enabled`; a link takes part when `enabled` is not false and `weight > 0`, and a link whose source is its target is the thermostat's own sensor. The app offers only Climate Sensors as sources and Central HVAC as targets. Python reads links with [`get_sensor_links()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads) and does not create, change or remove them. A direct remote-tracking write reached `desired`, but no `tracking` value appeared in `reported`, in either normal or live mode.
 
 In contrast, `ambientOffset` changes reached reported state within about a
 second and changed both cloud and HomeKit room temperature. Offset adjustment

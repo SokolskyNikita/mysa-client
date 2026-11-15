@@ -26,6 +26,10 @@ _ROUTES = (
     "/schedules/v2/{id}",
     "/schedules/device/update/{id}",
     "/capabilities/{id}",
+    "/devices/{id}/drstate",
+    "/ota/update/available/{id}",
+    "/ota/update/{id}",
+    "/linking",
 )
 
 

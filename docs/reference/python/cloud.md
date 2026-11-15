@@ -8,6 +8,8 @@
 - [Public API and integration helpers](#public-api-and-integration-helpers)
 - [Errors, timeouts, retries, and caller responsibilities](#errors-timeouts-retries-and-caller-responsibilities)
 - [Device record and firmware catalog reads](#device-record-and-firmware-catalog-reads)
+- [Device health and electrical fields](#device-health-and-electrical-fields)
+- [Demand-response, fleet firmware, and sensor-link reads](#demand-response-fleet-firmware-and-sensor-link-reads)
 
 Start with [connecting clients](../../guides/connect.md).
 Wire formats belong to the [cloud protocol reference](../protocol/cloud.md);
@@ -238,7 +240,7 @@ These submodule helpers are supported for standalone callers and integrations:
 | [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, `SetpointLimit`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`, `SetpointValueError`, `SetpointConfigError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_limit`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM`, `SAFE_MINIMUM`, `SAFE_MAXIMUM`, `SAFE_OFFSET`, `MAX_MAGNITUDE` (see [setpoint rules](#setpoint-rules)) |
 | [`device.py`](../../../src/mysa_client/cloud/device.py) | `basic_modes`, `brightness_pair`, `heating_range`, `hvac_activity`, `hvac_fan_operation` |
 | [`const.py`](../../../src/mysa_client/cloud/const.py) | `API_BASE`, `EXPERIMENTAL_CLOUD_FAMILIES`, `SWING_VERTICAL`, `model_family`; public models and enums are also re-exported at the package level |
-| [`models.py`](../../../src/mysa_client/cloud/models.py) | The response models exported by the package root, retained at this submodule path for direct imports |
+| [`models.py`](../../../src/mysa_client/cloud/models.py) | The response models exported by the package root, retained at this submodule path for direct imports; also `DR_EVENT_STATES`, `DR_STATE_MAX_HOURS` and `FLEET_FINAL_STATUSES` |
 | [`exceptions.py`](../../../src/mysa_client/cloud/exceptions.py) | The public `MysaError` exception hierarchy, retained at this submodule path for direct imports |
 | [`observations.py`](../../../src/mysa_client/cloud/observations.py) | `MEASUREMENT_MAX_AGE`, `MEASUREMENTS`, `STATE_FIELDS`, `TELEMETRY_FIELDS`, `Observation`, `number`, `observe`, `valid_value` |
 | [`reconciliation.py`](../../../src/mysa_client/cloud/reconciliation.py) | `reconcile`, `PendingCommand`, `PendingCommandTracker`, `pending_command` |
@@ -312,8 +314,131 @@ Constructed regression fixtures derived from those envelope shapes:
 [firmware catalog](../../../tests/fixtures/firmware_catalog.json). They use
 synthetic identifiers and are not additional hardware observations.
 
+## Device health and electrical fields
+
+`DeviceState` names these structured-state values (0.4.0). Each is `None` when
+absent, of the wrong type, outside a plausible range, or in a section whose own
+clock is malformed or in the future; nothing is converted. Values from
+`latestTelemetry.reading` share `reading_time`; values from `power.reported`
+share `power_time`. Only `reported` power values count, as for other sections.
+
+| Field | Source | Unit | Evidence |
+| --- | --- | --- | --- |
+| `free_heap` | `reading.freeHeap`, else `diagnostics.reported.freeHeap` | bytes | Confirmed on Baseboard Lite firmware 3.17.5.13 |
+| `raw_temperature` | `reading.rawTemperature` | °C | Confirmed on Baseboard Lite firmware 3.17.5.13 (above room temperature, as an uncorrected sensor would be) |
+| `core_temperature` | `reading.coreTemperature` | °C | Confirmed on Baseboard Lite firmware 3.17.5.13 (above room temperature) |
+| `voltage` | `power.reported.voltage`, else `reading.voltage` | V | Confirmed on Baseboard Lite firmware 3.17.5.13 (240) |
+| `probe_temperature` | `reading.probeTemperature` | °C | Derived from Mysa's app 4.21.1; not verified on a device |
+| `power_wattage` | `power.reported.wattage` | W, rated load | Derived from Mysa's app 4.21.1; not verified on a device (0 observed) |
+| `power_duty_cycle` | `power.reported.dutyCycle` | percent, 0–100 | Derived from Mysa's app 4.21.1; not verified on a device (0 observed). `duty_cycle` stays the 0–1 telemetry fraction |
+| `power_current` | `power.reported.current` | unverified | Only 0 observed; the app stores it as `currentMa` (milliamps) for the water-heater controller only |
+| `max_current` | `reading.maxCurrent` | unverified | Only 0 observed; the app never reads it; the name suggests peak load current |
+| `power_consumed` | `reading.powerConsumed` | unverified | Only 0 observed; the app never reads it; the name suggests energy per reading interval |
+| `instant_load` | `reading.instantLoad` | unverified | Only 0 observed; the app never reads it; the name suggests the present load |
+| `on_time` | `reading.onTime` | unverified | Only 0 observed; the app never reads it; the name suggests on-time per reading interval |
+| `effective_setpoint` | `reading.effectiveSetpoint` | °C as sent | Meaning unconfirmed: a Lite reported 23 while its setpoint was 10 |
+
+Two properties follow the app: `power_load_watts` is
+`round(power_duty_cycle × power_wattage / 100)`, the estimate the app displays,
+and `ground_fault` is true when an In-Floor thermostat reports 0 V (`None` for
+other models). Both are derived from Mysa's app 4.21.1; not verified on a
+device.
+
+```python
+state = await client.get_state(device_id)
+if state.core_temperature is not None:
+    print(f"internal {state.core_temperature} °C, heap {state.free_heap} B")
+```
+
+None of these fields join `TELEMETRY_FIELDS`, `MEASUREMENTS` or
+`STATE_FIELDS`, and none gets an entry in `observations`. Those sets decide
+which fields `reconcile()` arbitrates between cloud, legacy and HomeKit
+sources, which values command confirmation compares, and which fields an
+integration's event history records. These values have a single source (the
+structured state) and no command writes them, so there is nothing to
+arbitrate or confirm, and diagnostics such as free heap change on every
+reading. A reconciled `DeviceState` carries them from the structured state it
+is based on; a legacy-only state has none. Check freshness with `reading_time`
+and `power_time`.
+
+## Demand-response, fleet firmware, and sensor-link reads
+
+These 0.4.0 methods only read. Each keeps the response in `raw`.
+
+`await client.get_demand_response_state(device_id)` sends
+`GET /devices/{id}/drstate` and returns `DemandResponseState`. A device that is
+not enrolled answers `{"DeviceDrState": {}}`, giving `has_data` false, which is
+different from an explicit `new_state == "none"`: confirmed on Baseboard Lite
+firmware 3.17.5.13. The populated fields (`device_id`, `new_state`,
+`timestamp`, and the pass-through `device_time`, `current_state`,
+`current_setpoint`, `new_setpoint`) are derived from Mysa's app 4.21.1; not
+verified on a device. `state.in_event(now)` applies the app's rule: `new_state`
+in `DR_EVENT_STATES` and a timestamp no more than `DR_STATE_MAX_HOURS` (8)
+whole hours old. Unlike the app, a record without a usable timestamp is never
+in an event. This stays separate from `DeviceState.in_demand_response`.
+
+```python
+dr = await client.get_demand_response_state(device_id)
+if dr.has_data and dr.in_event(datetime.now(UTC)):
+    print("demand-response event:", dr.new_state)
+```
+
+`await client.get_fleet_firmware_availability(device_id, current_version=None)`
+sends `GET /ota/update/available/{id}` and returns
+`FleetFirmwareAvailability`. A 404 returns `in_fleet` false instead of raising:
+confirmed on Baseboard Lite firmware 3.17.5.13, which Mysa keeps in no fleet.
+The offer fields (`update_available`, `message`, `version_id`, `version`,
+`description`, `release_notes`) are derived from Mysa's app 4.21.1; not
+verified on a device. `await client.get_fleet_firmware_status(request_id)`
+sends `GET /ota/update/{requestId}` and returns `FleetFirmwareStatus` with the
+raw `status` string, `known_status` (a `FleetUpdateStatus`, or `None` for an
+unknown value), `finished`, and `percent_complete`; derived from Mysa's app
+4.21.1; not verified on a device. `firmware_versions_match(reported, target)`
+is the app's completion check: both versions trimmed, a leading `v` removed and
+anything from the first `-` dropped (`normalize_firmware_version`). Starting
+and cancelling fleet updates are not implemented.
+
+```python
+offer = await client.get_fleet_firmware_availability(device_id)
+if not offer.in_fleet:
+    info = await client.get_firmware_info(device_id)  # legacy models
+elif offer.update_available:
+    print(offer.version, offer.release_notes)
+```
+
+`await client.get_sensor_links(target_id)` sends
+`GET /linking?targetId={id}` and returns `list[SensorLink]`, each with
+`link_id`, `source_id`, `target_id`, `weight` and `enabled`. `participating`
+is the app's rule (`enabled` not false and `weight > 0`); `own_sensor` marks
+the target's built-in sensor. An empty list is confirmed on Baseboard Lite
+firmware 3.17.5.13; entry fields are derived from Mysa's app 4.21.1; not
+verified on a device. There are no link writes.
+
+```python
+links = await client.get_sensor_links(device_id)
+remote = [l.source_id for l in links if l.participating and not l.own_sensor]
+```
+
+A malformed body raises `MysaApiError`; other HTTP errors follow the
+[error rules](#errors-timeouts-retries-and-caller-responsibilities). The wire
+formats are in the protocol reference: [demand-response state](../protocol/cloud-state.md#demand-response-state),
+[newer OTA service](../protocol/firmware-and-connectivity.md#newer-ota-service)
+and [remote temperature tracking](../protocol/cloud-state.md#remote-temperature-tracking).
+Regression fixtures are in [reads_0_4_0.json](../../../tests/fixtures/reads_0_4_0.json),
+each entry marked live-sanitized or app-derived.
+
 [Documentation index](../../README.md)
 
 <!-- api-symbol: mysa_client.cloud.client:MysaClient.execute_command -->
 <!-- api-symbol: mysa_client.cloud.client:MysaClient.get_firmware_catalog -->
 <!-- api-symbol: mysa_client.cloud.auth:MysaAuth.sign_in -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_demand_response_state -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_fleet_firmware_availability -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_fleet_firmware_status -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_sensor_links -->
+<!-- api-symbol: mysa_client.cloud.models:DemandResponseState.in_event -->
+<!-- api-symbol: mysa_client.cloud.models:firmware_versions_match -->
+<!-- api-symbol: mysa_client.cloud.models:normalize_firmware_version -->
+<!-- api-symbol: mysa_client.cloud.models:SensorLink.participating -->
+<!-- api-symbol: mysa_client.cloud.models:DeviceState.power_load_watts -->
+<!-- api-symbol: mysa_client.cloud.models:DeviceState.ground_fault -->
