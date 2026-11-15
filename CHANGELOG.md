@@ -46,19 +46,26 @@
   checks only advertised bounds.
 - **Breaking:** owner limits must be strictly ordered. `SetpointRules.limit`
   checks the new value against the other current limit and raises the new
-  `SetpointLimitOrderError`; `validate_command` now also refuses equal limits,
+  `SetpointLimitOrderError`; `validate_cloud_command` now also refuses equal limits,
   with the message "Minimum setpoint must be below the maximum".
   `limits_ordered()` is the shared comparison.
-- **Breaking:** in heat/cool mode a single setpoint is the heat target
-  everywhere. `kind_for_mode(Mode.AUTO)` and `SetpointRules.setpoint(Mode.AUTO,
-  ...)` no longer raise, and `DeviceState.setpoint_for(Mode.AUTO)` returns the
-  heat setpoint instead of `None`, matching `temperature_changes`.
+- **Breaking:** in heat/cool mode a single setpoint is the heat target in
+  `kind_for_mode`, `temperature_changes`, `SetpointRules.setpoint` and
+  `DeviceState.setpoint_for`. `kind_for_mode(Mode.AUTO)` and
+  `SetpointRules.setpoint(Mode.AUTO, ...)` no longer raise, and
+  `DeviceState.setpoint_for(Mode.AUTO)` returns the heat setpoint instead of
+  `None`. `climate_command(..., temperature=...)` in `Mode.AUTO` still raises;
+  pass `low` and `high`.
 - `resolve_hold` and `build_schedule_events` take `rules=` and `unit=` and
   normalise plain-number temperatures themselves (a hold's requested
   temperature strictly, its current target with `strict=False`). Typed
   `Setpoint` values still work. A temperature on a heat/cool hold or event
   raises the new `SetpointModeError`; an `off` schedule event's temperature is
   dropped.
+- Add `Field.AMBIENT_LIGHT`: HomeKit reads Current Ambient Light Level (lux)
+  when the accessory advertises a Light Sensor service. It is read-only, and a
+  failed light read is reported in `failed_fields` without failing the
+  thermostat read.
 - Fix: a Mini-Split AC (and any thermostat without a capability cool range)
   had no cool range. `SetpointRules(record=...)` reads the AC's remote ranges
   through the new `DeviceRecord.ac_temperature_range(mode)`

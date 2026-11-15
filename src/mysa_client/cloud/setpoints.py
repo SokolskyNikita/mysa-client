@@ -279,7 +279,7 @@ def limits_ordered(minimum: float, maximum: float) -> bool:
     """Whether owner limits are valid together: the minimum strictly below.
 
     The one comparison for owner limits, shared by :meth:`SetpointRules.limit`
-    and ``validate_command``.
+    and ``validate_cloud_command``.
     """
     return round(minimum, 4) < round(maximum, 4)
 
@@ -474,7 +474,7 @@ class SetpointRules:
         current limit (``setpoint_max`` for a new minimum, ``setpoint_min`` for
         a new maximum), or ``SetpointLimitOrderError`` is raised, whatever
         ``strict`` says: equal limits would leave a single allowed target.
-        ``validate_command`` applies the same rule (:func:`limits_ordered`).
+        ``validate_cloud_command`` applies the same rule (:func:`limits_ordered`).
         """
         setpoint = self._normalise(
             Setpoint, self.hardware_heat_range, _finite(value), unit, strict=strict

@@ -120,7 +120,7 @@ one step (one °F) above the minimum.
 **Owner limits.** A minimum must be strictly below the maximum. `limit()`
 checks the new value against the other current limit and raises
 `SetpointLimitOrderError` (`value`, `other`, `minimum`) when they are equal or
-reversed, whatever `strict` says; `validate_command` refuses the same pairs
+reversed, whatever `strict` says; `validate_cloud_command` refuses the same pairs
 with `"Minimum setpoint must be below the maximum"`. Equal limits are refused
 because they leave a single allowed target: every other write would fail and
 every range a UI shows would collapse to one point.
@@ -134,7 +134,7 @@ the failed half of a `heat_cool` pair (the heat side is checked first, so this
 holds when `low` equals `high`) and `None` otherwise, and `delta` is true for
 an offset. `fahrenheit_limit` is the closest allowed whole °F on that bound
 (a whole °F delta for an offset). With `strict=False` the result is
-clamped to the limit and its `clamp` is a `SetpointClamp(requested, limit,
+clamped to the nearest step-grid value at or inside the limit and its `clamp` is a `SetpointClamp(requested, limit,
 bound)` (otherwise `None`) for the caller's log. A heat/cool pair that is too
 close always raises `SetpointGapTooSmallError` with `low`, `high`, `gap` and
 `required`; the rules never move a value to make room. These errors,

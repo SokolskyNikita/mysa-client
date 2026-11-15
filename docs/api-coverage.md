@@ -1,6 +1,6 @@
 # Mysa client API coverage
 
-Last reviewed: **2026-10-14**
+Last reviewed: **2026-11-15**
 
 Client baseline: **mysa-client 0.3.0**
 

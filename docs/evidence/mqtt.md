@@ -23,13 +23,9 @@ freshness, and fallback policy.
 The standalone client also received echo replies and live telemetry from both
 devices. Its experimental array-form setpoint command was acknowledged by both
 in observed runs, with matching reported state and independent HA readback.
-One device had failed to acknowledge earlier command variants before a power
-cycle. During those tests its MCM `msg: 40` timestamp was within a second of
-local time before and after the reboot, while a cloud snapshot continued to
-report `latestTelemetry` in 2031. The command's `time` field is the sender's
-current Unix time, not a clock-synchronization exchange; no device-side
-timestamp rejection rule was established. The reboot coincided with command
-acknowledgements returning, but the cause is unknown. A broker PUBACK, echo, or
+One device acknowledged commands only after a power cycle, for an unknown
+reason (its clock was correct throughout, and no timestamp rejection rule was
+found). A broker PUBACK, echo, or
 device acknowledgement alone does not prove physical heater operation.
 
 <a id="live-evidence"></a>

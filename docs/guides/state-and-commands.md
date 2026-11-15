@@ -77,7 +77,7 @@ to outrank another source; retain its unconfirmed/last-known status.
 | Room temperature / humidity | **Latest** S TEL vs R/L LT. Use `CorrectedTemp`, never internal sensor temperatures. Accept valid humidity even when the Lite capability flag says false |
 | Heating target / mode | Use the newest plausibly timestamped device report from ST or LT; use TEL only after matching target semantics and decoding its different mode enum. Unlike measurements, an unchanged target need not expire after 35 minutes. Without comparable timestamps prefer ST, then LT, and mark freshness unknown. Never use REC `Mode` or S `desired` as confirmation |
 | Cooling target / fan / swing | **Config:** ST; REC only describes allowed choices. No verified legacy-state fallback in this guide |
-| Minimum / maximum target | **Config:** ST pair, then REC pair if absent; validate minimum ≤ maximum. Never turn an uncertain/fallback value into permission to exceed known device limits |
+| Minimum / maximum target | **Config:** ST pair, then REC pair if absent; validate minimum < maximum (equal limits are refused, as in `validate_cloud_command` and `SetpointRules.limit`). Never turn an uncertain/fallback value into permission to exceed known device limits |
 | Button lock | Prefer the newest valid device report from ST or LT when timestamps are comparable; otherwise ST, then LT. REC is a stored-setting fallback only |
 | Wake / idle brightness | **Config:** ST pair, then REC pair. LT's single brightness value cannot reconstruct both settings |
 | Screen units | **Config:** REC `Format`, ST as fallback. ST has lagged the screen setting. This selects the configured screen units, not proof of physical application or the application's preferred display unit |

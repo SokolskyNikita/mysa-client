@@ -14,15 +14,15 @@ account/accessory.
 - [Sanitized MQTT message formats](mqtt/README.md)
 
 `MYSA_SET_CELSIUS` with `MYSA_DEVICE_ID` explicitly enables the MQTT example's
-device-changing command; `MYSA_SET_CELSIUS` and `--set-target-c` enable writes
-in the cloud and HomeKit examples. Keep these unset during routine reads and
+device-changing command. `MYSA_SET_CELSIUS` or `--set-celsius` enables the
+cloud example's write, and `--set-target-c` enables the HomeKit example's write. Keep these unset during routine reads and
 never use them as an automated smoke test. Commands can affect thermostat
 operation even when a network response only confirms that the request was
 accepted.
 
 `runtime_basic.py` has no credentials, transport, or write side effect. It
 demonstrates reusable client semantics with fabricated device reports. See the
-[runtime guide](../docs/reference/python/runtime.md) for caller-owned policy, persistence, and
+[runtime guide](../docs/guides/runtime.md) for caller-owned policy, persistence, and
 transport lifecycle.
 
 ## Inert cloud exchanges

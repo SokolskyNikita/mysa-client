@@ -53,13 +53,11 @@ instead:
 | `AMBIENT_LIGHT` | Current Ambient Light Level in the Light Sensor service; read-only float lux |
 
 `AMBIENT_LIGHT` is in `supported_fields` only when the accessory database
-advertises the Light Sensor service. The in-floor INF-V1-0 (firmware 3.17.6.5)
-was reported with one (0–1573 lux, step 1), and Mysa app strings suggest some
-older baseboard units have one too, next to a display Lightbulb service that is
-not mapped. Neither has been verified on hardware here, so support is detected
-per accessory, never by model. A failed
-light read is reported in `failed_fields` but never fails a thermostat read,
-and writes to it are rejected. Neither cloud API reports light level.
+advertises the Light Sensor service, so support is detected per accessory,
+never by model; the [characteristic table](../protocol/homekit.md#characteristic-coverage)
+records which models have reported one. A failed light read is reported in
+`failed_fields` but never fails a thermostat read, and writes to it are
+rejected. Neither cloud API reports light level.
 
 Display units do not change the Celsius values of temperature characteristics.
 Modes and actions are exposed as `LocalMode` and `LocalAction`; unknown mode,

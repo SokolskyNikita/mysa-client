@@ -6,8 +6,9 @@ The client exposes the subset recorded in the [API inventory](../api-coverage.md
 model-specific mappings that remain app/code-derived unless hardware evidence is
 identified. Automated protocol tests use simulated responses and do not establish
 device compatibility. Live validation currently covers two Baseboard Lite
-`BB-V2-0-L` devices on firmware `3.17.5.13`; their cloud setpoint and mode
-application differed. Other model profiles, full schedule execution, notification
+`BB-V2-0-L` devices on firmware `3.17.5.13`, which did not apply cloud setpoint
+and mode writes the same way (see
+[state and settings confirmation](../reference/protocol/cloud-state.md#state-and-settings-confirmation)). Other model profiles, full schedule execution, notification
 delivery, and installation of a new firmware release remain unverified. The
 [Home Assistant cloud tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md)
 separately records integration policy, gaps, and validation work.
@@ -20,7 +21,6 @@ fixtures rather than live devices. The [protocol matrices](../reference/protocol
 retain per-operation distinctions between accepted, stored, reported and
 independently applied changes. See the [confirmation guide](../guides/state-and-commands.md)
 for how to use these findings.
-
 
 ## Device record and firmware catalog evidence
 

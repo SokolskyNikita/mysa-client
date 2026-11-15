@@ -193,7 +193,8 @@ The following values are `CONTROL_MODE_TYPE`, used in `modes.mode`. Capability d
 
 The `Mode` enum defines these values. `DeviceState` retains AUTO's two targets
 as `auto_heat_setpoint` and `auto_cool_setpoint`; `setpoint_for(AUTO)` returns
-no scalar target. `commands.py` contains field encoders, while
+the heat setpoint, since a single setpoint in heat/cool mode is the heat target
+(written to `targetHeat`). `commands.py` contains field encoders, while
 `device_commands.climate_command()` builds a semantic command with both a
 protocol payload and normalized expected effects. Run it through
 `validation.validate_cloud_command()` before sending. The direct
@@ -201,8 +202,8 @@ protocol payload and normalized expected effects. Run it through
 Both take `Setpoint` values from the
 [setpoint rules](../python/cloud.md#setpoint-rules), since Mysa rejects
 values off its step grid;
-applications needing paired AUTO targets can use the command description and
-pass its payload to `update_state()`.
+applications needing paired AUTO targets can build the command with
+`climate_command(low=..., high=...)` and send it with `execute_command()`.
 
 `DutyCycleOpt` is a different enum: 0 is BB1 baseboard, 4 BB1 radiant, 5/6/7 BB1 fan forced short/medium/long, 8 BB2 fan forced and 9 BB2 baseboard. The Lite uses the BB2 values. The examined mobile app enables heater-type selection for V2 and Lite from firmware 3.17.0; that gate is not a hardware-verified minimum.
 

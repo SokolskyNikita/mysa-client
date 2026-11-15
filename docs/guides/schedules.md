@@ -43,10 +43,12 @@ implementation gaps are recorded in the [API inventory](../api-coverage.md#sched
 
 For a hold, first obtain the current mode/target context, then use `resolve_hold()`
 and `async_apply_hold()` with callbacks for the hold request and immediate state
-application. Pass temperatures as `Setpoint` values from
-[`SetpointRules`](../reference/python/cloud.md#setpoint-rules), including the
-current target the hold re-sends (`strict=False` keeps an out-of-range report
-usable). Schedule event temperatures use `SetpointRules.schedule_event()`.
+application. Pass `rules=SetpointRules(...)` (and `unit=`) to `resolve_hold()`
+and `build_schedule_events()` and give them plain numbers: they check the
+requested temperatures strictly, and `resolve_hold()` clamps the current target
+the hold re-sends. Typed `Setpoint` values from
+[`SetpointRules`](../reference/python/cloud.md#setpoint-rules) also work. See
+[holds and schedules](../reference/python/cloud.md#holds-and-schedules).
 Choose the local/cloud route in your application and confirm the
 resulting device state separately. See the [hold wire rules](../reference/protocol/cloud-workflows.md#holds)
 for active-schedule and timestamp requirements.
