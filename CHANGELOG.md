@@ -69,6 +69,8 @@
   records plain `.celsius` values instead of `Setpoint` objects in history,
   pending and reconciliation records.
 
+Thanks to @dlenski for reporting the HomeKit light sensor (#29), and to @giesler, @neotrantor, @mcrutherford and @noahtallen, whose Fahrenheit reports and fixes in Mysa Local (SokolskyNikita/mysa-homeassistant#27, SokolskyNikita/mysa-homeassistant#32, SokolskyNikita/mysa-homeassistant#33, SokolskyNikita/mysa-homeassistant#34) led to `SetpointRules`.
+
 ## 0.2.1 (2026-10-12)
 
 - Preserve the original HomeKit discovery failure during the metadata retry
