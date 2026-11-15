@@ -79,7 +79,13 @@ establish successful installation of an offered release.
 
 The newer fleet-based OTA protocol for V3, Central HVAC and Climate Sensor uses `GET /ota/update/available/{dev}`, `POST /ota/update` with `{deviceIds,versionId,requestSource:"USER",...}`, `GET /ota/update/{requestId}` and `PUT /ota/update/{requestId}/cancel`. Fleet registration happens during pairing.
 
-The Lite returned 404, "No fleet found containing device", from this availability endpoint. Python does not implement the new OTA service.
+Mysa's app 4.21.1 chooses this service by model alone: `BB-V3-0`; `ST-V1-0`, `ST-V1` and `LV`; `CS-V1-0` and `CS-V1`; and the water-heater controller `WHC-V1-0`. Other models use the legacy routes above.
+
+Availability takes an optional `currentVersion` query. The app reads `updateAvailable` (default false), `message` and `firmwareVersion.{id, version, description, releaseNotes}`; `id` is opaque. The Lite returned 404, "No fleet found containing device", from this endpoint, again on 2026-11-15 ([example](../../../examples/cloud/ota-availability.not-in-fleet.json)).
+
+Status returns `status`, one of `QUEUED`, `IN_PROGRESS`, `SUCCEEDED`, `FAILED`, `TIMED_OUT`, `REJECTED`, `REMOVED` or `CANCELED`, and `percentComplete` (0–100). The app's poller does not trust the status alone: it waits for the device's `identity.reported.fw` to equal the target version after trimming, removing a leading `v`, and dropping anything from the first `-`. After a `SUCCEEDED` status it rechecks three more times before accepting it without a match. Everything here except the Lite's 404 is from the app; no fleet device has been observed.
+
+Python reads availability and status with [`get_fleet_firmware_availability()` and `get_fleet_firmware_status()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads), returning the 404 as "not in a fleet", and offers the version comparison as `firmware_versions_match()`. It does not start or cancel fleet updates.
 
 ## Time, transport, and validation limits
 

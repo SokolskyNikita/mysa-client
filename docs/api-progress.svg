@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="480" height="80" viewBox="0 0 480 80" role="img" aria-labelledby="progress-title progress-description">
-  <title id="progress-title">61.8% of known Mysa API operations fully implemented (68/110)</title>
+  <title id="progress-title">65.8% of known Mysa API operations fully implemented (73/111)</title>
   <desc id="progress-description">Only fully implemented operations count toward completion. Partial and missing operations remain in the unfilled portion.</desc>
   <style>
     text { font-family: "Segoe UI", Helvetica, sans-serif; }
@@ -20,8 +20,8 @@
     <clipPath id="bar"><rect x="0" y="34" width="480" height="10" rx="5" /></clipPath>
   </defs>
   <text class="label" x="0" y="20">API implementation</text>
-  <text class="value" x="480" y="20" text-anchor="end">61.8%</text>
+  <text class="value" x="480" y="20" text-anchor="end">65.8%</text>
   <rect class="track" x="0" y="34" width="480" height="10" rx="5" />
-  <rect class="fill" x="0" y="34" width="296.73" height="10" rx="5" clip-path="url(#bar)" />
-  <text class="caption" x="0" y="67">68 of 110 operations fully implemented</text>
+  <rect class="fill" x="0" y="34" width="315.68" height="10" rx="5" clip-path="url(#bar)" />
+  <text class="caption" x="0" y="67">73 of 111 operations fully implemented</text>
 </svg>

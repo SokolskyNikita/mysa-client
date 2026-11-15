@@ -54,10 +54,14 @@ from .exceptions import (
 from .models import (
     Bootstrap,
     Capabilities,
+    DemandResponseState,
     DeviceRecord,
     DeviceState,
     FirmwareInfo,
     FirmwareRecord,
+    FleetFirmwareAvailability,
+    FleetFirmwareStatus,
+    SensorLink,
     StateChange,
     UsageDay,
 )
@@ -810,6 +814,79 @@ class MysaClient:
     async def start_firmware_update(self, device_id: str) -> None:
         """Ask Mysa to push the offered firmware. Irreversible."""
         await self._request("POST", f"/devices/{device_id}/firmware-update", body={})
+
+    # ---- read-only additions (0.4.0): fleet OTA, demand response, links ---
+
+    async def get_fleet_firmware_availability(
+        self, device_id: str, current_version: str | None = None
+    ) -> FleetFirmwareAvailability:
+        """Whether Mysa offers fleet (newer-model) firmware for this device.
+
+        Sends ``GET /ota/update/available/{id}``, with ``currentVersion`` when
+        given. Mysa's app 4.21.1 uses this for V3, Central HVAC, Climate
+        Sensor and water-heater models; legacy models use
+        ``get_firmware_info``. A 404 means Mysa has the device in no fleet and
+        returns ``FleetFirmwareAvailability.in_fleet`` False rather than
+        raising: confirmed on Baseboard Lite firmware 3.17.5.13. The fields of
+        a fleet answer are derived from Mysa's app 4.21.1; not verified on a
+        device. Read-only: this never starts an update.
+        """
+        params = {"currentVersion": current_version} if current_version else None
+        try:
+            data = await self._request(
+                "GET", f"/ota/update/available/{device_id}", params=params
+            )
+        except MysaNotFoundError:
+            return FleetFirmwareAvailability.not_in_fleet()
+        if not isinstance(data, dict):
+            raise MysaApiError("Unexpected fleet firmware availability response")
+        return FleetFirmwareAvailability.from_api(data)
+
+    async def get_fleet_firmware_status(self, request_id: str) -> FleetFirmwareStatus:
+        """The status of one fleet firmware request (``GET /ota/update/{requestId}``).
+
+        Unknown status strings are kept, not rejected. A 404 raises
+        ``MysaNotFoundError``. Derived from Mysa's app 4.21.1; not verified on
+        a device.
+        """
+        data = await self._request("GET", f"/ota/update/{request_id}")
+        if not isinstance(data, dict):
+            raise MysaApiError("Unexpected fleet firmware status response")
+        return FleetFirmwareStatus.from_api(data)
+
+    async def get_demand_response_state(self, device_id: str) -> DemandResponseState:
+        """The device's demand-response record from ``GET /devices/{id}/drstate``.
+
+        Separate from ``DeviceState.in_demand_response``. A device that is not
+        enrolled answers ``{"DeviceDrState": {}}`` and returns a state with
+        ``has_data`` False: confirmed on Baseboard Lite firmware 3.17.5.13.
+        Use ``DemandResponseState.in_event(now)`` for the app's event rule. A
+        missing envelope, or a ``Device`` other than ``device_id``, raises
+        ``MysaApiError``.
+        """
+        data = await self._request("GET", f"/devices/{device_id}/drstate")
+        record = data.get("DeviceDrState") if isinstance(data, dict) else None
+        if not isinstance(record, dict):
+            raise MysaApiError("Unexpected drstate response")
+        state = DemandResponseState.from_api(record)
+        if state.device_id is not None and state.device_id != device_id:
+            raise MysaApiError("drstate response is for another device")
+        return state
+
+    async def get_sensor_links(self, target_id: str) -> list[SensorLink]:
+        """Sensors linked to a thermostat (``GET /linking?targetId={id}``).
+
+        Returns every entry, participating or not; see
+        ``SensorLink.participating``. Entries that are not objects are
+        skipped; a body that is not a list raises ``MysaApiError``. An empty
+        list is confirmed on Baseboard Lite firmware 3.17.5.13; entry fields
+        are derived from Mysa's app 4.21.1; not verified on a device.
+        Read-only: there is no create, update or delete.
+        """
+        data = await self._request("GET", "/linking", params={"targetId": target_id})
+        if not isinstance(data, list):
+            raise MysaApiError("Unexpected linking response")
+        return [SensorLink.from_api(item) for item in data if isinstance(item, dict)]
 
     # ---- history -------------------------------------------------------
 

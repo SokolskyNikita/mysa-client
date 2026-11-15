@@ -9,7 +9,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from enum import StrEnum
 import itertools
+import math
 from typing import Any
 
 from .const import (
@@ -110,6 +112,65 @@ def value_range(values: Iterable[Any]) -> tuple[float, float, float] | None:
     return numbers[0], numbers[-1], step
 
 
+def _health_fields(
+    data: Mapping[str, Any], reading: Mapping[str, Any], now: datetime
+) -> dict[str, Any]:
+    """Parse DeviceState's health and electrical fields without converting them.
+
+    A section whose own clock is malformed or in the future yields None for
+    its values, as the telemetry fields do.
+    """
+
+    def usable(clock: Any) -> bool:
+        return observe(None, "S", clock, now).usable(now)
+
+    def celsius(value: Any) -> float | None:
+        result = _float(value)
+        return result if result is not None and -100 <= result <= 100 else None
+
+    def non_negative(value: Any) -> float | None:
+        result = _float(value)
+        return result if result is not None and result >= 0 else None
+
+    def heap(value: Any) -> int | None:
+        result = _int(value)
+        return result if result is not None and result >= 0 else None
+
+    power = _section(data, "power")
+    diagnostics = _section(data, "diagnostics")
+    reading = reading if usable(reading.get("timestamp")) else {}
+    power_ok = usable(power.get("timestamp"))
+    if not power_ok:
+        power = {}
+    if not usable(diagnostics.get("timestamp")):
+        diagnostics = {}
+    percent = _float(power.get("dutyCycle"))
+    free_heap = heap(reading.get("freeHeap"))
+    voltage = non_negative(power.get("voltage"))
+    return {
+        "free_heap": free_heap
+        if free_heap is not None
+        else heap(diagnostics.get("freeHeap")),
+        "raw_temperature": celsius(reading.get("rawTemperature")),
+        "core_temperature": celsius(reading.get("coreTemperature")),
+        "probe_temperature": celsius(reading.get("probeTemperature")),
+        "voltage": voltage
+        if voltage is not None
+        else non_negative(reading.get("voltage")),
+        "power_wattage": non_negative(power.get("wattage")),
+        "power_current": non_negative(power.get("current")),
+        "power_duty_cycle": percent
+        if percent is not None and 0 <= percent <= 100
+        else None,
+        "power_time": _time(power.get("timestamp")) if power_ok else None,
+        "max_current": _float(reading.get("maxCurrent")),
+        "power_consumed": _float(reading.get("powerConsumed")),
+        "instant_load": _float(reading.get("instantLoad")),
+        "on_time": _float(reading.get("onTime")),
+        "effective_setpoint": celsius(reading.get("effectiveSetpoint")),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class DeviceState:
     """One thermostat's state from /state/batch or /state/{dev}."""
@@ -157,6 +218,55 @@ class DeviceState:
     fan_always_on: int | None = None
     fan_runtime: float | None = None
     fan_period: float | None = None
+
+    # Health and electrical fields (0.4.0). They come only from structured
+    # state, keep None when absent or malformed, and are not converted. Values
+    # from latestTelemetry.reading share `reading_time`; values from
+    # power.reported share `power_time`. See "Device health and electrical
+    # fields" in docs/reference/python/cloud.md for the evidence behind each.
+    #: reading.freeHeap, else diagnostics.reported.freeHeap: free firmware
+    #: memory in bytes. Confirmed on Baseboard Lite firmware 3.17.5.13.
+    free_heap: int | None = None
+    #: reading.rawTemperature in °C, the uncorrected sensor reading. Confirmed
+    #: on Baseboard Lite firmware 3.17.5.13 (it sits above room temperature).
+    raw_temperature: float | None = None
+    #: reading.coreTemperature in °C, the thermostat's internal temperature.
+    #: Confirmed on Baseboard Lite firmware 3.17.5.13.
+    core_temperature: float | None = None
+    #: reading.probeTemperature in °C (probe and In-Floor models). Derived from
+    #: Mysa's app 4.21.1; not verified on a device.
+    probe_temperature: float | None = None
+    #: power.reported.voltage, else reading.voltage, in volts. Confirmed on
+    #: Baseboard Lite firmware 3.17.5.13 (240). The app reads 0 on an In-Floor
+    #: as a ground fault; see `ground_fault`.
+    voltage: float | None = None
+    #: power.reported.wattage in watts. Mysa's app 4.21.1 multiplies it by the
+    #: duty cycle, so it behaves as the heater's rated load, not a measurement.
+    power_wattage: float | None = None
+    #: power.reported.current. Unit unverified (only 0 observed); Mysa's app
+    #: 4.21.1 stores it as `currentMa` (milliamps) for the water-heater
+    #: controller only.
+    power_current: float | None = None
+    #: power.reported.dutyCycle as a percentage (0-100), unlike `duty_cycle`,
+    #: which is a 0-1 fraction. Derived from Mysa's app 4.21.1; only 0 observed.
+    power_duty_cycle: float | None = None
+    #: The power.reported timestamp.
+    power_time: datetime | None = None
+    #: reading.maxCurrent. Unit and meaning unverified (only 0 observed; the
+    #: app never reads it). The name suggests the peak load current.
+    max_current: float | None = None
+    #: reading.powerConsumed. Unit unverified (only 0 observed; the app never
+    #: reads it). The name suggests energy used in the reading interval.
+    power_consumed: float | None = None
+    #: reading.instantLoad. Unit unverified (only 0 observed; the app never
+    #: reads it). The name suggests the present load.
+    instant_load: float | None = None
+    #: reading.onTime. Unit unverified (only 0 observed; the app never reads
+    #: it). The name suggests heating on-time in the reading interval.
+    on_time: float | None = None
+    #: reading.effectiveSetpoint in °C as reported. Meaning unconfirmed: a Lite
+    #: reported 23 while its setpoint was 10.
+    effective_setpoint: float | None = None
 
     @classmethod
     def from_api(cls, device_id: str, data: Mapping[str, Any]) -> DeviceState:
@@ -242,6 +352,7 @@ class DeviceState:
         }
         for name in (*TELEMETRY_FIELDS, *STATE_FIELDS):
             fields.setdefault(name, None)
+        fields.update(_health_fields(data, reading, now))
         return replace(
             result,
             observations=observations,
@@ -340,6 +451,31 @@ class DeviceState:
     def ac_fan(self) -> AcFan | None:
         """The AC fan speed in Mysa's app enum, if the state has one."""
         return STATE_TO_AC_FAN.get(self.fan_mode) if self.fan_mode is not None else None
+
+    @property
+    def power_load_watts(self) -> int | None:
+        """The load Mysa's app 4.21.1 displays: round(duty % * rated watts / 100).
+
+        None unless both ``power_duty_cycle`` and ``power_wattage`` are known.
+        Like the app, this is an estimate from the rated load, not a
+        measurement. It does not check ``connected``; the app shows nothing
+        while the thermostat is offline. Derived from Mysa's app 4.21.1; only
+        0 was observed (Baseboard Lite firmware 3.17.5.13, heater idle).
+        """
+        if self.power_duty_cycle is None or self.power_wattage is None:
+            return None
+        return math.floor(self.power_duty_cycle * self.power_wattage / 100 + 0.5)
+
+    @property
+    def ground_fault(self) -> bool | None:
+        """Whether an In-Floor thermostat reports 0 V, which the app calls a ground fault.
+
+        None for other models or without a voltage. Derived from Mysa's app
+        4.21.1; not verified on a device.
+        """
+        if self.voltage is None or model_family(self.model) != ModelFamily.INFLOOR:
+            return None
+        return self.voltage == 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -756,3 +892,271 @@ class Bootstrap:
             devices=devices,
             homes=names,
         )
+
+
+# ---- demand response, fleet firmware, sensor links (0.4.0) ----------------
+
+#: DeviceDrState.NewState values Mysa's app 4.21.1 treats as an active event.
+DR_EVENT_STATES = frozenset({"event", "preheat", "precool"})
+#: The app ignores a DR state whose Timestamp is more than this many whole
+#: hours old.
+DR_STATE_MAX_HOURS = 8
+
+
+@dataclass(frozen=True, slots=True)
+class DemandResponseState:
+    """GET /devices/{id}/drstate: the separate demand-response state record.
+
+    Distinct from ``DeviceState.in_demand_response`` (structured
+    ``drState.inEvent``). A thermostat that is not enrolled answers
+    ``{"DeviceDrState": {}}``, parsed with ``has_data`` False; that is not the
+    same as an explicit ``new_state == "none"``. Confirmed on Baseboard Lite
+    firmware 3.17.5.13 (empty object only). The populated field names and the
+    meaning of ``new_state`` are derived from Mysa's app 4.21.1; not verified
+    on a device.
+
+    ``device_time``, ``current_state``, ``current_setpoint`` and
+    ``new_setpoint`` are passed through as sent: their types, and the unit of
+    the setpoints, are not established.
+    """
+
+    raw: dict[str, Any] = field(repr=False)
+    device_id: str | None
+    #: "event", "none", "preheat", "precool", or an unknown string as sent.
+    new_state: str | None
+    #: Timestamp (unix seconds in the app).
+    timestamp: datetime | None
+    device_time: Any = None
+    current_state: Any = None
+    current_setpoint: Any = None
+    new_setpoint: Any = None
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> DemandResponseState:
+        """Parse the ``DeviceDrState`` object (not the envelope)."""
+        return cls(
+            raw=dict(data),
+            device_id=_str(data.get("Device")),
+            new_state=_str(data.get("NewState")),
+            timestamp=_time(data.get("Timestamp")),
+            device_time=data.get("DeviceTime"),
+            current_state=data.get("CurrentState"),
+            current_setpoint=data.get("CurrentSetpoint"),
+            new_setpoint=data.get("NewSetpoint"),
+        )
+
+    @property
+    def has_data(self) -> bool:
+        """False for the empty ``{}`` a non-enrolled thermostat returns."""
+        return bool(self.raw)
+
+    def in_event(self, now: datetime) -> bool:
+        """Mysa's app 4.21.1 rule for "this thermostat is in a DR event".
+
+        True when ``new_state`` is ``event``, ``preheat`` or ``precool`` and
+        the timestamp is at most ``DR_STATE_MAX_HOURS`` whole hours before
+        ``now`` (an aware datetime). The app compares whole hours, so a
+        timestamp 8 h 59 min old still counts. Unlike the app, a record
+        without a usable timestamp is never in an event. Derived from Mysa's
+        app 4.21.1; not verified on a device.
+        """
+        if self.new_state not in DR_EVENT_STATES or self.timestamp is None:
+            return False
+        hours = math.trunc((now - self.timestamp).total_seconds() / 3600)
+        return hours <= DR_STATE_MAX_HOURS
+
+
+class FleetUpdateStatus(StrEnum):
+    """Mysa's app 4.21.1 ``FirmwareUpdateStatus`` for fleet OTA requests."""
+
+    QUEUED = "QUEUED"
+    IN_PROGRESS = "IN_PROGRESS"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    TIMED_OUT = "TIMED_OUT"
+    REJECTED = "REJECTED"
+    REMOVED = "REMOVED"
+    CANCELED = "CANCELED"
+
+
+#: Statuses after which a fleet request makes no further progress.
+FLEET_FINAL_STATUSES = frozenset(
+    {
+        FleetUpdateStatus.SUCCEEDED,
+        FleetUpdateStatus.FAILED,
+        FleetUpdateStatus.TIMED_OUT,
+        FleetUpdateStatus.REJECTED,
+        FleetUpdateStatus.REMOVED,
+        FleetUpdateStatus.CANCELED,
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FleetFirmwareAvailability:
+    """GET /ota/update/available/{id}: newer-model (fleet) firmware offers.
+
+    Fleet models are V3 baseboards, Central HVAC, Climate Sensors and the
+    water-heater controller. A legacy model is not in a fleet: Mysa answers
+    404 ("No fleet found containing device"), which
+    ``MysaClient.get_fleet_firmware_availability`` returns as ``in_fleet``
+    False. That outcome is confirmed on Baseboard Lite firmware 3.17.5.13; the
+    fields of a fleet answer are derived from Mysa's app 4.21.1; not verified
+    on a device.
+    """
+
+    raw: dict[str, Any] = field(repr=False)
+    in_fleet: bool
+    update_available: bool
+    message: str | None
+    #: firmwareVersion.id, opaque (the app's placeholder is the number 0).
+    version_id: str | int | None
+    version: str | None
+    description: str | None
+    release_notes: str | None
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> FleetFirmwareAvailability:
+        """Parse a 200 answer; ``updateAvailable`` defaults to False as in the app."""
+        version = _dict(data.get("firmwareVersion"))
+        version_id = version.get("id")
+        return cls(
+            raw=dict(data),
+            in_fleet=True,
+            update_available=data.get("updateAvailable") is True,
+            message=_str(data.get("message")),
+            version_id=version_id
+            if isinstance(version_id, str | int) and not isinstance(version_id, bool)
+            else None,
+            version=_str(version.get("version")),
+            description=_str(version.get("description")),
+            release_notes=_str(version.get("releaseNotes")),
+        )
+
+    @classmethod
+    def not_in_fleet(cls) -> FleetFirmwareAvailability:
+        """The outcome for a device Mysa has in no fleet (HTTP 404)."""
+        return cls(
+            raw={},
+            in_fleet=False,
+            update_available=False,
+            message=None,
+            version_id=None,
+            version=None,
+            description=None,
+            release_notes=None,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FleetFirmwareStatus:
+    """GET /ota/update/{requestId}: progress of one fleet firmware request.
+
+    ``status`` keeps the string as sent, including values this library does
+    not know; ``known_status`` maps it to ``FleetUpdateStatus``. A SUCCEEDED
+    status alone does not prove the new firmware runs: Mysa's app also waits
+    for the device's ``identity.reported.fw`` to match the target (see
+    ``firmware_versions_match``). Derived from Mysa's app 4.21.1; not verified
+    on a device.
+    """
+
+    raw: dict[str, Any] = field(repr=False)
+    status: str | None
+    #: percentComplete, 0-100; None when absent or outside that range.
+    percent_complete: float | None
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> FleetFirmwareStatus:
+        """Parse a status answer leniently."""
+        percent = _float(data.get("percentComplete"))
+        return cls(
+            raw=dict(data),
+            status=_str(data.get("status")),
+            percent_complete=percent
+            if percent is not None and 0 <= percent <= 100
+            else None,
+        )
+
+    @property
+    def known_status(self) -> FleetUpdateStatus | None:
+        """The status as a ``FleetUpdateStatus``, or None if unknown or absent."""
+        try:
+            return FleetUpdateStatus(self.status) if self.status else None
+        except ValueError:
+            return None
+
+    @property
+    def finished(self) -> bool:
+        """Whether the request reached a final status (success or not)."""
+        return self.known_status in FLEET_FINAL_STATUSES
+
+
+def normalize_firmware_version(value: Any) -> str | None:
+    """Normalize a firmware version as Mysa's app 4.21.1 does before comparing.
+
+    Trim, drop one leading ``v`` or ``V``, keep only the text before the first
+    ``-``, and trim again; an empty result (or a non-string) is None. For
+    example ``" v3.17.5.13-beta "`` becomes ``"3.17.5.13"``.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    text = value.strip()
+    if text[:1] in ("v", "V"):
+        text = text[1:]
+    return text.split("-", 1)[0].strip() or None
+
+
+def firmware_versions_match(reported: Any, target: Any) -> bool:
+    """Whether two firmware versions are equal after ``normalize_firmware_version``.
+
+    Mysa's app 4.21.1 judges a fleet update done when the device's
+    ``identity.reported.fw`` matches the target version this way. Two
+    unknown versions never match.
+    """
+    left = normalize_firmware_version(reported)
+    return left is not None and left == normalize_firmware_version(target)
+
+
+@dataclass(frozen=True, slots=True)
+class SensorLink:
+    """One entry of GET /linking?targetId={id}: a sensor feeding a thermostat.
+
+    In Mysa's app 4.21.1 a Climate Sensor (source) feeds a Central HVAC
+    thermostat (target); a link whose source is its own target is the
+    thermostat's built-in sensor. The read is confirmed on Baseboard Lite
+    firmware 3.17.5.13 (it answered an empty list); the entry fields are
+    derived from Mysa's app 4.21.1; not verified on a device.
+    """
+
+    raw: dict[str, Any] = field(repr=False)
+    link_id: str | None
+    source_id: str | None
+    target_id: str | None
+    weight: float | None
+    #: None when the entry has no boolean ``enabled``; the app treats that
+    #: as enabled.
+    enabled: bool | None
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> SensorLink:
+        """Parse one link entry leniently."""
+        enabled = data.get("enabled")
+        link_id = data.get("linkId")
+        return cls(
+            raw=dict(data),
+            link_id=_str(link_id) or (str(link_id) if type(link_id) is int else None),
+            source_id=_str(data.get("sourceId")),
+            target_id=_str(data.get("targetId")),
+            weight=_float(data.get("weight")),
+            enabled=enabled if isinstance(enabled, bool) else None,
+        )
+
+    @property
+    def participating(self) -> bool:
+        """The app's rule: ``enabled`` is not False and ``weight`` > 0."""
+        return self.enabled is not False and (self.weight or 0) > 0
+
+    @property
+    def own_sensor(self) -> bool:
+        """Whether this is the target thermostat's own sensor."""
+        return self.source_id is not None and self.source_id == self.target_id

@@ -31,11 +31,15 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 - `Capabilities`
 - `ChangeSource`
 - `CloudCommand`
+- `DemandResponseState`
 - `DeviceRecord`
 - `DeviceState`
 - `DutyCycleOpt`
 - `FirmwareInfo`
 - `FirmwareRecord`
+- `FleetFirmwareAvailability`
+- `FleetFirmwareStatus`
+- `FleetUpdateStatus`
 - `HeaterType`
 - `Mode`
 - `ModelFamily`
@@ -52,12 +56,12 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 - `PendingCommand`
 - `PendingCommandTracker`
 - `ScheduleEventSpec`
+- `SensorLink`
 - `Setpoint`
 - `SetpointClamp`
 - `SetpointConfigError`
 - `SetpointError`
 - `SetpointGapTooSmallError`
-- `SetpointGapUnknownError`
 - `SetpointKind`
 - `SetpointLimit`
 - `SetpointLimitOrderError`
@@ -71,18 +75,18 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 - `Swing`
 - `TemperatureOffset`
 - `Tokens`
-- `UnknownModeError`
 - `UsageBucket`
 - `UsageDay`
 - `encode_schedule_events`
 - `fahrenheit_bounds`
 - `fahrenheit_label`
 - `fahrenheit_offset`
+- `firmware_versions_match`
 - `iso_utc`
 - `jwt_claims`
 - `make_state`
 - `model_family`
-- `parse_mode`
+- `normalize_firmware_version`
 - `reconcile`
 - `settings_command`
 - `state_command`
@@ -109,48 +113,52 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [iso_utc](../../../src/mysa_client/cloud/client.py#L85) | `(value: datetime) -> str` | Format like JavaScript's toISOString(), which Mysa's API expects. |
-| [MysaClient.__init__](../../../src/mysa_client/cloud/client.py#L160) | `(self, session: aiohttp.ClientSession, auth: MysaAuth, *, user_agent: str, base_url: str=API_BASE, legacy_base_url: str=LEGACY_API_BASE) -> None` | Use an existing aiohttp session and an authenticated MysaAuth. |
-| [MysaClient.get_legacy_states](../../../src/mysa_client/cloud/client.py#L366) | `async (self, device_ids: Iterable[str]) -> dict[str, DeviceState]` | Legacy live state with per-field clocks and independent partial errors. |
-| [MysaClient.bootstrap](../../../src/mysa_client/cloud/client.py#L396) | `async (self) -> Bootstrap` | Who's signed in, their homes and their thermostats. |
-| [MysaClient.get_devices](../../../src/mysa_client/cloud/client.py#L406) | `async (self) -> dict[str, DeviceRecord]` | Settings records of every thermostat on the account. |
-| [MysaClient.get_device](../../../src/mysa_client/cloud/client.py#L424) | `async (self, device_id: str) -> DeviceRecord` | Read one stored settings record, not live state, by device ID. |
-| [MysaClient.add_device](../../../src/mysa_client/cloud/client.py#L434) | `async (self, device_id: str, *, home_id: str, model: str, time_zone: str, name: str \| None=None, fahrenheit: bool=False, heater_type: int \| None=None, extra: Mapping[str, Any] \| None=None, app_defaults: bool=True) -> bool` | Put a thermostat on the account by its ID (the Wi-Fi MAC). |
-| [MysaClient.replace_device](../../../src/mysa_client/cloud/client.py#L485) | `async (self, device_id: str, *, home_id: str, model: str, time_zone: str, name: str \| None=None, fahrenheit: bool=False, heater_type: int \| None=None, extra: Mapping[str, Any] \| None=None, app_defaults: bool=True) -> None` | Add a thermostat, replacing the record Mysa kept for it ("purgeadd"). |
-| [MysaClient.delete_device](../../../src/mysa_client/cloud/client.py#L519) | `async (self, device_id: str) -> None` | Remove a thermostat from the account. |
-| [MysaClient.get_states](../../../src/mysa_client/cloud/client.py#L530) | `async (self, device_ids: Iterable[str]) -> dict[str, DeviceState]` | Current state of several thermostats in one request. |
-| [MysaClient.get_state](../../../src/mysa_client/cloud/client.py#L550) | `async (self, device_id: str) -> DeviceState` | Current state of one thermostat. |
-| [MysaClient.execute_command](../../../src/mysa_client/cloud/client.py#L558) | `async (self, device_id: str, command: CloudCommand, *, family: ModelFamily \| None, capabilities: Capabilities \| None, state: DeviceState \| None, command_value: Callable[[str, Any], Any] \| None=None) -> None` | Validate and send an explicit command using caller-owned context. |
-| [MysaClient.update_state](../../../src/mysa_client/cloud/client.py#L590) | `async (self, device_id: str, changes: Mapping[str, Mapping[str, Any]]) -> None` | Change state sections, e.g. {"targetHeat": {"setpoint": 21.5}}. |
-| [MysaClient.set_temperature](../../../src/mysa_client/cloud/client.py#L598) | `async (self, device_id: str, mode: Mode \| None, temperature: Setpoint, *, family: ModelFamily \| None=None) -> None` | Set a thermostat's temperature target for the selected mode. |
-| [MysaClient.set_mode](../../../src/mysa_client/cloud/client.py#L615) | `async (self, device_id: str, mode: Mode) -> None` | Set a thermostat's operating mode. |
-| [MysaClient.set_fan_speed](../../../src/mysa_client/cloud/client.py#L619) | `async (self, device_id: str, speed: AcFan, mode: Mode \| None=None) -> None` | Set an AC fan speed, optionally including its current mode. |
-| [MysaClient.set_swing](../../../src/mysa_client/cloud/client.py#L625) | `async (self, device_id: str, direction: str, value: Swing) -> None` | Set vertical or horizontal AC swing. |
-| [MysaClient.set_display_brightness](../../../src/mysa_client/cloud/client.py#L629) | `async (self, device_id: str, *, active: int, idle: int, route: Literal['S', 'R', 'L']='S') -> None` | Set both wake and idle screen brightness values. |
-| [MysaClient.set_button_lock](../../../src/mysa_client/cloud/client.py#L647) | `async (self, device_id: str, value: ButtonLock, *, route: Literal['S', 'R', 'L']='S') -> None` | Lock or unlock the thermostat's physical buttons. |
-| [MysaClient.set_setpoint_limit](../../../src/mysa_client/cloud/client.py#L660) | `async (self, device_id: str, value: Setpoint, *, minimum: bool, kind: SetpointKind=SetpointKind.HEAT, family: ModelFamily \| None=None, route: Literal['S', 'R', 'L']='S') -> None` | Set the minimum or maximum allowed heating or cooling setpoint. |
-| [MysaClient.set_temperature_offset](../../../src/mysa_client/cloud/client.py#L691) | `async (self, device_id: str, value: TemperatureOffset) -> None` | Set the room-temperature correction offset. |
-| [MysaClient.update_settings](../../../src/mysa_client/cloud/client.py#L697) | `async (self, device_id: str, fields: Mapping[str, Any]) -> None` | Change fields of the settings record (Format, DutyCycleOpt, Name, ...). |
-| [MysaClient.set_display_unit](../../../src/mysa_client/cloud/client.py#L716) | `async (self, device_id: str, unit: str, *, route: Literal['S', 'R', 'L']='R') -> None` | Set the thermostat's screen to Celsius or Fahrenheit. |
-| [MysaClient.set_heater_type](../../../src/mysa_client/cloud/client.py#L725) | `async (self, device_id: str, heater_type: int \| HeaterType, *, route: Literal['S', 'R', 'L']='R') -> None` | Set the heater profile in the device settings record. |
-| [MysaClient.get_capabilities](../../../src/mysa_client/cloud/client.py#L762) | `async (self, device_id: str) -> Capabilities` | What this model supports. |
-| [MysaClient.get_firmware_catalog](../../../src/mysa_client/cloud/client.py#L780) | `async (self) -> dict[str, FirmwareRecord]` | Read legacy catalog records of installed versions, not update offers. |
-| [MysaClient.get_firmware_info](../../../src/mysa_client/cloud/client.py#L802) | `async (self, device_id: str) -> FirmwareInfo` | Whether Mysa offers a firmware update for this thermostat. |
-| [MysaClient.start_firmware_update](../../../src/mysa_client/cloud/client.py#L810) | `async (self, device_id: str) -> None` | Ask Mysa to push the offered firmware. Irreversible. |
-| [MysaClient.get_usage](../../../src/mysa_client/cloud/client.py#L816) | `async (self, device_id: str, time_zone: str, start: datetime, end: datetime) -> list[UsageDay]` | Heating on-time per local day (30-minute buckets inside). |
-| [MysaClient.get_state_history](../../../src/mysa_client/cloud/client.py#L836) | `async (self, device_id: str, start: datetime, end: datetime) -> list[StateChange]` | Who changed what, oldest first. |
-| [MysaClient.get_hold](../../../src/mysa_client/cloud/client.py#L874) | `async (self, device_id: str) -> dict[str, Any] \| None` | The active hold, or None when the thermostat follows its schedule. |
-| [MysaClient.set_hold](../../../src/mysa_client/cloud/client.py#L882) | `async (self, device_id: str, state: Mapping[str, Any], *, until: datetime \| None=None) -> None` | Hold a state permanently, or until a time, overriding the schedule. |
-| [MysaClient.start_live_mode](../../../src/mysa_client/cloud/client.py#L902) | `async (self, home_id: str, seconds: int=300) -> list[str]` | Have a home's thermostats report every few seconds for seconds s. |
-| [MysaClient.resume_schedule](../../../src/mysa_client/cloud/client.py#L916) | `async (self, device_id: str) -> None` | End any hold so the thermostat follows its schedule again. |
-| [MysaClient.get_schedules](../../../src/mysa_client/cloud/client.py#L923) | `async (self, home_id: str) -> list[dict[str, Any]]` | Every schedule in a home. |
-| [MysaClient.get_all_schedules](../../../src/mysa_client/cloud/client.py#L955) | `async (self, home_id: str) -> list[dict[str, Any]]` | Complete native discovery; no mutation is safe after an incomplete read. |
-| [MysaClient.remove_schedule](../../../src/mysa_client/cloud/client.py#L1009) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach through the snapshot's native route, preserving other attachments. |
-| [MysaClient.restore_native_schedule](../../../src/mysa_client/cloud/client.py#L1037) | `async (self, schedule: Mapping[str, Any]) -> None` | Restore a journal snapshot after failed cleanup; no user-facing editor. |
-| [MysaClient.create_schedule](../../../src/mysa_client/cloud/client.py#L1065) | `async (self, *, home_id: str, device_id: str, device_type: str, events: list[dict[str, Any]], name: str \| None=None, reusable: bool=False, device_ids: list[str] \| None=None) -> str \| None` | Create a weekly schedule and return its id. |
-| [MysaClient.delete_schedule](../../../src/mysa_client/cloud/client.py#L1098) | `async (self, schedule_id: str, device_id: str) -> None` | Detach a schedule from its thermostat and delete it. |
-| [MysaClient.get_shortcuts](../../../src/mysa_client/cloud/client.py#L1104) | `async (self, home_id: str) -> list[dict[str, Any]]` | A home's shortcuts, each with Id, DeviceActions and AllDevices. |
-| [MysaClient.update_shortcut](../../../src/mysa_client/cloud/client.py#L1112) | `async (self, shortcut_id: str, device_actions: Mapping[str, Any], *, all_devices: bool) -> None` | Replace a shortcut's per-thermostat actions. |
+| [iso_utc](../../../src/mysa_client/cloud/client.py#L89) | `(value: datetime) -> str` | Format like JavaScript's toISOString(), which Mysa's API expects. |
+| [MysaClient.__init__](../../../src/mysa_client/cloud/client.py#L164) | `(self, session: aiohttp.ClientSession, auth: MysaAuth, *, user_agent: str, base_url: str=API_BASE, legacy_base_url: str=LEGACY_API_BASE) -> None` | Use an existing aiohttp session and an authenticated MysaAuth. |
+| [MysaClient.get_legacy_states](../../../src/mysa_client/cloud/client.py#L370) | `async (self, device_ids: Iterable[str]) -> dict[str, DeviceState]` | Legacy live state with per-field clocks and independent partial errors. |
+| [MysaClient.bootstrap](../../../src/mysa_client/cloud/client.py#L400) | `async (self) -> Bootstrap` | Who's signed in, their homes and their thermostats. |
+| [MysaClient.get_devices](../../../src/mysa_client/cloud/client.py#L410) | `async (self) -> dict[str, DeviceRecord]` | Settings records of every thermostat on the account. |
+| [MysaClient.get_device](../../../src/mysa_client/cloud/client.py#L428) | `async (self, device_id: str) -> DeviceRecord` | Read one stored settings record, not live state, by device ID. |
+| [MysaClient.add_device](../../../src/mysa_client/cloud/client.py#L438) | `async (self, device_id: str, *, home_id: str, model: str, time_zone: str, name: str \| None=None, fahrenheit: bool=False, heater_type: int \| None=None, extra: Mapping[str, Any] \| None=None, app_defaults: bool=True) -> bool` | Put a thermostat on the account by its ID (the Wi-Fi MAC). |
+| [MysaClient.replace_device](../../../src/mysa_client/cloud/client.py#L489) | `async (self, device_id: str, *, home_id: str, model: str, time_zone: str, name: str \| None=None, fahrenheit: bool=False, heater_type: int \| None=None, extra: Mapping[str, Any] \| None=None, app_defaults: bool=True) -> None` | Add a thermostat, replacing the record Mysa kept for it ("purgeadd"). |
+| [MysaClient.delete_device](../../../src/mysa_client/cloud/client.py#L523) | `async (self, device_id: str) -> None` | Remove a thermostat from the account. |
+| [MysaClient.get_states](../../../src/mysa_client/cloud/client.py#L534) | `async (self, device_ids: Iterable[str]) -> dict[str, DeviceState]` | Current state of several thermostats in one request. |
+| [MysaClient.get_state](../../../src/mysa_client/cloud/client.py#L554) | `async (self, device_id: str) -> DeviceState` | Current state of one thermostat. |
+| [MysaClient.execute_command](../../../src/mysa_client/cloud/client.py#L562) | `async (self, device_id: str, command: CloudCommand, *, family: ModelFamily \| None, capabilities: Capabilities \| None, state: DeviceState \| None, command_value: Callable[[str, Any], Any] \| None=None) -> None` | Validate and send an explicit command using caller-owned context. |
+| [MysaClient.update_state](../../../src/mysa_client/cloud/client.py#L594) | `async (self, device_id: str, changes: Mapping[str, Mapping[str, Any]]) -> None` | Change state sections, e.g. {"targetHeat": {"setpoint": 21.5}}. |
+| [MysaClient.set_temperature](../../../src/mysa_client/cloud/client.py#L602) | `async (self, device_id: str, mode: Mode \| None, temperature: Setpoint) -> None` | Set a thermostat's temperature target for the selected mode. |
+| [MysaClient.set_mode](../../../src/mysa_client/cloud/client.py#L608) | `async (self, device_id: str, mode: Mode) -> None` | Set a thermostat's operating mode. |
+| [MysaClient.set_fan_speed](../../../src/mysa_client/cloud/client.py#L612) | `async (self, device_id: str, speed: AcFan, mode: Mode \| None=None) -> None` | Set an AC fan speed, optionally including its current mode. |
+| [MysaClient.set_swing](../../../src/mysa_client/cloud/client.py#L618) | `async (self, device_id: str, direction: str, value: Swing) -> None` | Set vertical or horizontal AC swing. |
+| [MysaClient.set_display_brightness](../../../src/mysa_client/cloud/client.py#L622) | `async (self, device_id: str, *, active: int, idle: int, route: Literal['S', 'R', 'L']='S') -> None` | Set both wake and idle screen brightness values. |
+| [MysaClient.set_button_lock](../../../src/mysa_client/cloud/client.py#L640) | `async (self, device_id: str, value: ButtonLock, *, route: Literal['S', 'R', 'L']='S') -> None` | Lock or unlock the thermostat's physical buttons. |
+| [MysaClient.set_setpoint_limit](../../../src/mysa_client/cloud/client.py#L653) | `async (self, device_id: str, value: Setpoint, *, minimum: bool, route: Literal['S', 'R', 'L']='S') -> None` | Set the minimum or maximum allowed heating setpoint. |
+| [MysaClient.set_temperature_offset](../../../src/mysa_client/cloud/client.py#L669) | `async (self, device_id: str, value: TemperatureOffset) -> None` | Set the room-temperature correction offset. |
+| [MysaClient.update_settings](../../../src/mysa_client/cloud/client.py#L675) | `async (self, device_id: str, fields: Mapping[str, Any]) -> None` | Change fields of the settings record (Format, DutyCycleOpt, Name, ...). |
+| [MysaClient.set_display_unit](../../../src/mysa_client/cloud/client.py#L694) | `async (self, device_id: str, unit: str, *, route: Literal['S', 'R', 'L']='R') -> None` | Set the thermostat's screen to Celsius or Fahrenheit. |
+| [MysaClient.set_heater_type](../../../src/mysa_client/cloud/client.py#L703) | `async (self, device_id: str, heater_type: int \| HeaterType, *, route: Literal['S', 'R', 'L']='R') -> None` | Set the heater profile in the device settings record. |
+| [MysaClient.get_capabilities](../../../src/mysa_client/cloud/client.py#L740) | `async (self, device_id: str) -> Capabilities` | What this model supports. |
+| [MysaClient.get_firmware_catalog](../../../src/mysa_client/cloud/client.py#L758) | `async (self) -> dict[str, FirmwareRecord]` | Read legacy catalog records of installed versions, not update offers. |
+| [MysaClient.get_firmware_info](../../../src/mysa_client/cloud/client.py#L780) | `async (self, device_id: str) -> FirmwareInfo` | Whether Mysa offers a firmware update for this thermostat. |
+| [MysaClient.start_firmware_update](../../../src/mysa_client/cloud/client.py#L788) | `async (self, device_id: str) -> None` | Ask Mysa to push the offered firmware. Irreversible. |
+| [MysaClient.get_fleet_firmware_availability](../../../src/mysa_client/cloud/client.py#L794) | `async (self, device_id: str, current_version: str \| None=None) -> FleetFirmwareAvailability` | Whether Mysa offers fleet (newer-model) firmware for this device. |
+| [MysaClient.get_fleet_firmware_status](../../../src/mysa_client/cloud/client.py#L819) | `async (self, request_id: str) -> FleetFirmwareStatus` | The status of one fleet firmware request (GET /ota/update/{requestId}). |
+| [MysaClient.get_demand_response_state](../../../src/mysa_client/cloud/client.py#L831) | `async (self, device_id: str) -> DemandResponseState` | The device's demand-response record from GET /devices/{id}/drstate. |
+| [MysaClient.get_sensor_links](../../../src/mysa_client/cloud/client.py#L850) | `async (self, target_id: str) -> list[SensorLink]` | Sensors linked to a thermostat (GET /linking?targetId={id}). |
+| [MysaClient.get_usage](../../../src/mysa_client/cloud/client.py#L867) | `async (self, device_id: str, time_zone: str, start: datetime, end: datetime) -> list[UsageDay]` | Heating on-time per local day (30-minute buckets inside). |
+| [MysaClient.get_state_history](../../../src/mysa_client/cloud/client.py#L887) | `async (self, device_id: str, start: datetime, end: datetime) -> list[StateChange]` | Who changed what, oldest first. |
+| [MysaClient.get_hold](../../../src/mysa_client/cloud/client.py#L925) | `async (self, device_id: str) -> dict[str, Any] \| None` | The active hold, or None when the thermostat follows its schedule. |
+| [MysaClient.set_hold](../../../src/mysa_client/cloud/client.py#L933) | `async (self, device_id: str, state: Mapping[str, Any], *, until: datetime \| None=None) -> None` | Hold a state permanently, or until a time, overriding the schedule. |
+| [MysaClient.start_live_mode](../../../src/mysa_client/cloud/client.py#L953) | `async (self, home_id: str, seconds: int=300) -> list[str]` | Have a home's thermostats report every few seconds for seconds s. |
+| [MysaClient.resume_schedule](../../../src/mysa_client/cloud/client.py#L967) | `async (self, device_id: str) -> None` | End any hold so the thermostat follows its schedule again. |
+| [MysaClient.get_schedules](../../../src/mysa_client/cloud/client.py#L974) | `async (self, home_id: str) -> list[dict[str, Any]]` | Every schedule in a home. |
+| [MysaClient.get_all_schedules](../../../src/mysa_client/cloud/client.py#L1006) | `async (self, home_id: str) -> list[dict[str, Any]]` | Complete native discovery; no mutation is safe after an incomplete read. |
+| [MysaClient.remove_schedule](../../../src/mysa_client/cloud/client.py#L1060) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach through the snapshot's native route, preserving other attachments. |
+| [MysaClient.restore_native_schedule](../../../src/mysa_client/cloud/client.py#L1088) | `async (self, schedule: Mapping[str, Any]) -> None` | Restore a journal snapshot after failed cleanup; no user-facing editor. |
+| [MysaClient.create_schedule](../../../src/mysa_client/cloud/client.py#L1116) | `async (self, *, home_id: str, device_id: str, device_type: str, events: list[dict[str, Any]], name: str \| None=None, reusable: bool=False, device_ids: list[str] \| None=None) -> str \| None` | Create a weekly schedule and return its id. |
+| [MysaClient.delete_schedule](../../../src/mysa_client/cloud/client.py#L1149) | `async (self, schedule_id: str, device_id: str) -> None` | Detach a schedule from its thermostat and delete it. |
+| [MysaClient.get_shortcuts](../../../src/mysa_client/cloud/client.py#L1155) | `async (self, home_id: str) -> list[dict[str, Any]]` | A home's shortcuts, each with Id, DeviceActions and AllDevices. |
+| [MysaClient.update_shortcut](../../../src/mysa_client/cloud/client.py#L1163) | `async (self, shortcut_id: str, device_actions: Mapping[str, Any], *, all_devices: bool) -> None` | Replace a shortcut's per-thermostat actions. |
 
 
 ## HomeKit
@@ -234,26 +242,25 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [round_half_up](../../../src/mysa_client/cloud/setpoints.py#L341) | `(value: float) -> int` | Round halfway values up, like JavaScript's Math.round. |
-| [round_to_step](../../../src/mysa_client/cloud/setpoints.py#L346) | `(value: float, step: float) -> float` | Round to a multiple of step anchored at 0, halfway values up. |
-| [to_celsius](../../../src/mysa_client/cloud/setpoints.py#L351) | `(value: float, unit: Unit) -> float` | Convert an absolute temperature to °C. |
-| [fahrenheit_label](../../../src/mysa_client/cloud/setpoints.py#L356) | `(celsius: float \| Setpoint) -> int` | Whole °F as the Mysa app shows it: Math.round(c * 1.8 + 32). |
-| [fahrenheit_offset](../../../src/mysa_client/cloud/setpoints.py#L362) | `(delta_c: float \| TemperatureOffset) -> int` | Whole °F for a temperature delta, halfway values rounded up. |
-| [fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L405) | `(limits: SetpointRange, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in limits. |
-| [limits_ordered](../../../src/mysa_client/cloud/setpoints.py#L432) | `(minimum: float, maximum: float) -> bool` | Whether owner limits are valid together: the minimum strictly below. |
-| [kind_for_mode](../../../src/mysa_client/cloud/setpoints.py#L508) | `(mode: Mode \| None, family: ModelFamily \| None=None) -> SetpointKind` | The single-setpoint range a mode writes, matching the command encoder. |
-| [SetpointRules.__init__](../../../src/mysa_client/cloud/setpoints.py#L567) | `(self, capabilities: Capabilities \| None=None, homekit_range: RangeTuple \| None=None, *, setpoint_min: float \| None=None, setpoint_max: float \| None=None, record: DeviceRecord \| None=None, cool_min: float \| None=None, cool_max: float \| None=None, family: ModelFamily \| None=None) -> None` | Derive every range once from the thermostat's advertised limits. |
-| [SetpointRules.range_for](../../../src/mysa_client/cloud/setpoints.py#L639) | `(self, kind: SetpointKind \| Mode \| None) -> SetpointRange` | The normalised range for a setpoint kind or a single-setpoint mode. |
-| [SetpointRules.setpoint](../../../src/mysa_client/cloud/setpoints.py#L645) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a single target for mode. |
-| [SetpointRules.heat_cool](../../../src/mysa_client/cloud/setpoints.py#L670) | `(self, low: float, high: float, *, unit: Unit='C', strict: bool=True) -> tuple[Setpoint, Setpoint]` | Normalise a heat/cool pair; the gap is checked, never adjusted. |
-| [SetpointRules.heat_cool_side](../../../src/mysa_client/cloud/setpoints.py#L708) | `(self, side: Side, value: float, *, other: float \| Setpoint \| None, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise one side of a heat/cool pair, keeping the other as it is. |
-| [SetpointRules.limit](../../../src/mysa_client/cloud/setpoints.py#L759) | `(self, value: float, *, minimum: bool, kind: SetpointKind=SetpointKind.HEAT, unit: Unit='C', strict: bool=True) -> SetpointLimit` | Normalise an owner minimum or maximum against the hardware range. |
-| [SetpointRules.offset](../../../src/mysa_client/cloud/setpoints.py#L819) | `(self, delta: float, *, unit: Unit='C', strict: bool=True) -> TemperatureOffset` | Normalise a calibration delta; a °F delta converts by / 1.8. |
-| [SetpointRules.schedule_event](../../../src/mysa_client/cloud/setpoints.py#L838) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a schedule event's temperature exactly like setpoint. |
-| [SetpointRules.fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L849) | `(self, kind: SetpointKind \| Mode \| SetpointRange \| None, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in range. |
-| [SetpointRules.offset_fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L864) | `(self) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F calibration delta in offset_range. |
-| [SetpointRules.envelope](../../../src/mysa_client/cloud/setpoints.py#L868) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> SetpointRange` | The smallest range in °C covering every listed kind, for display. |
-| [SetpointRules.fahrenheit_envelope](../../../src/mysa_client/cloud/setpoints.py#L890) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> tuple[int, int]` | Lowest and highest whole °F any listed kind accepts, for display. |
+| [round_half_up](../../../src/mysa_client/cloud/setpoints.py#L310) | `(value: float) -> int` | Round halfway values up, like JavaScript's Math.round. |
+| [round_to_step](../../../src/mysa_client/cloud/setpoints.py#L315) | `(value: float, step: float) -> float` | Round to a multiple of step anchored at 0, halfway values up. |
+| [to_celsius](../../../src/mysa_client/cloud/setpoints.py#L320) | `(value: float, unit: Unit) -> float` | Convert an absolute temperature to °C. |
+| [fahrenheit_label](../../../src/mysa_client/cloud/setpoints.py#L325) | `(celsius: float \| Setpoint) -> int` | Whole °F as the Mysa app shows it: Math.round(c * 1.8 + 32). |
+| [fahrenheit_offset](../../../src/mysa_client/cloud/setpoints.py#L331) | `(delta_c: float \| TemperatureOffset) -> int` | Whole °F for a temperature delta, halfway values rounded up. |
+| [fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L374) | `(limits: SetpointRange, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in limits. |
+| [limits_ordered](../../../src/mysa_client/cloud/setpoints.py#L401) | `(minimum: float, maximum: float) -> bool` | Whether owner limits are valid together: the minimum strictly below. |
+| [kind_for_mode](../../../src/mysa_client/cloud/setpoints.py#L462) | `(mode: Mode \| None) -> SetpointKind` | The single-setpoint range a mode writes, matching the command encoder. |
+| [SetpointRules.__init__](../../../src/mysa_client/cloud/setpoints.py#L502) | `(self, capabilities: Capabilities \| None=None, homekit_range: RangeTuple \| None=None, *, setpoint_min: float \| None=None, setpoint_max: float \| None=None, record: DeviceRecord \| None=None) -> None` | Derive every range once from the thermostat's advertised limits. |
+| [SetpointRules.range_for](../../../src/mysa_client/cloud/setpoints.py#L551) | `(self, kind: SetpointKind \| Mode \| None) -> SetpointRange` | The normalised range for a setpoint kind or a single-setpoint mode. |
+| [SetpointRules.setpoint](../../../src/mysa_client/cloud/setpoints.py#L557) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a single heat or cool target for mode. |
+| [SetpointRules.heat_cool](../../../src/mysa_client/cloud/setpoints.py#L580) | `(self, low: float, high: float, *, unit: Unit='C', strict: bool=True) -> tuple[Setpoint, Setpoint]` | Normalise a heat/cool pair; the gap is checked, never adjusted. |
+| [SetpointRules.limit](../../../src/mysa_client/cloud/setpoints.py#L618) | `(self, value: float, *, minimum: bool, unit: Unit='C', strict: bool=True) -> SetpointLimit` | Normalise an owner minimum or maximum against the hardware heat range. |
+| [SetpointRules.offset](../../../src/mysa_client/cloud/setpoints.py#L654) | `(self, delta: float, *, unit: Unit='C', strict: bool=True) -> TemperatureOffset` | Normalise a calibration delta; a °F delta converts by / 1.8. |
+| [SetpointRules.schedule_event](../../../src/mysa_client/cloud/setpoints.py#L673) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a schedule event's temperature exactly like setpoint. |
+| [SetpointRules.fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L684) | `(self, kind: SetpointKind \| Mode \| SetpointRange \| None, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in range. |
+| [SetpointRules.offset_fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L699) | `(self) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F calibration delta in offset_range. |
+| [SetpointRules.envelope](../../../src/mysa_client/cloud/setpoints.py#L703) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> SetpointRange` | The smallest range in °C covering every listed kind, for display. |
+| [SetpointRules.fahrenheit_envelope](../../../src/mysa_client/cloud/setpoints.py#L725) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> tuple[int, int]` | Lowest and highest whole °F any listed kind accepts, for display. |
 
 ### `mysa_client._temperature`
 
@@ -271,11 +278,11 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [climate_command](../../../src/mysa_client/cloud/device_commands.py#L21) | `(family: ModelFamily \| None, selected_mode: Mode \| None, *, mode: Mode \| None=None, temperature: Setpoint \| None=None, low: Setpoint \| None=None, high: Setpoint \| None=None) -> CloudCommand` | Build one mode/target operation, as Mysa's app 4.21.1 encodes it. |
-| [hvac_fan_speed_command](../../../src/mysa_client/cloud/device_commands.py#L73) | `(speed: int) -> CloudCommand` | Use the Central HVAC fan enumeration, independently of AC IR speeds. |
-| [hvac_fan_command](../../../src/mysa_client/cloud/device_commands.py#L78) | `(mode: str) -> CloudCommand` | Build the native always-on/runtime/period combination. |
-| [brightness_command](../../../src/mysa_client/cloud/device_commands.py#L83) | `(value: float, *, active: bool, wake: float=100, sleep: float=50) -> CloudCommand` | Adjust a brightness setting together with its dependent partner. |
-| [display_unit_command](../../../src/mysa_client/cloud/device_commands.py#L91) | `(unit: str, family: ModelFamily \| None) -> CloudCommand` | Use structured state for newer models and stored settings for legacy ones. |
+| [climate_command](../../../src/mysa_client/cloud/device_commands.py#L21) | `(family: ModelFamily \| None, selected_mode: Mode \| None, *, mode: Mode \| None=None, temperature: Setpoint \| None=None, low: Setpoint \| None=None, high: Setpoint \| None=None) -> CloudCommand` | Build one mode/target operation, preserving native HVAC auto targets. |
+| [hvac_fan_speed_command](../../../src/mysa_client/cloud/device_commands.py#L54) | `(speed: int) -> CloudCommand` | Use the Central HVAC fan enumeration, independently of AC IR speeds. |
+| [hvac_fan_command](../../../src/mysa_client/cloud/device_commands.py#L59) | `(mode: str) -> CloudCommand` | Build the native always-on/runtime/period combination. |
+| [brightness_command](../../../src/mysa_client/cloud/device_commands.py#L64) | `(value: float, *, active: bool, wake: float=100, sleep: float=50) -> CloudCommand` | Adjust a brightness setting together with its dependent partner. |
+| [display_unit_command](../../../src/mysa_client/cloud/device_commands.py#L72) | `(unit: str, family: ModelFamily \| None) -> CloudCommand` | Use structured state for newer models and stored settings for legacy ones. |
 
 ### `mysa_client.cloud.reconciliation`
 
@@ -298,7 +305,7 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
 | [validate_cloud_command](../../../src/mysa_client/cloud/validation.py#L14) | `(family: ModelFamily \| None, caps: Capabilities \| None, state: DeviceState \| None, expected: Mapping[str, Any], command_value: Callable[[str, Any], Any], *, command_kind: Literal['state', 'settings'] \| None=None) -> None` | Validate known Mysa constraints for any command before sending it. |
-| [validate_basic_command](../../../src/mysa_client/cloud/validation.py#L122) | `(family: ModelFamily, caps: Capabilities \| None, state: DeviceState \| None, expected: dict[str, Any], command_value: Callable[[str, Any], Any]) -> None` | Validate controls for experimental cloud-only devices. |
+| [validate_basic_command](../../../src/mysa_client/cloud/validation.py#L103) | `(family: ModelFamily, caps: Capabilities \| None, state: DeviceState \| None, expected: dict[str, Any], command_value: Callable[[str, Any], Any]) -> None` | Validate controls for experimental cloud-only devices. |
 
 ### `mysa_client.cloud.schedule_workflow`
 
@@ -306,23 +313,23 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [ScheduleJournal.async_load](../../../src/mysa_client/cloud/schedule_workflow.py#L35) | `async (self) -> dict[str, Any] \| None` | Read the current version-1 transaction, if any. |
-| [ScheduleJournal.async_save](../../../src/mysa_client/cloud/schedule_workflow.py#L39) | `async (self, data: dict[str, Any]) -> None` | Durably save a transaction before its first write. |
-| [ScheduleJournal.async_remove](../../../src/mysa_client/cloud/schedule_workflow.py#L43) | `async (self) -> None` | Remove a completed transaction. |
-| [ScheduleTransport.get_all_schedules](../../../src/mysa_client/cloud/schedule_workflow.py#L51) | `async (self, home_id: str) -> list[dict[str, Any]]` | Read all legacy and modern schedules for a home. |
-| [ScheduleTransport.remove_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L55) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach a schedule from one device. |
-| [ScheduleTransport.create_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L61) | `async (self, payload: Mapping[str, Any], device_id: str) -> None` | Create a modern or restore a native legacy schedule. |
-| [MysaScheduleTransport.__init__](../../../src/mysa_client/cloud/schedule_workflow.py#L69) | `(self, client: MysaClient) -> None` | Bind the Mysa client used for schedule operations. |
-| [MysaScheduleTransport.get_all_schedules](../../../src/mysa_client/cloud/schedule_workflow.py#L73) | `async (self, home_id: str) -> list[dict[str, Any]]` | Read all legacy and modern schedules for a home. |
-| [MysaScheduleTransport.remove_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L77) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach a schedule from one device. |
-| [MysaScheduleTransport.create_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L83) | `async (self, payload: Mapping[str, Any], device_id: str) -> None` | Create a modern schedule or restore a native schedule snapshot. |
-| [build_schedule_events](../../../src/mysa_client/cloud/schedule_workflow.py#L117) | `(events: Iterable[Mapping[str, Any]], *, default_mode: Mode \| str=Mode.HEAT, client_key: str='mysa-client', rules: SetpointRules \| None=None, unit: Unit='C') -> list[dict[str, Any]]` | Encode semantic weekday events in the cloud schedule representation. |
-| [schedule_content_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L178) | `(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> bool` | Compare semantic schedule content across Mysa's GET normalization. |
-| [schedule_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L259) | `(actual: Mapping[str, Any], expected: Mapping[str, Any], device_ids: list[str]) -> bool` | Compare schedule content and its exact set of attachments. |
-| [ScheduleWorkflow.async_recover](../../../src/mysa_client/cloud/schedule_workflow.py#L344) | `async (self, *, for_clear: bool=False) -> None` | Reconcile an interrupted replacement or clear operation. |
-| [ScheduleWorkflow.async_set](../../../src/mysa_client/cloud/schedule_workflow.py#L373) | `async (self, events: Iterable[Mapping[str, Any]]) -> None` | Replace all schedules attached to this thermostat. |
-| [ScheduleWorkflow.async_set_encoded](../../../src/mysa_client/cloud/schedule_workflow.py#L378) | `async (self, encoded_events: list[dict[str, Any]]) -> None` | Replace schedules using events already encoded by this client. |
-| [ScheduleWorkflow.async_clear](../../../src/mysa_client/cloud/schedule_workflow.py#L440) | `async (self) -> None` | Delete every schedule attached to this thermostat. |
+| [ScheduleJournal.async_load](../../../src/mysa_client/cloud/schedule_workflow.py#L34) | `async (self) -> dict[str, Any] \| None` | Read the current version-1 transaction, if any. |
+| [ScheduleJournal.async_save](../../../src/mysa_client/cloud/schedule_workflow.py#L38) | `async (self, data: dict[str, Any]) -> None` | Durably save a transaction before its first write. |
+| [ScheduleJournal.async_remove](../../../src/mysa_client/cloud/schedule_workflow.py#L42) | `async (self) -> None` | Remove a completed transaction. |
+| [ScheduleTransport.get_all_schedules](../../../src/mysa_client/cloud/schedule_workflow.py#L50) | `async (self, home_id: str) -> list[dict[str, Any]]` | Read all legacy and modern schedules for a home. |
+| [ScheduleTransport.remove_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L54) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach a schedule from one device. |
+| [ScheduleTransport.create_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L60) | `async (self, payload: Mapping[str, Any], device_id: str) -> None` | Create a modern or restore a native legacy schedule. |
+| [MysaScheduleTransport.__init__](../../../src/mysa_client/cloud/schedule_workflow.py#L68) | `(self, client: MysaClient) -> None` | Bind the Mysa client used for schedule operations. |
+| [MysaScheduleTransport.get_all_schedules](../../../src/mysa_client/cloud/schedule_workflow.py#L72) | `async (self, home_id: str) -> list[dict[str, Any]]` | Read all legacy and modern schedules for a home. |
+| [MysaScheduleTransport.remove_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L76) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach a schedule from one device. |
+| [MysaScheduleTransport.create_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L82) | `async (self, payload: Mapping[str, Any], device_id: str) -> None` | Create a modern schedule or restore a native schedule snapshot. |
+| [build_schedule_events](../../../src/mysa_client/cloud/schedule_workflow.py#L116) | `(events: Iterable[Mapping[str, Any]], *, default_mode: Mode=Mode.HEAT, client_key: str='mysa-client', rules: SetpointRules \| None=None, unit: Unit='C') -> list[dict[str, Any]]` | Encode semantic weekday events in the cloud schedule representation. |
+| [schedule_content_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L172) | `(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> bool` | Compare semantic schedule content across Mysa's GET normalization. |
+| [schedule_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L253) | `(actual: Mapping[str, Any], expected: Mapping[str, Any], device_ids: list[str]) -> bool` | Compare schedule content and its exact set of attachments. |
+| [ScheduleWorkflow.async_recover](../../../src/mysa_client/cloud/schedule_workflow.py#L338) | `async (self, *, for_clear: bool=False) -> None` | Reconcile an interrupted replacement or clear operation. |
+| [ScheduleWorkflow.async_set](../../../src/mysa_client/cloud/schedule_workflow.py#L367) | `async (self, events: Iterable[Mapping[str, Any]]) -> None` | Replace all schedules attached to this thermostat. |
+| [ScheduleWorkflow.async_set_encoded](../../../src/mysa_client/cloud/schedule_workflow.py#L372) | `async (self, encoded_events: list[dict[str, Any]]) -> None` | Replace schedules using events already encoded by this client. |
+| [ScheduleWorkflow.async_clear](../../../src/mysa_client/cloud/schedule_workflow.py#L434) | `async (self) -> None` | Delete every schedule attached to this thermostat. |
 
 ### `mysa_client.cloud.holds`
 
@@ -330,8 +337,8 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [resolve_hold](../../../src/mysa_client/cloud/holds.py#L47) | `(*, requested_mode: Mode \| str \| None, current_mode: Mode \| str \| None, requested_temperature: float \| Setpoint \| None, current_temperature: float \| Setpoint \| None, until: datetime \| None=None, rules: SetpointRules \| None=None, unit: Unit='C') -> HoldCommand` | Apply Mysa's default-mode and OFF/setpoint rules to a hold request. |
-| [async_apply_hold](../../../src/mysa_client/cloud/holds.py#L112) | `async (command: HoldCommand, *, set_hold: Callable[[Mapping[str, Any], datetime \| None], Awaitable[None]], current_mode: Callable[[], Mode \| None], current_temperature: Callable[[], float \| None], set_mode: Callable[[Mode], Awaitable[None]], set_temperature: Callable[[Setpoint], Awaitable[None]]) -> None` | Set the cloud hold, then immediately apply its state through callbacks. |
+| [resolve_hold](../../../src/mysa_client/cloud/holds.py#L40) | `(*, requested_mode: Mode \| None, current_mode: Mode \| None, requested_temperature: float \| Setpoint \| None, current_temperature: float \| Setpoint \| None, until: datetime \| None=None, rules: SetpointRules \| None=None, unit: Unit='C') -> HoldCommand` | Apply Mysa's default-mode and OFF/setpoint rules to a hold request. |
+| [async_apply_hold](../../../src/mysa_client/cloud/holds.py#L102) | `async (command: HoldCommand, *, set_hold: Callable[[Mapping[str, Any], datetime \| None], Awaitable[None]], current_mode: Callable[[], Mode \| None], current_temperature: Callable[[], float \| None], set_mode: Callable[[Mode], Awaitable[None]], set_temperature: Callable[[Setpoint], Awaitable[None]]) -> None` | Set the cloud hold, then immediately apply its state through callbacks. |
 
 ### `mysa_client.cloud.account_workflow`
 

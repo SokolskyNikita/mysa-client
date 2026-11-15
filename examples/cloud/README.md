@@ -13,13 +13,16 @@ described in each record's evidence metadata.
 | [cognito-refresh.request.json](cognito-refresh.request.json) | Refresh-token request with placeholders |
 | [device-claim.minimal.json](device-claim.minimal.json) | Minimal legacy device claim |
 | [devices.success.json](devices.success.json) | Legacy account device records |
+| [drstate.not-enrolled.json](drstate.not-enrolled.json) | Demand-response state of a thermostat that is not enrolled |
 | [firmware-availability.no-update.json](firmware-availability.no-update.json) | Firmware availability with no offered update |
 | [firmware-trigger.empty-object.json](firmware-trigger.empty-object.json) | Accepted firmware trigger request |
 | [firmware-trigger.no-body-error.json](firmware-trigger.no-body-error.json) | Firmware trigger without the required body |
 | [hold.permanent.json](hold.permanent.json) | Permanent schedule hold |
 | [iot-policy.limited.json](iot-policy.limited.json) | Limited IoT policy projection |
 | [legacy-state.mixed-time.json](legacy-state.mixed-time.json) | Legacy state with field-level timestamps |
+| [linking.empty.json](linking.empty.json) | Sensor links of a thermostat with none |
 | [live-mode.request.json](live-mode.request.json) | Temporary live-reporting request |
+| [ota-availability.not-in-fleet.json](ota-availability.not-in-fleet.json) | Fleet firmware availability for a legacy model (404) |
 | [schedule-create.full-body.json](schedule-create.full-body.json) | Modern schedule creation |
 | [schedule-update.full-body.json](schedule-update.full-body.json) | Full-body modern schedule update |
 | [schedule-v1-clear.legacy-host.json](schedule-v1-clear.legacy-host.json) | Legacy V1 schedule clear through the older host |

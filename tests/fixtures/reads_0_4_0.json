@@ -1,0 +1,179 @@
+{
+  "provenance": {
+    "note": "Fixtures for the 0.4.0 read-only additions. Each entry names its evidence. live-sanitized entries keep the values Mysa returned for a Baseboard Lite (BB-V2-0-L, firmware 3.17.5.13) on 2026-11-15 with IDs and clocks replaced; app-derived entries use field names from Mysa's Android app 4.21.1 with constructed values; constructed entries exercise edge cases only.",
+    "app_version": "4.21.1"
+  },
+  "drstate_not_enrolled": {
+    "evidence": "live-sanitized: both Lites, modern and legacy host, HTTP 200",
+    "body": {
+      "DeviceDrState": {}
+    }
+  },
+  "drstate_event": {
+    "evidence": "app-derived: js/modules/3808_applyPolledDrStates.js drStateChange, 3872_useDrService.js formatDRStateData; values constructed",
+    "body": {
+      "DeviceDrState": {
+        "Device": "a1b2c3d4e5f6",
+        "NewState": "event",
+        "Timestamp": 1794772800,
+        "DeviceTime": 1794772790,
+        "CurrentState": "none",
+        "CurrentSetpoint": 21,
+        "NewSetpoint": 18
+      }
+    }
+  },
+  "drstate_none": {
+    "evidence": "app-derived: an explicit none state (module_3731.js DR_STATE.NONE); values constructed",
+    "body": {
+      "DeviceDrState": {
+        "Device": "a1b2c3d4e5f6",
+        "NewState": "none",
+        "Timestamp": 1794772800
+      }
+    }
+  },
+  "state_lite_idle": {
+    "evidence": "live-sanitized: GET /state/{id} reading, power and diagnostics sections from one Lite; other sections trimmed; clocks replaced",
+    "body": {
+      "latestTelemetry": {
+        "isConnected": true,
+        "lastConnected": 1794772800,
+        "reading": {
+          "deviceId": "a1b2c3d4e5f6",
+          "timestamp": 1794772800,
+          "rawTemperature": 28.3,
+          "roomTemperature": 22.9,
+          "humidity": 38.5,
+          "heatSetpoint": 10,
+          "coolSetpoint": 10,
+          "onTime": 0,
+          "coreTemperature": 31.1,
+          "freeHeap": 69320,
+          "rssi": -43,
+          "mode": 3,
+          "dutyCycle": 0,
+          "voltage": 240,
+          "maxCurrent": 0,
+          "powerConsumed": 0,
+          "effectiveSetpoint": 23,
+          "instantLoad": 0,
+          "timestampEstimated": false
+        }
+      },
+      "targetHeat": {
+        "reported": {
+          "timestamp": 1794772000,
+          "setpoint": 10
+        }
+      },
+      "identity": {
+        "reported": {
+          "timestamp": 1794700000,
+          "model": "BB-V2-0-L",
+          "fw": "3.17.5.13"
+        }
+      },
+      "power": {
+        "reported": {
+          "timestamp": 1794772800,
+          "voltage": 240,
+          "current": 0,
+          "wattage": 0,
+          "dutyCycle": 0
+        }
+      },
+      "diagnostics": {
+        "reported": {
+          "timestamp": 1794772800,
+          "freeHeap": 69320
+        }
+      }
+    }
+  },
+  "state_infloor_heating": {
+    "evidence": "app-derived: TELEMETRY_PATHS in js/modules/module_3742.js; values constructed (no In-Floor was observed)",
+    "body": {
+      "latestTelemetry": {
+        "isConnected": true,
+        "reading": {
+          "timestamp": 1794772800,
+          "roomTemperature": 21.0,
+          "probeTemperature": 24.5,
+          "dutyCycle": 0.45
+        }
+      },
+      "identity": {
+        "reported": {
+          "model": "INF-V1-0"
+        }
+      },
+      "power": {
+        "reported": {
+          "timestamp": 1794772800,
+          "voltage": 0,
+          "current": 0,
+          "wattage": 1500,
+          "dutyCycle": 45
+        }
+      }
+    }
+  },
+  "ota_available_update": {
+    "evidence": "app-derived: js/modules/3886_usePairingService.js reads updateAvailable, message, firmwareVersion.{id,version,description,releaseNotes}; values constructed",
+    "body": {
+      "updateAvailable": true,
+      "message": "Update available",
+      "firmwareVersion": {
+        "id": "fw-00000001",
+        "version": "v4.2.0-rc1",
+        "description": "Stability improvements",
+        "releaseNotes": "Example release notes."
+      }
+    }
+  },
+  "ota_status_in_progress": {
+    "evidence": "app-derived: js/modules/module_3885.js reads status and percentComplete; values constructed",
+    "body": {
+      "requestId": "00000000-0000-4000-8000-0000000000c1",
+      "status": "IN_PROGRESS",
+      "percentComplete": 42
+    }
+  },
+  "linking_empty": {
+    "evidence": "live-sanitized: GET /linking?targetId={Lite id}, HTTP 200",
+    "body": []
+  },
+  "linking_hvac": {
+    "evidence": "app-derived: js/modules/3859_useLinkingService.js and module_3828.js isParticipatingLink; values constructed (no Central HVAC or Climate Sensor was observed)",
+    "body": [
+      {
+        "linkId": "00000000-0000-4000-8000-0000000000d1",
+        "sourceId": "0000000000b0",
+        "targetId": "0000000000b0",
+        "weight": 1,
+        "enabled": true
+      },
+      {
+        "linkId": "00000000-0000-4000-8000-0000000000d2",
+        "sourceId": "0000000000c5",
+        "targetId": "0000000000b0",
+        "weight": 2
+      },
+      {
+        "linkId": "00000000-0000-4000-8000-0000000000d3",
+        "sourceId": "0000000000c6",
+        "targetId": "0000000000b0",
+        "weight": 1,
+        "enabled": false
+      },
+      {
+        "linkId": "00000000-0000-4000-8000-0000000000d4",
+        "sourceId": "0000000000c7",
+        "targetId": "0000000000b0",
+        "weight": 0,
+        "enabled": true
+      }
+    ]
+  }
+}
