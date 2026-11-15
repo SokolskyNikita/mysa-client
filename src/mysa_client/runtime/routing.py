@@ -272,7 +272,7 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
             and self._pending_local is None
             and all(local.supports(key) for key in local_values)
         ):
-            values = as_string_mapping(local_values)
+            values = _plain(as_string_mapping(local_values))
             self.history.record(
                 "command",
                 operation="local_write",
@@ -292,7 +292,7 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
             task = local.start_write(local_values)
             self._pending_local = task
             pending = request.intent or values
-            self._pending_values = dict(as_string_mapping(pending))
+            self._pending_values = _plain(as_string_mapping(pending))
             task.add_done_callback(self._local_write_done)
             done, _ = await asyncio.wait({task}, timeout=self._write_timeout)
             if task in done:
@@ -341,7 +341,8 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
                         raise
                     observed = {}
                 if observed and all(
-                    observed.get(key) == value for key, value in local_values.items()
+                    _same(observed.get(key), value)
+                    for key, value in local_values.items()
                 ):
                     self.history.record(
                         "command",
@@ -405,7 +406,7 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
         intent = request.intent
         if intent is None:
             intent = as_string_mapping(request.local_values or {})
-        values = as_string_mapping(intent)
+        values = _plain(as_string_mapping(intent))
         for key, value in values.items():
             self._reconcile.pop(key, None)
             self._reconcile_ids.pop(key, None)
@@ -477,3 +478,29 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
     def _utcnow() -> datetime:
         """Return a timezone-aware timestamp without depending on an app clock."""
         return datetime.now(UTC)
+
+
+def _plain_value(value: Any) -> Any:
+    """A ruled temperature's °C value; any other value unchanged."""
+    return getattr(value, "celsius", value)
+
+
+def _plain(values: Mapping[str, Any]) -> dict[str, Any]:
+    """Values as history and pending records keep them: no ``Setpoint`` objects."""
+    return {key: _plain_value(value) for key, value in values.items()}
+
+
+def _same(observed: Any, written: Any) -> bool:
+    """Whether a read-back value shows a written one landed.
+
+    A written ``Setpoint`` matches its °C value, whether the device reports it
+    as a float or as an int (22 matches 22.0); a boolean never matches one.
+    """
+    expected = _plain_value(written)
+    if expected is not written:
+        return (
+            isinstance(observed, int | float)
+            and not isinstance(observed, bool)
+            and float(observed) == expected
+        )
+    return bool(observed == written)

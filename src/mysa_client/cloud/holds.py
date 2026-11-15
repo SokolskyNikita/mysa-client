@@ -9,7 +9,13 @@ from typing import Any
 
 from .commands import StateChanges, make_state
 from .const import Mode
-from .setpoints import Setpoint, require_setpoint
+from .setpoints import (
+    Setpoint,
+    SetpointModeError,
+    SetpointRules,
+    Unit,
+    require_setpoint,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,14 +41,25 @@ def resolve_hold(
     *,
     requested_mode: Mode | None,
     current_mode: Mode | None,
-    requested_temperature: Setpoint | None,
-    current_temperature: Setpoint | None,
+    requested_temperature: float | Setpoint | None,
+    current_temperature: float | Setpoint | None,
     until: datetime | None = None,
+    rules: SetpointRules | None = None,
+    unit: Unit = "C",
 ) -> HoldCommand:
     """Apply Mysa's default-mode and OFF/setpoint rules to a hold request.
 
-    Normalise the current target with ``SetpointRules(...).setpoint(mode,
-    value, strict=False)`` before passing it, since the hold re-sends it.
+    The hold's mode is ``requested_mode``, else ``current_mode``, else heat.
+    With ``rules``, temperatures may be plain numbers and are normalised for
+    that mode here: ``requested_temperature`` (in ``unit``) strictly, raising
+    ``SetpointOutOfRangeError``; ``current_temperature`` (the device's target,
+    always °C) with ``strict=False``, since the hold only re-sends it. A
+    ``Setpoint`` is used as given. Without ``rules`` a plain number raises
+    ``TypeError``.
+
+    An OFF hold carries no temperature. A heat/cool (``Mode.AUTO``) hold can't
+    carry a single one: a requested temperature raises ``SetpointModeError``
+    and the current target is dropped.
     """
     if requested_mode is not None:
         mode = requested_mode
@@ -50,13 +67,35 @@ def resolve_hold(
         mode = current_mode
     else:
         mode = Mode.HEAT
+    temperature: Setpoint | None = None
     if mode == Mode.OFF:
-        temperature = None
-    elif requested_temperature is None:
-        temperature = current_temperature
-    else:
-        temperature = requested_temperature
+        pass
+    elif requested_temperature is not None:
+        if mode == Mode.AUTO:
+            raise SetpointModeError(
+                mode, "A hold in heat/cool mode can't carry a single temperature"
+            )
+        temperature = _ruled(rules, mode, requested_temperature, unit, strict=True)
+    elif current_temperature is not None and mode != Mode.AUTO:
+        temperature = _ruled(rules, mode, current_temperature, "C", strict=False)
     return HoldCommand(mode=mode, temperature=temperature, until=until)
+
+
+def _ruled(
+    rules: SetpointRules | None,
+    mode: Mode,
+    value: float | Setpoint,
+    unit: Unit,
+    *,
+    strict: bool,
+) -> Setpoint:
+    """A ``Setpoint`` as given, or a number normalised by ``rules``."""
+    if isinstance(value, Setpoint):
+        return value
+    if rules is None:
+        require_setpoint(value)  # Raises the standard TypeError.
+    assert rules is not None
+    return rules.setpoint(mode, value, unit=unit, strict=strict)
 
 
 async def async_apply_hold(
@@ -70,8 +109,10 @@ async def async_apply_hold(
 ) -> None:
     """Set the cloud hold, then immediately apply its state through callbacks.
 
-    Callbacks let an integration retain command tracing, local-first routing,
-    and translated errors while sharing the Mysa-specific hold sequence.
+    ``command`` comes from :func:`resolve_hold`, which already normalised its
+    temperature, so no rules are needed here. Callbacks let an integration
+    retain command tracing, local-first routing, and translated errors while
+    sharing the Mysa-specific hold sequence.
     """
     if command.temperature is not None:
         require_setpoint(command.temperature)

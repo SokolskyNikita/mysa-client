@@ -72,6 +72,13 @@ reconciled in order. It does not import a HomeKit SDK or create either
 transport. The caller constructs it after transports are ready and calls
 `async_stop()` as part of its own shutdown sequence.
 
+When a local write times out, the router reads the fields back and treats the
+write as landed (`LOCAL_CONFIRMED`) when every value matches. A written
+`Setpoint` matches its `.celsius` whether the device reports a float or an int
+(22 matches `Setpoint(22.0)`); a boolean never does. History events, pending
+values and reconciliation intents record plain `.celsius` values, never
+`Setpoint` objects, so the transport adapter needs no wrapping of its own.
+
 `runtime.telemetry.MqttTelemetryState` filters an explicitly supplied device
 allowlist, rejects retained, duplicate, invalid, or stale messages, keeps
 per-field receipt times, and reports when a value expires. Feed it messages

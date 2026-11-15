@@ -10,7 +10,13 @@ from typing import Any
 
 import pytest
 
-from mysa_client.cloud import Capabilities, Mode, ModelFamily
+from mysa_client.cloud import (
+    Capabilities,
+    DeviceRecord,
+    DeviceState,
+    Mode,
+    ModelFamily,
+)
 from mysa_client.cloud.client import MysaClient
 from mysa_client.cloud.commands import (
     ScheduleEventSpec,
@@ -25,17 +31,25 @@ from mysa_client.cloud.device_commands import climate_command
 from mysa_client.cloud.holds import HoldCommand, async_apply_hold, resolve_hold
 from mysa_client.cloud.schedule_workflow import build_schedule_events
 from mysa_client.cloud.setpoints import (
+    DEFAULT_MAXIMUM,
+    DEFAULT_MINIMUM,
     DEFAULT_STEP,
     Setpoint,
     SetpointClamp,
+    SetpointError,
     SetpointGapTooSmallError,
     SetpointKind,
+    SetpointLimitOrderError,
+    SetpointModeError,
     SetpointOutOfRangeError,
     SetpointRange,
     SetpointRules,
     TemperatureOffset,
+    fahrenheit_bounds,
     fahrenheit_label,
     fahrenheit_offset,
+    kind_for_mode,
+    limits_ordered,
     round_to_step,
 )
 
@@ -179,7 +193,9 @@ def test_missing_step_defaults_to_half_a_degree(
 ) -> None:
     rules = SetpointRules(caps, homekit)
     assert rules.range_for(Mode.HEAT).step == expected_step
-    assert rules.range_for(Mode.COOL).step == DEFAULT_STEP
+    # Without a cloud cool range, cooling falls back to the HomeKit range.
+    homekit_step = homekit[2] if homekit and homekit[2] else DEFAULT_STEP
+    assert rules.range_for(Mode.COOL).step == homekit_step
     assert rules.offset_range.step == DEFAULT_STEP
     assert rules.setpoint(Mode.HEAT, 20.3).celsius == (
         20.0 if expected_step == 1 else 20.5
@@ -349,10 +365,10 @@ def test_central_hvac_uses_per_mode_ranges_and_steps() -> None:
     assert (heat.celsius, cool.celsius) == (20.5, 24.0)
     with pytest.raises(SetpointOutOfRangeError):
         rules.heat_cool(9.5, 24)
-    with pytest.raises(ValueError, match="two setpoints"):
-        rules.setpoint(Mode.AUTO, 21)
-    with pytest.raises(ValueError, match="two setpoints"):
-        rules.fahrenheit_bounds(Mode.AUTO)
+    # A single setpoint in heat/cool mode is the heat target.
+    assert rules.setpoint(Mode.AUTO, 21.3).celsius == 21.5
+    assert rules.range_for(Mode.AUTO) == rules.range_for(SetpointKind.HEAT)
+    assert rules.fahrenheit_bounds(Mode.AUTO) == rules.fahrenheit_bounds(Mode.HEAT)
 
 
 @pytest.mark.parametrize(
@@ -548,3 +564,394 @@ def test_builders_encode_typed_values() -> None:
         "targetHeat": {"setpoint": 20.0},
     }
     assert events[1]["state"] == {"modes": {"mode": 0}}
+
+
+# ---- Errors name the failed range and side --------------------------------
+
+
+def test_out_of_range_errors_carry_the_violated_range_and_kind() -> None:
+    rules = SetpointRules(HVAC, setpoint_max=26)
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        rules.setpoint(Mode.COOL, 36)
+    assert error.value.limits == SetpointRange(15.0, 35.0, 1.0)
+    assert (error.value.kind, error.value.side, error.value.delta) == (
+        SetpointKind.COOL,
+        None,
+        False,
+    )
+    assert error.value.fahrenheit_limit == 95
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        rules.setpoint(Mode.HEAT, 80, unit="F")
+    assert error.value.limits == SetpointRange(5.0, 26.0, 0.5)
+    assert error.value.kind is SetpointKind.HEAT
+    assert error.value.fahrenheit_limit == 79
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        rules.limit(4, minimum=True)
+    assert error.value.limits == rules.hardware_heat_range
+    assert error.value.kind is None
+    assert error.value.fahrenheit_limit == 41
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        rules.offset(-12, unit="F")
+    assert error.value.delta is True
+    assert error.value.limits == rules.offset_range
+    assert (error.value.kind, error.value.fahrenheit_limit) == (None, -9)
+    # An error built without a range (older callers) has no °F limit.
+    assert (
+        SetpointOutOfRangeError(
+            requested=1, rounded=1, limit=5, bound="min"
+        ).fahrenheit_limit
+        is None
+    )
+
+
+def test_heat_cool_errors_name_the_side_that_failed() -> None:
+    narrow = SetpointRules(
+        replace(
+            HVAC, auto_heat_range=(10.0, 30.0, 0.5), auto_cool_range=(12.0, 25.0, 1.0)
+        )
+    )
+    # low == high, the heat side in range and the cool side above its maximum:
+    # the error is the cool side's, even though its requested value equals low.
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        narrow.heat_cool(28, 28)
+    assert (error.value.side, error.value.kind, error.value.bound) == (
+        "cool",
+        SetpointKind.AUTO_COOL,
+        "max",
+    )
+    assert error.value.limits == SetpointRange(12.0, 25.0, 1.0)
+    assert error.value.fahrenheit_limit == 77
+    assert str(error.value).startswith("Cool setpoint")
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        narrow.heat_cool(8, 20)
+    assert (error.value.side, error.value.kind, error.value.limit) == (
+        "heat",
+        SetpointKind.AUTO_HEAT,
+        10.0,
+    )
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        narrow.heat_cool(31, 31)
+    assert error.value.side == "heat"
+
+
+# ---- Whole-°F bounds for any range, and envelopes --------------------------
+
+
+def test_fahrenheit_bounds_accept_any_range_and_deltas() -> None:
+    rules = SetpointRules(HVAC, setpoint_min=18, setpoint_max=21.5)
+    assert rules.fahrenheit_bounds(rules.hardware_heat_range) == (41, 86)
+    assert rules.fahrenheit_bounds(Mode.HEAT) == (64, 71)
+    assert rules.fahrenheit_bounds(SetpointRange(15.0, 35.0, 1.0)) == (
+        rules.fahrenheit_bounds(Mode.COOL)
+    )
+    assert rules.offset_fahrenheit_bounds() == (-9, 9)
+    assert rules.fahrenheit_bounds(rules.offset_range, delta=True) == (-9, 9)
+    assert fahrenheit_bounds(SetpointRange(-5.0, 5.0, 0.1), delta=True) == (-9, 9)
+    assert fahrenheit_bounds(SetpointRange(None, 30.0, 0.5)) == (None, 86)
+    for whole in (-9, 9):
+        assert rules.offset(whole, unit="F")
+    for whole in (-10, 10):
+        with pytest.raises(SetpointOutOfRangeError):
+            rules.offset(whole, unit="F")
+
+
+def test_envelope_covers_every_listed_kind() -> None:
+    rules = SetpointRules(HVAC)
+    assert rules.envelope(SetpointKind) == SetpointRange(5.0, 35.0, 0.5)
+    assert rules.envelope([Mode.COOL]) == SetpointRange(15.0, 35.0, 1.0)
+    assert rules.fahrenheit_envelope(SetpointKind) == (41, 95)
+    assert rules.fahrenheit_envelope([SetpointKind.AUTO_COOL]) == (53, 90)
+    with pytest.raises(ValueError, match="at least one"):
+        rules.envelope([])
+    with pytest.raises(ValueError, match="at least one"):
+        rules.fahrenheit_envelope([])
+
+
+def test_envelope_defaults_unknown_bounds_to_five_and_thirty() -> None:
+    assert (DEFAULT_MINIMUM, DEFAULT_MAXIMUM) == (5.0, 30.0)
+    unknown = SetpointRules()
+    assert unknown.envelope([Mode.HEAT]) == SetpointRange(5.0, 30.0, 0.5)
+    assert unknown.fahrenheit_envelope([Mode.HEAT]) == (41, 86)
+    partial = SetpointRules(homekit_range=(7.0, None, None))
+    assert partial.envelope([Mode.HEAT]) == SetpointRange(7.0, 30.0, 0.5)
+    assert partial.fahrenheit_envelope([Mode.HEAT]) == (45, 86)
+    # Validation still invents no bound; only the display envelope does.
+    assert partial.setpoint(Mode.HEAT, 35).celsius == 35.0
+
+
+def test_envelope_always_has_two_ends() -> None:
+    rules = SetpointRules(setpoint_min=20, setpoint_max=20)
+    assert rules.envelope([Mode.HEAT]) == SetpointRange(20.0, 20.5, 0.5)
+    assert rules.fahrenheit_envelope([Mode.HEAT]) == (68, 69)
+
+
+# ---- One rule for owner limits ----------------------------------------------
+
+
+def test_limits_must_stay_strictly_ordered() -> None:
+    rules = SetpointRules(BASEBOARD, setpoint_min=16, setpoint_max=24)
+    assert rules.limit(23.5, minimum=True).celsius == 23.5
+    assert rules.limit(16.5, minimum=False).celsius == 16.5
+    with pytest.raises(SetpointLimitOrderError) as error:
+        rules.limit(24, minimum=True)
+    assert (error.value.value, error.value.other, error.value.minimum) == (
+        24.0,
+        24.0,
+        True,
+    )
+    assert isinstance(error.value, SetpointError)
+    with pytest.raises(SetpointLimitOrderError) as error:
+        rules.limit(61, minimum=False, unit="F")  # 16.1 °C rounds to 16.0
+    assert (error.value.value, error.value.other, error.value.minimum) == (
+        16.0,
+        16.0,
+        False,
+    )
+    # A clamped value is checked too: order is never adjusted.
+    with pytest.raises(SetpointLimitOrderError):
+        rules.limit(40, minimum=True, strict=False)
+    # The range is checked before the order.
+    with pytest.raises(SetpointOutOfRangeError):
+        rules.limit(31, minimum=True)
+    # Without the other limit there is nothing to order against.
+    assert SetpointRules(BASEBOARD).limit(29, minimum=True).celsius == 29.0
+    assert limits_ordered(16, 24)
+    assert not limits_ordered(20, 20)
+    assert not limits_ordered(24, 16)
+
+
+# ---- One rule for a single setpoint in heat/cool mode -----------------------
+
+
+def test_single_setpoint_in_auto_is_the_heat_target_everywhere() -> None:
+    rules = SetpointRules(HVAC)
+    assert kind_for_mode(Mode.AUTO) is SetpointKind.HEAT
+    setpoint = rules.setpoint(Mode.AUTO, 21.3)
+    assert setpoint.celsius == 21.5
+    assert temperature_changes(Mode.AUTO, setpoint) == {
+        "targetHeat": {"setpoint": 21.5}
+    }
+    state = DeviceState.from_api(
+        "device",
+        {
+            "modes": {"reported": {"mode": int(Mode.AUTO)}},
+            "targetHeat": {"reported": {"setpoint": 21.5}},
+            "targetCool": {"reported": {"setpoint": 25.0}},
+        },
+    )
+    # A write confirmed by reading the mode's single setpoint can now match.
+    assert state.setpoint_for(state.mode) == setpoint.celsius
+    assert state.setpoint_for(Mode.COOL) == 25.0
+
+
+# ---- Mini-Split AC ranges from the settings record --------------------------
+
+AC_RECORD = DeviceRecord.from_api(
+    "ac",
+    {
+        "Model": "AC-V1-0",
+        "SupportedModes": {
+            "3": {"temperatures": list(range(17, 31))},
+            "4": {"temperatures": [str(t) for t in range(16, 31)] + [72, "x"]},
+        },
+        "TempRange": [16, 30],
+    },
+)
+
+
+def test_ac_record_exposes_per_mode_temperature_ranges() -> None:
+    assert AC_RECORD.ac_temperature_range(Mode.COOL) == (16.0, 30.0, 1.0)
+    assert AC_RECORD.ac_temperature_range(Mode.HEAT) == (17.0, 30.0, 1.0)
+    # A mode without a list uses TempRange, whatever its order.
+    assert AC_RECORD.ac_temperature_range(Mode.DRY) == (16.0, 30.0, 1.0)
+    reversed_range = DeviceRecord.from_api(
+        "ac", {"Model": "AC-V1-0", "TempRange": [31, 18]}
+    )
+    assert reversed_range.ac_temperature_range(Mode.COOL) == (18.0, 31.0, 1.0)
+    half = DeviceRecord.from_api(
+        "ac",
+        {"Model": "AC-V1-0", "SupportedModes": {"4": {"temperatures": [20, 20.5, 22]}}},
+    )
+    assert half.ac_temperature_range(Mode.COOL) == (20.0, 22.0, 0.5)
+    single = DeviceRecord.from_api(
+        "ac", {"Model": "AC-V1-0", "SupportedModes": {"4": {"temperatures": [24]}}}
+    )
+    assert single.ac_temperature_range(Mode.COOL) == (24.0, 24.0, 1.0)
+    empty = DeviceRecord.from_api("ac", {"Model": "AC-V1-0", "TempRange": [16]})
+    assert empty.ac_temperature_range(Mode.COOL) is None
+    assert empty.ac_temperature_range(Mode.EMERGENCY_HEAT) is None
+
+
+def test_ac_without_capability_ranges_uses_the_record() -> None:
+    """The Mini-Split AC keeps its 16-30 °C cool range (a Phase 2 regression)."""
+    rules = SetpointRules(None, None, record=AC_RECORD)
+    assert rules.range_for(Mode.COOL) == SetpointRange(16.0, 30.0, 1.0)
+    assert rules.range_for(Mode.HEAT) == SetpointRange(17.0, 30.0, 1.0)
+    assert rules.setpoint(Mode.COOL, 22.4).celsius == 22.0
+    assert rules.setpoint(Mode.COOL, 73, unit="F").celsius == 23.0
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        rules.setpoint(Mode.COOL, 31)
+    assert (error.value.kind, error.value.limit) == (SetpointKind.COOL, 30.0)
+    assert rules.fahrenheit_bounds(Mode.COOL) == (60, 86)
+    # Capabilities without ranges (the AC's are empty) still defer to it.
+    assert SetpointRules(BASE, record=AC_RECORD).range_for(Mode.COOL) == (
+        SetpointRange(16.0, 30.0, 1.0)
+    )
+    # Advertised capability ranges win over the record.
+    assert SetpointRules(HVAC, record=AC_RECORD).range_for(Mode.COOL) == (
+        SetpointRange(15.0, 35.0, 1.0)
+    )
+
+
+def test_cool_range_falls_back_to_homekit_and_ignores_other_records() -> None:
+    local = SetpointRules(homekit_range=(10.0, 32.0, 0.5))
+    assert local.range_for(Mode.COOL) == SetpointRange(10.0, 32.0, 0.5)
+    baseboard_record = DeviceRecord.from_api(
+        "bb", {"Model": "BB-V2-0", "TempRange": [16, 30]}
+    )
+    rules = SetpointRules(BASEBOARD, record=baseboard_record)
+    assert rules.range_for(Mode.COOL) == SetpointRange(None, None, DEFAULT_STEP)
+    assert rules.range_for(Mode.HEAT) == SetpointRange(5.0, 30.0, 0.5)
+    # An AC record with no ranges leaves the HomeKit fallback in place.
+    bare = DeviceRecord.from_api("ac", {"Model": "AC-V1-0"})
+    assert SetpointRules(homekit_range=(10.0, 32.0, 0.5), record=bare).range_for(
+        Mode.COOL
+    ) == SetpointRange(10.0, 32.0, 0.5)
+
+
+# ---- Holds and schedules normalise raw temperatures -------------------------
+
+
+def test_resolve_hold_normalises_raw_temperatures() -> None:
+    rules = SetpointRules(BASEBOARD, setpoint_max=24)
+    command = resolve_hold(
+        requested_mode=None,
+        current_mode=Mode.HEAT,
+        requested_temperature=73,
+        current_temperature=None,
+        rules=rules,
+        unit="F",
+    )
+    assert command.temperature == rules.setpoint(Mode.HEAT, 23)
+    assert command.state == {"modes": {"mode": 4}, "targetHeat": {"setpoint": 23.0}}
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        resolve_hold(
+            requested_mode=Mode.HEAT,
+            current_mode=None,
+            requested_temperature=80,
+            current_temperature=None,
+            rules=rules,
+            unit="F",
+        )
+    assert error.value.kind is SetpointKind.HEAT
+    # The current target (°C) is re-sent, so it is clamped rather than refused.
+    current = resolve_hold(
+        requested_mode=None,
+        current_mode=None,
+        requested_temperature=None,
+        current_temperature=25.3,
+        rules=rules,
+        unit="F",
+    )
+    assert current.mode is Mode.HEAT
+    assert current.temperature is not None
+    assert (current.temperature.celsius, current.temperature.clamped) == (24.0, True)
+    # OFF carries nothing, so its temperature is not even checked.
+    off = resolve_hold(
+        requested_mode=Mode.OFF,
+        current_mode=Mode.HEAT,
+        requested_temperature=200,
+        current_temperature=21,
+        rules=rules,
+    )
+    assert (off.mode, off.temperature) == (Mode.OFF, None)
+    # A typed Setpoint is still used as given.
+    typed = resolve_hold(
+        requested_mode=Mode.HEAT,
+        current_mode=None,
+        requested_temperature=rules.setpoint(Mode.HEAT, 20),
+        current_temperature=None,
+    )
+    assert typed.temperature == rules.setpoint(Mode.HEAT, 20)
+
+
+def test_resolve_hold_refuses_a_temperature_in_auto() -> None:
+    rules = SetpointRules(HVAC)
+    with pytest.raises(SetpointModeError) as error:
+        resolve_hold(
+            requested_mode=Mode.AUTO,
+            current_mode=None,
+            requested_temperature=21,
+            current_temperature=None,
+            rules=rules,
+        )
+    assert error.value.mode is Mode.AUTO
+    assert isinstance(error.value, SetpointError)
+    with pytest.raises(SetpointModeError):
+        resolve_hold(
+            requested_mode=None,
+            current_mode=Mode.AUTO,
+            requested_temperature=rules.setpoint(Mode.HEAT, 21),
+            current_temperature=None,
+        )
+    # The current target is simply not carried by a heat/cool hold.
+    command = resolve_hold(
+        requested_mode=Mode.AUTO,
+        current_mode=Mode.HEAT,
+        requested_temperature=None,
+        current_temperature=21,
+        rules=rules,
+    )
+    assert (command.mode, command.temperature) == (Mode.AUTO, None)
+    with pytest.raises(TypeError, match="SetpointRules"):
+        resolve_hold(
+            requested_mode=Mode.HEAT,
+            current_mode=None,
+            requested_temperature=None,
+            current_temperature=21.0,
+        )
+
+
+def test_build_schedule_events_normalises_each_event() -> None:
+    rules = SetpointRules(HVAC, setpoint_max=24)
+    events = build_schedule_events(
+        [
+            {"days": ["mon"], "time": time(7), "temperature": 68},
+            {"days": ["tue"], "time": time(8), "hvac_mode": "cool", "temperature": 73},
+            {"days": ["wed"], "time": time(9), "hvac_mode": "off", "temperature": 99},
+            {"days": ["thu"], "time": time(9), "hvac_mode": "auto"},
+            {
+                "days": ["fri"],
+                "time": time(9),
+                "temperature": rules.schedule_event(Mode.HEAT, 21),
+            },
+        ],
+        rules=rules,
+        unit="F",
+    )
+    assert [event["state"] for event in events] == [
+        {"modes": {"mode": 4}, "targetHeat": {"setpoint": 20.0}},
+        {"modes": {"mode": 3}, "targetCool": {"setpoint": 23.0}},
+        {"modes": {"mode": 0}},
+        {"modes": {"mode": int(Mode.AUTO)}},
+        {"modes": {"mode": 4}, "targetHeat": {"setpoint": 21.0}},
+    ]
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        build_schedule_events(
+            [{"days": ["mon"], "time": time(7), "temperature": 80}],
+            rules=rules,
+            unit="F",
+        )
+    assert (error.value.kind, error.value.limit) == (SetpointKind.HEAT, 24.0)
+    with pytest.raises(SetpointModeError):
+        build_schedule_events(
+            [
+                {
+                    "days": ["mon"],
+                    "time": time(7),
+                    "hvac_mode": "auto",
+                    "temperature": 21,
+                }
+            ],
+            rules=rules,
+        )
