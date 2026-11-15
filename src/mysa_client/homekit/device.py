@@ -84,7 +84,10 @@ _INFO_CHAR_FIELDS = {
     CharacteristicsTypes.FIRMWARE_REVISION: "firmware",
     _MAC_CHAR_UUID: "mac",
 }
-_ESSENTIAL_FIELDS = frozenset(
+#: The fields a thermostat needs before it can be shown or controlled: room
+#: temperature, target temperature, current action and target mode.
+#: ``HomeKitDevice.ready`` and ``HomeKitDevice.healthy`` are defined by it.
+ESSENTIAL_FIELDS: frozenset[Field] = frozenset(
     {
         Field.CURRENT_TEMPERATURE,
         Field.TARGET_TEMPERATURE,
@@ -314,7 +317,18 @@ class HomeKitDevice:
     @property
     def ready(self) -> bool:
         """Whether the essential thermostat fields were discovered."""
-        return _ESSENTIAL_FIELDS.issubset(self.__fields)
+        return ESSENTIAL_FIELDS.issubset(self.__fields)
+
+    @property
+    def healthy(self) -> bool:
+        """Whether the device is ready and no essential field's last read failed.
+
+        True once every field in ``ESSENTIAL_FIELDS`` was discovered and none
+        of them is in ``failed_fields``. A failed optional field (the light
+        sensor, for example) does not make the device unhealthy. A successful
+        read of a failed field clears it again.
+        """
+        return self.ready and not (ESSENTIAL_FIELDS & self.__state.failed_fields.keys())
 
     @property
     def host(self) -> str | None:
@@ -413,13 +427,13 @@ class HomeKitDevice:
             self.__refresh_pending = True
             translated = _translate_error(error)
             self.__last_refresh_error = (type(translated), str(translated))
-            self.__mark_fields_failed(_ESSENTIAL_FIELDS, str(translated))
+            self.__mark_fields_failed(ESSENTIAL_FIELDS, str(translated))
             raise translated from error
         except (HomeKitError, asyncio.CancelledError) as error:
             self.__refresh_pending = True
             if isinstance(error, HomeKitError):
                 self.__last_refresh_error = (type(error), str(error))
-                self.__mark_fields_failed(_ESSENTIAL_FIELDS, str(error))
+                self.__mark_fields_failed(ESSENTIAL_FIELDS, str(error))
             raise
         finally:
             self.__refreshing = False
@@ -515,24 +529,24 @@ class HomeKitDevice:
             if field in self.__fields
         }
         absent = set(fields) - self.__fields.keys()
-        if absent & _ESSENTIAL_FIELDS:
+        if absent & ESSENTIAL_FIELDS:
             if self.__last_refresh_error is not None:
                 # Discovery failed and its retry is cooling down. No database
                 # was obtained: absent fields are not evidence of a malformed
                 # accessory. Preserve the connection/authentication failure.
                 error_type, message = self.__last_refresh_error
                 raise error_type(message)
-            failures = dict.fromkeys(absent & _ESSENTIAL_FIELDS, "missing")
+            failures = dict.fromkeys(absent & ESSENTIAL_FIELDS, "missing")
             self.__state.fail(failures)
             self.__notify(HomeKitEvent.create(failed_fields=failures))
             raise HomeKitCharacteristicReadError(
                 "HomeKit is missing required fields",
-                absent & _ESSENTIAL_FIELDS,
+                absent & ESSENTIAL_FIELDS,
                 missing=True,
             )
         if not wanted:
             return {}, False
-        required = {field for field in wanted.values() if field in _ESSENTIAL_FIELDS}
+        required = {field for field in wanted.values() if field in ESSENTIAL_FIELDS}
         try:
             async with asyncio.timeout(timeout or 3.0):
                 result: Any = await self.__pairing.get_characteristics(list(wanted))
@@ -566,12 +580,12 @@ class HomeKitDevice:
                     _status_text(payload) if isinstance(payload, Mapping) else "missing"
                 )
                 failed_fields[field] = status
-                if field in _ESSENTIAL_FIELDS:
+                if field in ESSENTIAL_FIELDS:
                     failed_required.add(field)
                 continue
             if "value" not in payload:
                 failed_fields[field] = "missing value"
-                if field in _ESSENTIAL_FIELDS:
+                if field in ESSENTIAL_FIELDS:
                     failed_required.add(field)
                 continue
             values[field] = _decode(field, payload["value"])
@@ -713,7 +727,7 @@ class HomeKitDevice:
                     self.__last_refresh_error[1] if self.__last_refresh_error else None
                 ),
                 "missing_fields": sorted(
-                    field.value for field in _ESSENTIAL_FIELDS - self.__fields.keys()
+                    field.value for field in ESSENTIAL_FIELDS - self.__fields.keys()
                 ),
             },
             "fields": {

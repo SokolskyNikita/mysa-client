@@ -83,6 +83,7 @@ from .setpoints import (
     fahrenheit_label,
     fahrenheit_offset,
 )
+from .usage import UsageToday, local_day_start
 
 __all__ = [
     "MODEL_FAMILIES",
@@ -145,6 +146,7 @@ __all__ = [
     "UnknownModeError",
     "UsageBucket",
     "UsageDay",
+    "UsageToday",
     "encode_schedule_events",
     "fahrenheit_bounds",
     "fahrenheit_label",
@@ -152,6 +154,7 @@ __all__ = [
     "firmware_versions_match",
     "iso_utc",
     "jwt_claims",
+    "local_day_start",
     "make_state",
     "model_family",
     "normalize_firmware_version",

@@ -6,7 +6,7 @@ from .advertisement import (
     update_pairing_endpoint,
 )
 from .controller import HomeKitProtocol, PairingSession
-from .device import HomeKitDevice
+from .device import ESSENTIAL_FIELDS, HomeKitDevice
 from .exceptions import (
     HomeKitAuthenticationError,
     HomeKitBusyError,
@@ -34,6 +34,7 @@ from .models import (
 )
 
 __all__ = [
+    "ESSENTIAL_FIELDS",
     "AccessoryInfo",
     "CharacteristicInfo",
     "Field",

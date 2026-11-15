@@ -62,6 +62,14 @@ action, display unit, and heat fraction. Callers select whether the local path
 is healthy, which telemetry sources are fresh, and the source order. This view
 does not own source lifetimes or refresh stale data.
 
+`runtime.state.LOCAL_MODE_TO_MODE` maps a HomeKit target mode to the cloud
+`Mode` (`"off"`, `"heat"`, `"cool"`, `"auto"`), and `MODE_TO_LOCAL_MODE` maps
+back; both are read-only and are the table `DeviceView.mode` uses. Keys and
+values are plain strings so the module never imports the HomeKit SDK.
+`homekit.LocalMode` is a `StrEnum`, so its members work as keys, and
+`LocalMode(MODE_TO_LOCAL_MODE[Mode.HEAT])` gives `LocalMode.HEAT`. Cloud modes
+with no HomeKit equivalent (fan-only, dry and so on) are absent.
+
 ## Optional routing and telemetry helpers
 
 `runtime.routing.CommandRouter` is an optional local-first command coordinator.
@@ -87,6 +95,36 @@ calculates when live status should be requested and the next retry deadline;
 the caller performs the request. MQTT connection setup, reconnects, and task
 management remain with the application. This runtime does not enable MQTT
 automatically.
+
+`runtime.errors.error_category(error)` names the kind of failure without
+formatting the error, so the result is safe for logs and diagnostics. It
+returns one of `ERROR_CATEGORIES`: `"none"` for `None`, then
+`"authentication_failed"`, `"rate_limited"`, `"not_found"`,
+`"request_rejected"`, `"validation_failed"`, `"connection_error"`,
+`"request_failed"`, or `"unexpected_error"`. It covers the cloud, HomeKit and
+MQTT errors, the `SetpointError` family and `ScheduleWorkflowError`; any
+`OSError`, including `TimeoutError`, is a connection error. The function's
+docstring lists each type. It never imports the HomeKit or MQTT packages: their
+types are recognised once the application has imported them.
+
+`runtime.errors.is_outcome_unknown(error)` is true when a cloud request failed
+in a way that leaves its outcome unknown: a `MysaConnectionError` other than
+`MysaRateLimitError` (Mysa refuses a rate-limited request before processing
+it). It is false for `None` and every other error. It looks only at the error
+itself, so pass `error.__cause__` for an application error that wraps one:
+
+```python
+from mysa_client.runtime.errors import error_category, is_outcome_unknown
+
+try:
+    await client.set_mode(device_id, Mode.HEAT)
+except MysaError as error:
+    status = "ambiguous" if is_outcome_unknown(error) else "failed"
+    log.warning("write %s: %s", status, error_category(error))
+```
+
+`CommandRouter` uses these two as its default `error_category` and
+`is_ambiguous_cloud_error`; pass your own to override them.
 
 ## Schedule, hold, and account workflows
 
