@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fast local check: formatting, lint, types, docs and tests, in a few seconds.
+# CI (.github/workflows/ci.yml) additionally builds the package, inspects the
+# artifacts, tests the installed wheel with coverage on Python 3.11-3.14, and
+# verifies a cloud-only install; run those by hand only when packaging changes.
+# Extra arguments go to pytest, e.g. `tools/check tests/test_setpoints.py`.
+set -e
+cd "$(dirname "$0")/.."
+ruff format --check .
+ruff check .
+mypy
+python tools/check_docs.py
+python tools/update_api_reference.py --check
+python tools/update_api_coverage.py --check
+python -m pytest -q "$@"

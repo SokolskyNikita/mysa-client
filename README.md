@@ -98,7 +98,12 @@ Start with [client lifecycle](https://github.com/SokolskyNikita/mysa-client/blob
 git clone https://github.com/SokolskyNikita/mysa-client.git
 cd mysa-client
 python -m pip install -e '.[homekit,mqtt]' --group test --group lint --group build
+tools/check   # formatting, lint, types, docs and tests in a few seconds
 ```
+
+`tools/check` skips the packaging steps that CI runs (build, artifact checks, the installed-wheel
+tests with coverage, and the cloud-only install). With [uv](https://docs.astral.sh/uv/), `uv venv`
+and `uv pip install` in place of pip set up a fresh environment in about a second.
 
 See [documentation maintenance](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/maintenance.md) for offline checks and
 [releasing](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/releasing.md) for validation and publishing. Licensed under
