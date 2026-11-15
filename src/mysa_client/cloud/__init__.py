@@ -74,6 +74,7 @@ from .setpoints import (
     fahrenheit_label,
     fahrenheit_offset,
 )
+from .usage import UsageToday, local_day_start
 
 __all__ = [
     "MODEL_FAMILIES",
@@ -129,12 +130,14 @@ __all__ = [
     "Tokens",
     "UsageBucket",
     "UsageDay",
+    "UsageToday",
     "encode_schedule_events",
     "fahrenheit_bounds",
     "fahrenheit_label",
     "fahrenheit_offset",
     "iso_utc",
     "jwt_claims",
+    "local_day_start",
     "make_state",
     "model_family",
     "reconcile",

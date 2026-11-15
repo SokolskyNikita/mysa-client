@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 import json
 import logging
 import math
@@ -63,6 +63,7 @@ from .models import (
 )
 from .setpoints import Setpoint, TemperatureOffset
 from .trace import route_template
+from .usage import UsageToday, local_day_start
 from .validation import validate_cloud_command
 
 _LOGGER = logging.getLogger(__name__)
@@ -806,6 +807,31 @@ class MysaClient:
             return []
         days = [UsageDay.from_api(day) for day in data if isinstance(day, dict)]
         return [day for day in days if day is not None]
+
+    async def get_usage_today(
+        self,
+        device_id: str,
+        time_zone: tzinfo,
+        *,
+        time_zone_name: str | None = None,
+        now: datetime | None = None,
+    ) -> UsageToday:
+        """Heating on-time since local midnight, and the window it covers.
+
+        ``time_zone`` is the thermostat's zone as a ready ``tzinfo`` (for
+        example ``zoneinfo.ZoneInfo("America/Toronto")``, loaded off the event
+        loop). The window runs from ``local_day_start(now, time_zone)`` to
+        ``now`` (default: the current time), so a 23- or 25-hour day is
+        handled. ``time_zone_name`` is the IANA name sent to Mysa, which uses
+        it to split days; it defaults to ``str(time_zone)``, the key of a
+        ``ZoneInfo``. One ``get_usage()`` request; the same errors.
+        """
+        end = datetime.now(UTC) if now is None else now
+        start = local_day_start(end, time_zone)
+        days = await self.get_usage(
+            device_id, time_zone_name or str(time_zone), start, end
+        )
+        return UsageToday.from_days(days, start, end)
 
     async def get_state_history(
         self, device_id: str, start: datetime, end: datetime

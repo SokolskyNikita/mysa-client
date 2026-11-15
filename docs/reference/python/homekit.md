@@ -59,6 +59,21 @@ records which models have reported one. A failed light read is reported in
 `failed_fields` but never fails a thermostat read, and writes to it are
 rejected. Neither cloud API reports light level.
 
+`ESSENTIAL_FIELDS` is the set a thermostat needs: `CURRENT_TEMPERATURE`,
+`TARGET_TEMPERATURE`, `CURRENT_ACTION` and `TARGET_MODE`. `device.ready` is
+true once all four were discovered. `device.healthy` is true when the device
+is ready and none of the four is in `failed_fields`; it is the check to use
+before showing the thermostat as available. A failed optional field, such as
+`AMBIENT_LIGHT` or `DISPLAY_UNIT`, leaves it healthy, and the next successful
+read of a failed field clears it:
+
+```python
+from mysa_client.homekit import ESSENTIAL_FIELDS
+
+await device.async_read(device.supported_fields | ESSENTIAL_FIELDS)
+available = device.healthy
+```
+
 Display units do not change the Celsius values of temperature characteristics.
 Modes and actions are exposed as `LocalMode` and `LocalAction`; unknown mode,
 action, or unit encodings decode to `None`. Accessory-information characteristics

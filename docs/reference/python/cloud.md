@@ -3,6 +3,7 @@
 - [Authentication](#authentication)
 - [Using the client](#using-the-client)
 - [Semantic command execution](#semantic-command-execution)
+- [Today's usage](#todays-usage)
 - [Setpoint rules](#setpoint-rules)
 - [How it is organized](#how-it-is-organized)
 - [Public API and integration helpers](#public-api-and-integration-helpers)
@@ -40,6 +41,40 @@ implicit discovery, state reads or confirmation. Validation can raise
 `ValueError`; transport errors follow the hierarchy below. Follow the
 [confirmation guide](../../guides/state-and-commands.md#send-and-confirm-a-command)
 for the caller sequence.
+
+## Today's usage
+
+`await client.get_usage_today(device_id, time_zone, *, time_zone_name=None,
+now=None)` returns a `UsageToday`: the heating seconds since the thermostat's
+local midnight (`heat_seconds`), the window it covers (`start`, `end`) and the
+parsed `UsageDay` list (`days`). It makes one `get_usage()` request from
+`local_day_start(now, time_zone)` to `now` (default: the current time) and
+sums the days that start at or after `start`, allowing one minute for Mysa's
+rounding; a day without a value counts as zero.
+
+```python
+from zoneinfo import ZoneInfo
+
+toronto = await asyncio.to_thread(ZoneInfo, "America/Toronto")
+usage = await client.get_usage_today(device_id, toronto)
+print(usage.start, usage.heat_seconds)
+```
+
+`time_zone` is a ready `tzinfo`; loading one can read the disk, so do it off
+the event loop as above (Home Assistant has `dt_util.async_get_time_zone`).
+Mysa splits days by the IANA name it is sent: `time_zone_name`, or else
+`str(time_zone)`, which is a `ZoneInfo`'s key. Pass the name explicitly for a
+fixed-offset `tzinfo`, or to keep the device's own zone name when it could not
+be loaded.
+
+Days when the clocks change are handled. The window is computed on UTC
+instants, so it is 23 or 25 hours long on a full daylight-saving day. When the
+clocks skip midnight, `start` is the moment of the change (shown as 01:00);
+when midnight happens twice, it is the first one. `local_day_start()` is
+exported for callers that need the same day boundary, and
+`UsageToday.from_days(days, start, end)` sums a `get_usage()` response they
+fetched themselves. A naive `now` raises `ValueError`; request errors are those
+of `get_usage()`.
 
 ## Setpoint rules
 
@@ -243,6 +278,7 @@ These submodule helpers are supported for standalone callers and integrations:
 | [`observations.py`](../../../src/mysa_client/cloud/observations.py) | `MEASUREMENT_MAX_AGE`, `MEASUREMENTS`, `STATE_FIELDS`, `TELEMETRY_FIELDS`, `Observation`, `number`, `observe`, `valid_value` |
 | [`reconciliation.py`](../../../src/mysa_client/cloud/reconciliation.py) | `reconcile`, `PendingCommand`, `PendingCommandTracker`, `pending_command` |
 | [`trace.py`](../../../src/mysa_client/cloud/trace.py) | `route_template` for redacted request-route reporting |
+| [`usage.py`](../../../src/mysa_client/cloud/usage.py) | `UsageToday` and `local_day_start`, also exported by the package root (see [today's usage](#todays-usage)) |
 | [`validation.py`](../../../src/mysa_client/cloud/validation.py) | `validate_basic_command` and `validate_cloud_command` for device/capability validation |
 | [`schedule_workflow.py`](../../../src/mysa_client/cloud/schedule_workflow.py) | `ScheduleWorkflow`, `ScheduleJournal`, `ScheduleTransport`, and `MysaScheduleTransport` for replacement, clear, and recovery |
 | [`holds.py`](../../../src/mysa_client/cloud/holds.py) | `resolve_hold`, `async_apply_hold` |
