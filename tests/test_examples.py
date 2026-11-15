@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from mysa_client.cloud import Capabilities, Mode, Setpoint, SetpointOutOfRangeError
 from mysa_client.homekit import Field, HomeKitEvent
 
 
@@ -109,12 +110,23 @@ class _FakeCloudClient:
             mode=None,
             room_temperature=20.5,
             heat_setpoint=21,
+            setpoint_min=None,
+            setpoint_max=24,
             reading_time="now",
         )
 
     async def get_capabilities(self, device_id: str):
         self.calls.append(("get_capabilities", (device_id,)))
-        return SimpleNamespace(heat_setpoint_range=(5, 30), modes=())
+        return Capabilities.from_api(
+            {
+                "features": {
+                    "climateControl": {
+                        "mode": {"validValues": ["off", "heat"]},
+                        "heat": {"setpoint": {"validValues": [5.0, 5.5, 6.0, 30.0]}},
+                    }
+                }
+            }
+        )
 
     async def set_temperature(self, *args) -> None:
         self.calls.append(("set_temperature", args))
@@ -231,6 +243,27 @@ class _FakeHomeKitProtocol:
     def load_pairing(self, pairing_data):
         self.loaded_pairing = pairing_data
         return self.device
+
+
+async def test_cloud_setpoint_goes_through_the_rules(
+    cloud_example, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A requested target is rounded and checked against the owner's limit."""
+    monkeypatch.setenv("MYSA_REFRESH_TOKEN_FILE", str(tmp_path / "refresh-token"))
+    monkeypatch.setenv("MYSA_EMAIL", "person@example.test")
+    monkeypatch.setenv("MYSA_PASSWORD", "example-password")
+
+    await cloud_example.module.main(_cloud_args(set_celsius="21.3"))
+    client = cloud_example.clients[0]
+    _device, mode, setpoint = dict(client.calls)["set_temperature"]
+    assert mode == Mode.HEAT
+    assert isinstance(setpoint, Setpoint)
+    assert setpoint.celsius == 21.5
+
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        await cloud_example.module.main(_cloud_args(set_celsius="24.5"))
+    assert error.value.limit == 24
+    assert error.value.bound == "max"
 
 
 def _cloud_args(**changes):

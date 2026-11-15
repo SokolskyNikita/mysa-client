@@ -10,7 +10,9 @@ define what the helpers actually do.
 1. Acquire state and capabilities for the selected device. Use `reconcile()` to
    preserve per-field source clocks; readbacks remain caller-scheduled.
 2. Build a `CloudCommand`, for example with `climate_command()`. Its payload and
-   normalized expected effects describe the same intended operation.
+   normalized expected effects describe the same intended operation. Create its
+   temperatures with [`SetpointRules`](../reference/python/cloud.md#setpoint-rules),
+   which rounds them to the device's step and checks its ranges.
 3. Snapshot the pre-write state with `pending_command()` and track it with
    `PendingCommandTracker`. Provide pending values when validating dependent
    settings so newer intent can supersede earlier commands.

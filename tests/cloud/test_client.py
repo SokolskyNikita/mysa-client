@@ -39,6 +39,7 @@ from mysa_client.cloud.const import (
     COGNITO_URL,
     LEGACY_API_BASE,
 )
+from mysa_client.cloud.setpoints import SetpointRules
 from tests.cloud_helpers import (
     DEVICE_ID,
     EMAIL,
@@ -49,6 +50,8 @@ from tests.cloud_helpers import (
     load_json,
     make_jwt,
 )
+
+RULES = SetpointRules()
 
 
 def _client(session, token: str | None = REFRESH_TOKEN) -> MysaClient:
@@ -156,14 +159,16 @@ async def test_writes(session, cloud: FakeCloud) -> None:
 async def test_semantic_commands_encode_cloud_fields(session, cloud: FakeCloud) -> None:
     """Callers can issue domain operations without building API payloads."""
     client = _client(session)
-    await client.set_temperature(DEVICE_ID, Mode.COOL, 24)
+    await client.set_temperature(DEVICE_ID, Mode.COOL, RULES.setpoint(Mode.COOL, 24))
     await client.set_mode(DEVICE_ID, Mode.HEAT)
     await client.set_fan_speed(DEVICE_ID, AcFan.SPEED_2, Mode.COOL)
     await client.set_swing(DEVICE_ID, SWING_VERTICAL, Swing.AUTO)
     await client.set_button_lock(DEVICE_ID, ButtonLock.LOCKED)
     await client.set_display_brightness(DEVICE_ID, active=75, idle=25)
-    await client.set_setpoint_limit(DEVICE_ID, 7, minimum=True)
-    await client.set_temperature_offset(DEVICE_ID, 1.2)
+    await client.set_setpoint_limit(
+        DEVICE_ID, RULES.limit(7, minimum=True), minimum=True
+    )
+    await client.set_temperature_offset(DEVICE_ID, RULES.offset(1.5))
     await client.set_display_unit(DEVICE_ID, "F")
     await client.set_heater_type(DEVICE_ID, HeaterType.FAN_FORCED)
 
@@ -178,7 +183,7 @@ async def test_semantic_commands_encode_cloud_fields(session, cloud: FakeCloud) 
             "physicalInterface": {"activeIntensity": 75, "idleIntensity": 25},
         },
         {"source": 3, "targetHeat": {"lockoutMin": 7}},
-        {"source": 3, "tracking": {"ambientOffset": 1.2}},
+        {"source": 3, "tracking": {"ambientOffset": 1.5}},
     ]
     assert cloud.settings == [
         {"Format": "fahrenheit"},
@@ -275,7 +280,7 @@ def test_protocol_helpers() -> None:
     data["modes"]["reported"]["fan_mode"] = 5
     state = DeviceState.from_api(DEVICE_ID, data)
     assert state.ac_fan is AcFan.SPEED_2
-    assert make_state(Mode.COOL, 23.5) == {
+    assert make_state(Mode.COOL, RULES.setpoint(Mode.COOL, 23.5)) == {
         "modes": {"mode": int(Mode.COOL)},
         "targetCool": {"setpoint": 23.5},
     }
@@ -286,7 +291,7 @@ def test_protocol_helpers() -> None:
                 days=("mon", "sun"),
                 at=datetime_time(7, 30),
                 mode=Mode.HEAT,
-                temperature=21.5,
+                temperature=RULES.schedule_event(Mode.HEAT, 21.5),
                 client_key="HomeAssistant-test",
             )
         ]

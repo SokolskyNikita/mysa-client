@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 import json
 from typing import Any
 
-from mysa_client.cloud import DeviceState, Mode, ModelFamily
+from mysa_client.cloud import DeviceState, Mode, ModelFamily, SetpointRules
 from mysa_client.cloud.device_commands import climate_command
 from mysa_client.cloud.reconciliation import (
     PendingCommandTracker,
@@ -85,7 +85,8 @@ def main() -> None:
     command = climate_command(
         ModelFamily.BASEBOARD_LITE,
         view.mode,
-        temperature=21,
+        # A local-only thermostat: only the HomeKit range and step are known.
+        temperature=SetpointRules(homekit_range=(5, 30, 0.5)).setpoint(view.mode, 21),
     )
     validate_cloud_command(
         ModelFamily.BASEBOARD_LITE,

@@ -11,7 +11,7 @@ import tempfile
 
 import aiohttp
 
-from mysa_client.cloud import Mode, MysaAuth, MysaClient
+from mysa_client.cloud import Mode, MysaAuth, MysaClient, SetpointRules
 
 USER_AGENT = "mysa-client-example/0.1"
 
@@ -133,12 +133,19 @@ async def main(args: argparse.Namespace) -> None:
         if not math.isfinite(target):
             raise ValueError("Setpoint must be a finite Celsius value")
         capabilities = await client.get_capabilities(device_id)
-        limits = capabilities.heat_setpoint_range
-        if limits is None or not limits[0] <= target <= limits[1]:
-            raise ValueError("Setpoint is outside the advertised heating range")
+        if capabilities.heat_setpoint_range is None:
+            raise ValueError("This thermostat does not advertise a heating range")
         if Mode.HEAT not in capabilities.modes:
             raise ValueError("This thermostat does not advertise heat mode")
-        await client.set_temperature(device_id, Mode.HEAT, target)
+        # Rounds to the advertised step and raises SetpointOutOfRangeError outside
+        # the heating range (narrowed by the owner's limits when known).
+        rules = SetpointRules(
+            capabilities,
+            setpoint_min=state.setpoint_min,
+            setpoint_max=state.setpoint_max,
+        )
+        setpoint = rules.setpoint(Mode.HEAT, target)
+        await client.set_temperature(device_id, Mode.HEAT, setpoint)
         print("The cloud API accepted the heating-target request.")
         readback = await client.get_state(device_id)
         print(f"Reported heating target after readback: {readback.heat_setpoint!r} °C")

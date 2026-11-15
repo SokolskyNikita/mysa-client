@@ -54,6 +54,19 @@ from .models import (
     value_range,
 )
 from .reconciliation import PendingCommand, PendingCommandTracker, reconcile
+from .setpoints import (
+    Setpoint,
+    SetpointClamp,
+    SetpointError,
+    SetpointGapTooSmallError,
+    SetpointKind,
+    SetpointOutOfRangeError,
+    SetpointRange,
+    SetpointRules,
+    TemperatureOffset,
+    fahrenheit_label,
+    fahrenheit_offset,
+)
 
 __all__ = [
     "MODEL_FAMILIES",
@@ -89,12 +102,23 @@ __all__ = [
     "PendingCommand",
     "PendingCommandTracker",
     "ScheduleEventSpec",
+    "Setpoint",
+    "SetpointClamp",
+    "SetpointError",
+    "SetpointGapTooSmallError",
+    "SetpointKind",
+    "SetpointOutOfRangeError",
+    "SetpointRange",
+    "SetpointRules",
     "StateChange",
     "Swing",
+    "TemperatureOffset",
     "Tokens",
     "UsageBucket",
     "UsageDay",
     "encode_schedule_events",
+    "fahrenheit_label",
+    "fahrenheit_offset",
     "iso_utc",
     "jwt_claims",
     "make_state",
