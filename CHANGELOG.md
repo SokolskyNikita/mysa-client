@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-15)
 
 - **Breaking:** every temperature write now requires a typed value from the
   new `SetpointRules` (in `mysa_client.cloud.setpoints`, also exported from
