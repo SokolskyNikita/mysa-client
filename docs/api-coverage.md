@@ -2,7 +2,7 @@
 
 Last reviewed: **2026-10-14**
 
-Client baseline: **mysa-client 0.2.1**
+Client baseline: **mysa-client 0.3.0**
 
 This map tracks direct cloud, HomeKit, and device-setup API capabilities in the
 standalone client. HA orchestration and user-facing management behavior have a
