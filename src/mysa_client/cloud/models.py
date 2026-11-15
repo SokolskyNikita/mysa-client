@@ -243,17 +243,26 @@ class DeviceState:
     #: power.reported.wattage in watts. Mysa's app 4.21.1 multiplies it by the
     #: duty cycle, so it behaves as the heater's rated load, not a measurement.
     power_wattage: float | None = None
-    #: power.reported.current. Unit unverified (only 0 observed); Mysa's app
-    #: 4.21.1 stores it as `currentMa` (milliamps) for the water-heater
-    #: controller only.
+    #: power.reported.current in milliamps. Not observed non-zero here; a
+    #: third-party Baseboard V3 capture (axelrtgs/mysa) shows 240 V, 12458 and
+    #: 2989 W together, and Mysa's app 4.21.1 names it `currentMa`. On that
+    #: Baseboard V3 the whole power section stayed unchanged a day later with
+    #: the heater off, so check `power_time` before treating it as live.
     power_current: float | None = None
     #: power.reported.dutyCycle as a percentage (0-100), unlike `duty_cycle`,
     #: which is a 0-1 fraction. Derived from Mysa's app 4.21.1; only 0 observed.
     power_duty_cycle: float | None = None
     #: The power.reported timestamp.
     power_time: datetime | None = None
-    #: reading.maxCurrent. Unit and meaning unverified (only 0 observed; the
-    #: app never reads it). The name suggests the peak load current.
+    #: drState.state as sent, next to `in_demand_response`: "none" on a device
+    #: outside an event (confirmed on Baseboard Lite firmware 3.17.5.13). The
+    #: app's other values are "event", "preheat" and "precool".
+    demand_response_state: str | None = None
+    #: reading.maxCurrent in amps: the highest load current the thermostat has
+    #: seen, not the present draw (a Baseboard V1 reported about 8 A while
+    #: idle). From third-party captures (axelrtgs/mysa, kgelinas/Mysa_HA issue
+    #: 32, dlenski/mysotherm); only 0 observed on the Lite, and the app never
+    #: reads it.
     max_current: float | None = None
     #: reading.powerConsumed. Unit unverified (only 0 observed; the app never
     #: reads it). The name suggests energy used in the reading interval.
@@ -261,8 +270,9 @@ class DeviceState:
     #: reading.instantLoad. Unit unverified (only 0 observed; the app never
     #: reads it). The name suggests the present load.
     instant_load: float | None = None
-    #: reading.onTime. Unit unverified (only 0 observed; the app never reads
-    #: it). The name suggests heating on-time in the reading interval.
+    #: reading.onTime. Unit unverified (only 0 observed here; the app never
+    #: reads it). Two Mini-Split ACs in a third-party capture reported 30 while
+    #: heating, which fits seconds on per 30-second reading interval.
     on_time: float | None = None
     #: reading.effectiveSetpoint in °C as reported. Meaning unconfirmed: a Lite
     #: reported 23 while its setpoint was 10.
@@ -286,6 +296,7 @@ class DeviceState:
             mode = None
         connected = telemetry.get("isConnected")
         in_event = dr_state.get("inEvent")
+        dr_text = dr_state.get("state")
         result = cls(
             device_id=device_id,
             auto_heat_setpoint=_float(_section(data, "targetAuto").get("heatSetpoint")),
@@ -329,6 +340,7 @@ class DeviceState:
             model=_str(identity.get("model")),
             firmware=_str(identity.get("fw")),
             in_demand_response=in_event if isinstance(in_event, bool) else None,
+            demand_response_state=dr_text if isinstance(dr_text, str) else None,
         )
 
         now = datetime.now(UTC)

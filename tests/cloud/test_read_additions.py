@@ -165,7 +165,9 @@ async def test_drstate_malformed(client, aioclient_mock, payload):
 def test_drstate_stays_separate_from_device_state():
     names = {f.name for f in fields(DeviceState)}
     assert "in_demand_response" in names
-    assert not names & {"new_state", "dr_state", "demand_response_state"}
+    # `demand_response_state` mirrors structured drState.state; nothing from
+    # the separate drstate endpoint is merged into DeviceState.
+    assert not names & {"new_state", "dr_state", "current_state", "new_setpoint"}
 
 
 # ---- health and electrical fields -----------------------------------------
@@ -576,3 +578,20 @@ def test_sensor_links_are_read_only():
 )
 def test_new_routes_are_traced_without_ids(path, template):
     assert route_template(path) == template
+
+
+@pytest.mark.parametrize(
+    ("section", "expected"),
+    [
+        # What both Baseboard Lites and third-party captures report.
+        ({"inEvent": False, "state": "none"}, "none"),
+        ({"inEvent": True, "state": "preheat"}, "preheat"),
+        ({"inEvent": False}, None),
+        ({"inEvent": False, "state": 3}, None),
+    ],
+)
+def test_demand_response_state_text(section, expected):
+    """drState.state is kept as sent, next to the in-event flag."""
+    state = DeviceState.from_api("dev", {"drState": section})
+    assert state.demand_response_state == expected
+    assert state.in_demand_response is section["inEvent"]

@@ -47,9 +47,11 @@
 - Add health and electrical fields to `DeviceState` (#1): `free_heap`,
   `raw_temperature`, `core_temperature` and `voltage` (confirmed on the Lite);
   `probe_temperature`, `power_wattage`, `power_duty_cycle` and `power_time` (from
-  the app); `power_current`, `max_current`, `power_consumed`, `instant_load`,
-  `on_time` and `effective_setpoint`, whose units or meaning are unverified.
-  Plus the `power_load_watts` and `ground_fault` properties.
+  the app); `power_current` (mA) and `max_current` (A, the highest load current
+  seen), from third-party captures; `power_consumed`, `instant_load`, `on_time`
+  and `effective_setpoint`, whose units or meaning are unverified. Plus the
+  `power_load_watts` and `ground_fault` properties, and
+  `demand_response_state` (the text next to `in_demand_response`).
 - Add read-only firmware calls for the newer models (#19):
   `get_fleet_firmware_availability()`, which returns `in_fleet=False` for a
   device outside the service (confirmed on the Lite), `get_fleet_firmware_status()`,

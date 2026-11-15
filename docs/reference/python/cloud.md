@@ -228,6 +228,9 @@ limit). `MysaClient.set_setpoint_limit(device_id, value, *, minimum,
 kind=SetpointKind.HEAT, family=None, route="S")` sends it; cooling limits
 have no settings-record field, so a `route` other than `"S"` raises
 `ValueError` for them. The read-back is `DeviceState.cool_min` / `cool_max`.
+On a Mini-Split AC read the limits from the heating section (`setpoint_min` /
+`setpoint_max`): two real ACs in a third-party capture reported them only
+under `targetHeat`, with no limits under `targetCool`.
 One `kind` parameter, defaulting to heat, keeps 0.3.0 calls unchanged and
 matches the `SetpointKind` that `limit()` checked the value against; pass the
 same `kind` to both. The cooling and AC encodings are derived from Mysa's app
@@ -426,12 +429,15 @@ share `power_time`. Only `reported` power values count, as for other sections.
 | `probe_temperature` | `reading.probeTemperature` | °C | Derived from Mysa's app 4.21.1; not verified on a device |
 | `power_wattage` | `power.reported.wattage` | W, rated load | Derived from Mysa's app 4.21.1; not verified on a device (0 observed) |
 | `power_duty_cycle` | `power.reported.dutyCycle` | percent, 0–100 | Derived from Mysa's app 4.21.1; not verified on a device (0 observed). `duty_cycle` stays the 0–1 telemetry fraction |
-| `power_current` | `power.reported.current` | unverified | Only 0 observed; the app stores it as `currentMa` (milliamps) for the water-heater controller only |
-| `max_current` | `reading.maxCurrent` | unverified | Only 0 observed; the app never reads it; the name suggests peak load current |
+| `power_current` | `power.reported.current` | mA | Only 0 observed here. A third-party Baseboard V3 capture ([axelrtgs/mysa](https://github.com/axelrtgs/mysa)) shows 240 V, 12458 and 2989 W together, and the app names it `currentMa` |
+| `max_current` | `reading.maxCurrent` | A, highest load current seen | Only 0 observed here; the app never reads it. Third-party captures show a float in amps that stays non-zero while idle (axelrtgs/mysa; [kgelinas/Mysa_HA#32](https://github.com/kgelinas/Mysa_HA/issues/32); [dlenski/mysotherm](https://github.com/dlenski/mysotherm)) |
 | `power_consumed` | `reading.powerConsumed` | unverified | Only 0 observed; the app never reads it; the name suggests energy per reading interval |
 | `instant_load` | `reading.instantLoad` | unverified | Only 0 observed; the app never reads it; the name suggests the present load |
-| `on_time` | `reading.onTime` | unverified | Only 0 observed; the app never reads it; the name suggests on-time per reading interval |
+| `on_time` | `reading.onTime` | unverified | Only 0 observed here; the app never reads it. Two Mini-Split ACs in a third-party capture reported 30 while heating, which fits seconds on per 30-second interval |
 | `effective_setpoint` | `reading.effectiveSetpoint` | °C as sent | Meaning unconfirmed: a Lite reported 23 while its setpoint was 10 |
+| `demand_response_state` | `drState.state` | text | Confirmed on Baseboard Lite firmware 3.17.5.13 (`"none"`); the app's other values are `"event"`, `"preheat"` and `"precool"` |
+
+The `power` section can be stale. A third-party Baseboard V3 capture returned the same voltage, current and wattage a day later with the heater off, so compare `power_time` with `reading_time` before treating `power_*` values as live.
 
 Two properties follow the app: `power_load_watts` is
 `round(power_duty_cycle × power_wattage / 100)`, the estimate the app displays,
