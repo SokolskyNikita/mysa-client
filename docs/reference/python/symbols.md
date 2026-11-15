@@ -54,14 +54,18 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 - `ScheduleEventSpec`
 - `Setpoint`
 - `SetpointClamp`
+- `SetpointConfigError`
 - `SetpointError`
 - `SetpointGapTooSmallError`
 - `SetpointKind`
+- `SetpointLimit`
 - `SetpointLimitOrderError`
 - `SetpointModeError`
 - `SetpointOutOfRangeError`
 - `SetpointRange`
+- `SetpointRangeEmptyError`
 - `SetpointRules`
+- `SetpointValueError`
 - `StateChange`
 - `Swing`
 - `TemperatureOffset`
@@ -227,25 +231,25 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [round_half_up](../../../src/mysa_client/cloud/setpoints.py#L208) | `(value: float) -> int` | Round halfway values up, like JavaScript's Math.round. |
-| [round_to_step](../../../src/mysa_client/cloud/setpoints.py#L213) | `(value: float, step: float) -> float` | Round to a multiple of step anchored at 0, halfway values up. |
-| [to_celsius](../../../src/mysa_client/cloud/setpoints.py#L218) | `(value: float, unit: Unit) -> float` | Convert an absolute temperature to °C. |
-| [fahrenheit_label](../../../src/mysa_client/cloud/setpoints.py#L223) | `(celsius: float \| Setpoint) -> int` | Whole °F as the Mysa app shows it: Math.round(c * 1.8 + 32). |
-| [fahrenheit_offset](../../../src/mysa_client/cloud/setpoints.py#L229) | `(delta_c: float \| TemperatureOffset) -> int` | Whole °F for a temperature delta, halfway values rounded up. |
-| [fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L251) | `(limits: SetpointRange, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in limits. |
-| [limits_ordered](../../../src/mysa_client/cloud/setpoints.py#L278) | `(minimum: float, maximum: float) -> bool` | Whether owner limits are valid together: the minimum strictly below. |
-| [kind_for_mode](../../../src/mysa_client/cloud/setpoints.py#L324) | `(mode: Mode \| None) -> SetpointKind` | The single-setpoint range a mode writes, matching the command encoder. |
-| [SetpointRules.__init__](../../../src/mysa_client/cloud/setpoints.py#L358) | `(self, capabilities: Capabilities \| None=None, homekit_range: RangeTuple \| None=None, *, setpoint_min: float \| None=None, setpoint_max: float \| None=None, record: DeviceRecord \| None=None) -> None` | Derive every range once from the thermostat's advertised limits. |
-| [SetpointRules.range_for](../../../src/mysa_client/cloud/setpoints.py#L396) | `(self, kind: SetpointKind \| Mode \| None) -> SetpointRange` | The normalised range for a setpoint kind or a single-setpoint mode. |
-| [SetpointRules.setpoint](../../../src/mysa_client/cloud/setpoints.py#L402) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a single heat or cool target for mode. |
-| [SetpointRules.heat_cool](../../../src/mysa_client/cloud/setpoints.py#L425) | `(self, low: float, high: float, *, unit: Unit='C', strict: bool=True) -> tuple[Setpoint, Setpoint]` | Normalise a heat/cool pair; the gap is checked, never adjusted. |
-| [SetpointRules.limit](../../../src/mysa_client/cloud/setpoints.py#L463) | `(self, value: float, *, minimum: bool, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise an owner minimum or maximum against the hardware heat range. |
-| [SetpointRules.offset](../../../src/mysa_client/cloud/setpoints.py#L492) | `(self, delta: float, *, unit: Unit='C', strict: bool=True) -> TemperatureOffset` | Normalise a calibration delta; a °F delta converts by / 1.8. |
-| [SetpointRules.schedule_event](../../../src/mysa_client/cloud/setpoints.py#L511) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a schedule event's temperature exactly like setpoint. |
-| [SetpointRules.fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L522) | `(self, kind: SetpointKind \| Mode \| SetpointRange \| None, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in range. |
-| [SetpointRules.offset_fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L537) | `(self) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F calibration delta in offset_range. |
-| [SetpointRules.envelope](../../../src/mysa_client/cloud/setpoints.py#L541) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> SetpointRange` | The smallest range in °C covering every listed kind, for display. |
-| [SetpointRules.fahrenheit_envelope](../../../src/mysa_client/cloud/setpoints.py#L563) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> tuple[int, int]` | Lowest and highest whole °F any listed kind accepts, for display. |
+| [round_half_up](../../../src/mysa_client/cloud/setpoints.py#L310) | `(value: float) -> int` | Round halfway values up, like JavaScript's Math.round. |
+| [round_to_step](../../../src/mysa_client/cloud/setpoints.py#L315) | `(value: float, step: float) -> float` | Round to a multiple of step anchored at 0, halfway values up. |
+| [to_celsius](../../../src/mysa_client/cloud/setpoints.py#L320) | `(value: float, unit: Unit) -> float` | Convert an absolute temperature to °C. |
+| [fahrenheit_label](../../../src/mysa_client/cloud/setpoints.py#L325) | `(celsius: float \| Setpoint) -> int` | Whole °F as the Mysa app shows it: Math.round(c * 1.8 + 32). |
+| [fahrenheit_offset](../../../src/mysa_client/cloud/setpoints.py#L331) | `(delta_c: float \| TemperatureOffset) -> int` | Whole °F for a temperature delta, halfway values rounded up. |
+| [fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L374) | `(limits: SetpointRange, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in limits. |
+| [limits_ordered](../../../src/mysa_client/cloud/setpoints.py#L401) | `(minimum: float, maximum: float) -> bool` | Whether owner limits are valid together: the minimum strictly below. |
+| [kind_for_mode](../../../src/mysa_client/cloud/setpoints.py#L462) | `(mode: Mode \| None) -> SetpointKind` | The single-setpoint range a mode writes, matching the command encoder. |
+| [SetpointRules.__init__](../../../src/mysa_client/cloud/setpoints.py#L502) | `(self, capabilities: Capabilities \| None=None, homekit_range: RangeTuple \| None=None, *, setpoint_min: float \| None=None, setpoint_max: float \| None=None, record: DeviceRecord \| None=None) -> None` | Derive every range once from the thermostat's advertised limits. |
+| [SetpointRules.range_for](../../../src/mysa_client/cloud/setpoints.py#L551) | `(self, kind: SetpointKind \| Mode \| None) -> SetpointRange` | The normalised range for a setpoint kind or a single-setpoint mode. |
+| [SetpointRules.setpoint](../../../src/mysa_client/cloud/setpoints.py#L557) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a single heat or cool target for mode. |
+| [SetpointRules.heat_cool](../../../src/mysa_client/cloud/setpoints.py#L580) | `(self, low: float, high: float, *, unit: Unit='C', strict: bool=True) -> tuple[Setpoint, Setpoint]` | Normalise a heat/cool pair; the gap is checked, never adjusted. |
+| [SetpointRules.limit](../../../src/mysa_client/cloud/setpoints.py#L618) | `(self, value: float, *, minimum: bool, unit: Unit='C', strict: bool=True) -> SetpointLimit` | Normalise an owner minimum or maximum against the hardware heat range. |
+| [SetpointRules.offset](../../../src/mysa_client/cloud/setpoints.py#L654) | `(self, delta: float, *, unit: Unit='C', strict: bool=True) -> TemperatureOffset` | Normalise a calibration delta; a °F delta converts by / 1.8. |
+| [SetpointRules.schedule_event](../../../src/mysa_client/cloud/setpoints.py#L673) | `(self, mode: Mode \| None, value: float, *, unit: Unit='C', strict: bool=True) -> Setpoint` | Normalise a schedule event's temperature exactly like setpoint. |
+| [SetpointRules.fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L684) | `(self, kind: SetpointKind \| Mode \| SetpointRange \| None, *, delta: bool=False) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F whose normalised value is in range. |
+| [SetpointRules.offset_fahrenheit_bounds](../../../src/mysa_client/cloud/setpoints.py#L699) | `(self) -> tuple[int \| None, int \| None]` | Lowest and highest whole °F calibration delta in offset_range. |
+| [SetpointRules.envelope](../../../src/mysa_client/cloud/setpoints.py#L703) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> SetpointRange` | The smallest range in °C covering every listed kind, for display. |
+| [SetpointRules.fahrenheit_envelope](../../../src/mysa_client/cloud/setpoints.py#L725) | `(self, kinds: Iterable[SetpointKind \| Mode \| None]) -> tuple[int, int]` | Lowest and highest whole °F any listed kind accepts, for display. |
 
 ### `mysa_client._temperature`
 
@@ -253,8 +257,9 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [require_setpoint](../../../src/mysa_client/_temperature.py#L118) | `(value: object, name: str='temperature') -> float` | Return a Setpoint's °C value, or raise TypeError for anything else. |
-| [require_offset](../../../src/mysa_client/_temperature.py#L127) | `(value: object, name: str='offset') -> float` | Return a TemperatureOffset's °C value, or raise TypeError. |
+| [require_setpoint](../../../src/mysa_client/_temperature.py#L129) | `(value: object, name: str='temperature') -> float` | Return a target Setpoint's °C value, or raise TypeError. |
+| [require_limit](../../../src/mysa_client/_temperature.py#L147) | `(value: object, name: str='value') -> float` | Return a Setpoint's °C value for an owner-limit write. |
+| [require_offset](../../../src/mysa_client/_temperature.py#L159) | `(value: object, name: str='offset') -> float` | Return a TemperatureOffset's °C value, or raise TypeError. |
 
 ### `mysa_client.cloud.device_commands`
 
@@ -308,12 +313,12 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 | [MysaScheduleTransport.remove_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L76) | `async (self, schedule: Mapping[str, Any], device_id: str) -> None` | Detach a schedule from one device. |
 | [MysaScheduleTransport.create_schedule](../../../src/mysa_client/cloud/schedule_workflow.py#L82) | `async (self, payload: Mapping[str, Any], device_id: str) -> None` | Create a modern schedule or restore a native schedule snapshot. |
 | [build_schedule_events](../../../src/mysa_client/cloud/schedule_workflow.py#L116) | `(events: Iterable[Mapping[str, Any]], *, default_mode: Mode=Mode.HEAT, client_key: str='mysa-client', rules: SetpointRules \| None=None, unit: Unit='C') -> list[dict[str, Any]]` | Encode semantic weekday events in the cloud schedule representation. |
-| [schedule_content_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L164) | `(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> bool` | Compare semantic schedule content across Mysa's GET normalization. |
-| [schedule_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L245) | `(actual: Mapping[str, Any], expected: Mapping[str, Any], device_ids: list[str]) -> bool` | Compare schedule content and its exact set of attachments. |
-| [ScheduleWorkflow.async_recover](../../../src/mysa_client/cloud/schedule_workflow.py#L330) | `async (self, *, for_clear: bool=False) -> None` | Reconcile an interrupted replacement or clear operation. |
-| [ScheduleWorkflow.async_set](../../../src/mysa_client/cloud/schedule_workflow.py#L359) | `async (self, events: Iterable[Mapping[str, Any]]) -> None` | Replace all schedules attached to this thermostat. |
-| [ScheduleWorkflow.async_set_encoded](../../../src/mysa_client/cloud/schedule_workflow.py#L364) | `async (self, encoded_events: list[dict[str, Any]]) -> None` | Replace schedules using events already encoded by this client. |
-| [ScheduleWorkflow.async_clear](../../../src/mysa_client/cloud/schedule_workflow.py#L426) | `async (self) -> None` | Delete every schedule attached to this thermostat. |
+| [schedule_content_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L172) | `(actual: Mapping[str, Any], expected: Mapping[str, Any]) -> bool` | Compare semantic schedule content across Mysa's GET normalization. |
+| [schedule_matches](../../../src/mysa_client/cloud/schedule_workflow.py#L253) | `(actual: Mapping[str, Any], expected: Mapping[str, Any], device_ids: list[str]) -> bool` | Compare schedule content and its exact set of attachments. |
+| [ScheduleWorkflow.async_recover](../../../src/mysa_client/cloud/schedule_workflow.py#L338) | `async (self, *, for_clear: bool=False) -> None` | Reconcile an interrupted replacement or clear operation. |
+| [ScheduleWorkflow.async_set](../../../src/mysa_client/cloud/schedule_workflow.py#L367) | `async (self, events: Iterable[Mapping[str, Any]]) -> None` | Replace all schedules attached to this thermostat. |
+| [ScheduleWorkflow.async_set_encoded](../../../src/mysa_client/cloud/schedule_workflow.py#L372) | `async (self, encoded_events: list[dict[str, Any]]) -> None` | Replace schedules using events already encoded by this client. |
+| [ScheduleWorkflow.async_clear](../../../src/mysa_client/cloud/schedule_workflow.py#L434) | `async (self) -> None` | Delete every schedule attached to this thermostat. |
 
 ### `mysa_client.cloud.holds`
 
@@ -322,7 +327,7 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
 | [resolve_hold](../../../src/mysa_client/cloud/holds.py#L40) | `(*, requested_mode: Mode \| None, current_mode: Mode \| None, requested_temperature: float \| Setpoint \| None, current_temperature: float \| Setpoint \| None, until: datetime \| None=None, rules: SetpointRules \| None=None, unit: Unit='C') -> HoldCommand` | Apply Mysa's default-mode and OFF/setpoint rules to a hold request. |
-| [async_apply_hold](../../../src/mysa_client/cloud/holds.py#L101) | `async (command: HoldCommand, *, set_hold: Callable[[Mapping[str, Any], datetime \| None], Awaitable[None]], current_mode: Callable[[], Mode \| None], current_temperature: Callable[[], float \| None], set_mode: Callable[[Mode], Awaitable[None]], set_temperature: Callable[[Setpoint], Awaitable[None]]) -> None` | Set the cloud hold, then immediately apply its state through callbacks. |
+| [async_apply_hold](../../../src/mysa_client/cloud/holds.py#L102) | `async (command: HoldCommand, *, set_hold: Callable[[Mapping[str, Any], datetime \| None], Awaitable[None]], current_mode: Callable[[], Mode \| None], current_temperature: Callable[[], float \| None], set_mode: Callable[[Mode], Awaitable[None]], set_temperature: Callable[[Setpoint], Awaitable[None]]) -> None` | Set the cloud hold, then immediately apply its state through callbacks. |
 
 ### `mysa_client.cloud.account_workflow`
 

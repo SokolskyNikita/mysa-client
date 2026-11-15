@@ -15,6 +15,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from .const import (
     AC_FAN_TO_STATE,
+    NO_SETPOINT_MODES,
     SETPOINT_SECTION_BY_MODE,
     SWING_HORIZONTAL,
     SWING_VERTICAL,
@@ -25,7 +26,14 @@ from .const import (
     Swing,
 )
 from .observations import STATE_FIELDS
-from .setpoints import Setpoint, TemperatureOffset, require_offset, require_setpoint
+from .setpoints import (
+    Setpoint,
+    SetpointModeError,
+    TemperatureOffset,
+    require_limit,
+    require_offset,
+    require_setpoint,
+)
 
 StateChanges = dict[str, dict[str, Any]]
 SettingsChanges = dict[str, Any]
@@ -188,8 +196,18 @@ class ScheduleEventSpec:
 
 
 def temperature_changes(mode: Mode | None, temperature: Setpoint) -> StateChanges:
-    """Encode a setpoint change for the selected operating mode."""
+    """Encode a setpoint change for the selected operating mode.
+
+    Cool writes ``targetCool``; heat, emergency heat, heat/cool (the single
+    target is the heat target), off and no mode write ``targetHeat``.
+    Fan-only, dry, sleep and pre-cool have no setpoint section, so they raise
+    ``SetpointModeError`` rather than write a target the mode ignores.
+    """
     value = require_setpoint(temperature)
+    if mode in NO_SETPOINT_MODES:
+        raise SetpointModeError(
+            mode, f"Mode {mode.name.lower()} has no setpoint to write"
+        )
     section = SETPOINT_SECTION_BY_MODE.get(mode or Mode.HEAT, "targetHeat")
     return {section: {"setpoint": value}}
 
@@ -292,7 +310,7 @@ def button_lock_changes(value: ButtonLock) -> StateChanges:
 def setpoint_limit_changes(value: Setpoint, *, minimum: bool) -> StateChanges:
     """Encode the minimum or maximum allowed heating setpoint."""
     field = "lockoutMin" if minimum else "lockoutMax"
-    return {"targetHeat": {field: require_setpoint(value, "value")}}
+    return {"targetHeat": {field: require_limit(value, "value")}}
 
 
 def temperature_offset_changes(value: TemperatureOffset) -> StateChanges:

@@ -191,7 +191,12 @@ The following values are `CONTROL_MODE_TYPE`, used in `modes.mode`. Capability d
 | 8 | dry | None |
 | 9 | sleep | None |
 
-The `Mode` enum defines these values. `DeviceState` retains AUTO's two targets
+The `Mode` enum defines these values. Python writes no setpoint for the "None"
+and "No established mapping" rows: `temperature_changes` raises
+`SetpointModeError` for fan-only, dry, sleep and pre-cool, and holds and
+schedule events in those modes and in off drop their temperature. A single
+target given while off is still written to `targetHeat` by
+`temperature_changes` and `climate_command`. `DeviceState` retains AUTO's two targets
 as `auto_heat_setpoint` and `auto_cool_setpoint`; `setpoint_for(AUTO)` returns
 the heat setpoint, since a single setpoint in heat/cool mode is the heat target
 (written to `targetHeat`). `commands.py` contains field encoders, while

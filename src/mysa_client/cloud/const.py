@@ -68,6 +68,14 @@ SETPOINT_SECTION_BY_MODE: Final[dict[Mode, str]] = {
     Mode.COOL: "targetCool",
 }
 
+# Modes with no setpoint section (the protocol's mode table lists "None" or
+# "No established mapping"). Off is left out: holds and schedules already drop
+# an off temperature, and climate_command still writes a target given while
+# off to targetHeat, as it did before this set existed.
+NO_SETPOINT_MODES: Final[frozenset[Mode]] = frozenset(
+    {Mode.PRE_COOL, Mode.FAN_ONLY, Mode.DRY, Mode.SLEEP}
+)
+
 
 class AcFan(IntEnum):
     """A Mini-Split AC's fan speeds, as listed in its settings record.

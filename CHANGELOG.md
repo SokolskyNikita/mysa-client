@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** a bound no range advertises is no longer unchecked. Writes are
+  checked and clamped against `SAFE_MINIMUM`-`SAFE_MAXIMUM` (5-35 °C) for
+  targets and owner limits and ±`SAFE_OFFSET` (5 °C) for offsets in its place,
+  so `SetpointRules().setpoint(None, 500)` raises `SetpointOutOfRangeError`
+  (or clamps to 35 °C with `strict=False`), as do a heat/cool pair with no
+  auto ranges and a cool schedule event with no cool range. An advertised
+  bound outside the envelope still wins, and `range_for` still reports an
+  unknown bound as `None`. Code that built rules without ranges to write
+  values outside 5-35 °C must now pass a range.
+- **Breaking:** `SetpointRules.limit` returns a `SetpointLimit`, a new
+  `Setpoint` subclass. `setpoint_limit_changes` and
+  `MysaClient.set_setpoint_limit` accept it; every target writer
+  (`temperature_changes`, `auto_temperature_changes`, `make_state`,
+  `climate_command`, `ScheduleEventSpec`, `build_schedule_events`,
+  `HoldCommand`/`resolve_hold`, `async_apply_hold`, HomeKit
+  `TARGET_TEMPERATURE` and the MQTT setpoint writers) raises `TypeError` for
+  it, as does `require_setpoint`. The new `require_limit` accepts both. A
+  `SetpointLimit` no longer compares equal to a target `Setpoint` of the same
+  temperature.
+- **Breaking:** a non-strict call never returns a value outside its range.
+  When no step-grid value lies inside it (inverted owner limits such as 25 and
+  20 °C, or 20.2-20.4 °C on a 0.5 °C step), strict and non-strict calls raise
+  the new `SetpointRangeEmptyError` instead of returning 25.0 or 20.5.
+- **Breaking:** NaN, infinity and temperatures beyond `MAX_MAGNITUDE`
+  (1000 °C) raise the new `SetpointValueError` in strict and non-strict calls,
+  instead of `OverflowError` (for 1e308) or a plain `ValueError`. Building
+  `SetpointRules` with a non-finite or absurd bound, step or owner limit, or a
+  negative `min_setpoint_delta`, raises the new `SetpointConfigError` instead
+  of failing later or (for a NaN `setpoint_min`) silently ignoring the bound.
+  All three subclass `SetpointError`, so they are still `ValueError`s.
+- **Breaking:** `temperature_changes` raises `SetpointModeError` for fan-only,
+  dry, sleep and pre-cool instead of writing `targetHeat`, matching the
+  protocol's mode table, which lists no setpoint section for them. Holds
+  (`resolve_hold`) and schedule events (`build_schedule_events`) in those modes
+  now drop their temperature without checking it, as for off, instead of
+  raising for a value outside the heat range; `async_apply_hold` therefore no
+  longer re-sends a temperature after a hold in those modes.
+
 ## 0.3.0 (2026-11-15)
 
 - **Breaking:** every temperature write now requires a typed value from the

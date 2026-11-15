@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from .commands import StateChanges, make_state
-from .const import Mode
+from .const import NO_SETPOINT_MODES, Mode
 from .setpoints import (
     Setpoint,
     SetpointModeError,
@@ -57,7 +57,8 @@ def resolve_hold(
     ``Setpoint`` is used as given. Without ``rules`` a plain number raises
     ``TypeError``.
 
-    An OFF hold carries no temperature. A heat/cool (``Mode.AUTO``) hold can't
+    An off, fan-only, dry, sleep or pre-cool hold carries no temperature: both
+    temperatures are dropped without being checked. A heat/cool (``Mode.AUTO``) hold can't
     carry a single one: a requested temperature raises ``SetpointModeError``
     and the current target is dropped.
     """
@@ -68,7 +69,7 @@ def resolve_hold(
     else:
         mode = Mode.HEAT
     temperature: Setpoint | None = None
-    if mode == Mode.OFF:
+    if mode == Mode.OFF or mode in NO_SETPOINT_MODES:
         pass
     elif requested_temperature is not None:
         if mode == Mode.AUTO:

@@ -54,7 +54,12 @@ code that can create `Setpoint` and `TemperatureOffset` values. The builders
 and raise `TypeError` for a plain number (`resolve_hold` and
 `build_schedule_events` also take `rules=` and then normalise plain numbers
 themselves; see [holds and schedules](#holds-and-schedules)); constructing `Setpoint(21.5)` directly
-also raises `TypeError`. Read the value back with `.celsius`. The value types
+also raises `TypeError`. Read the value back with `.celsius`. `limit()` returns a
+`SetpointLimit`, a `Setpoint` subclass that only `setpoint_limit_changes` and
+`MysaClient.set_setpoint_limit` accept; every target writer (cloud, HomeKit and
+MQTT) refuses it with `TypeError`, since it was checked against the hardware
+range rather than a mode's target range. `require_setpoint` refuses it and
+`require_limit` accepts it (and, as before, a target `Setpoint`). The value types
 and checks are defined in the dependency-free `mysa_client._temperature`, so
 the HomeKit and MQTT packages can share them without importing cloud. Local
 writes follow the same rule: `HomeKitDevice.async_write` for `Field.TARGET_TEMPERATURE`
@@ -78,13 +83,23 @@ step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
 - Both heat/cool ranges come from capabilities only. Owner limits apply to
   none of these.
 - Without capabilities or a record, only the HomeKit range applies. Any part
-  may be absent: a missing bound is not checked and a missing step is 0.5 °C.
+  may be absent: a missing step is 0.5 °C, and a missing bound stays `None` in
+  `range_for` but is checked as described under **Unknown bounds** below.
+- A non-finite or absurd input (a bound or owner limit beyond
+  `MAX_MAGNITUDE`, 1000 °C; a step that is not in (0, 10] °C; a negative
+  `min_setpoint_delta`) raises `SetpointConfigError` (`name`, `value`) when the
+  rules are built.
 
 In heat/cool mode (`Mode.AUTO`) a single setpoint means the heat target: it
 uses the heat range and is written to `targetHeat`. `kind_for_mode`,
 `temperature_changes`, `SetpointRules.setpoint` and `DeviceState.setpoint_for`
 all follow this rule, so a single-setpoint write in auto mode can be confirmed
 by reading the mode's setpoint back. Use `heat_cool(low, high)` for the pair.
+Fan-only, dry, sleep and pre-cool have no setpoint section (see the
+[mode table](../protocol/cloud-state.md#mode-and-heater-enums)), so
+`temperature_changes` raises `SetpointModeError` for them instead of writing
+`targetHeat`; `SetpointRules.setpoint` still checks a value against the heat
+range for them, and holds and schedules drop their temperature.
 
 Values round to multiples of the step anchored at 0, halfway values up
 (`floor(x / step + 0.5) * step`, then 4 decimals), so 20.25 becomes 20.5 and
@@ -95,7 +110,7 @@ converts with `(f - 32) / 1.8` before rounding (an offset delta with `/ 1.8`).
 | --- | --- | --- |
 | `setpoint(mode, value)` | Cool for `Mode.COOL`, heat otherwise (including `Mode.AUTO`) | `Setpoint` |
 | `heat_cool(low, high)` | Auto heat and auto cool; the rounded gap must be at least `min_setpoint_delta` (0 when unknown) | `(Setpoint, Setpoint)` |
-| `limit(value, minimum=...)` | Hardware heat range, then strictly below `setpoint_max` (a minimum) or above `setpoint_min` (a maximum) | `Setpoint` |
+| `limit(value, minimum=...)` | Hardware heat range, then strictly below `setpoint_max` (a minimum) or above `setpoint_min` (a maximum) | `SetpointLimit` |
 | `offset(delta)` | Offset range | `TemperatureOffset` |
 | `schedule_event(mode, value)` | Same as `setpoint` | `Setpoint` |
 | `range_for(kind_or_mode)` | — | `SetpointRange` |
@@ -108,9 +123,18 @@ The module-level `fahrenheit_bounds(range, delta=False)` does the same for a
 range on its own, and `limits_ordered(minimum, maximum)` is the owner-limit
 comparison.
 
-**Unknown bounds.** Validation never invents a bound: a write is checked only
-against the bounds that HomeKit, the capabilities or the record advertise. A
-display envelope does need two ends, so `envelope` and `fahrenheit_envelope`
+**Unknown bounds.** A write is checked against the bounds that HomeKit, the
+capabilities, the record or the owner advertise. A bound none of them
+advertises is replaced, for checking and clamping only, by a conservative
+safe envelope: `SAFE_MINIMUM`–`SAFE_MAXIMUM`, 5–35 °C, for targets and limits,
+and ±`SAFE_OFFSET`, 5 °C, for offsets. So rules built before capabilities load
+(`SetpointRules()`, or HomeKit only for a heat/cool pair or a cool schedule
+event) still refuse, or with `strict=False` clamp, a value such as 500 °C. 35 °C
+is the highest bound in any captured capability document (Central HVAC cool),
+5 °C the app's `MIN_TEMP`, and ±5 °C the captured offset range; an advertised
+bound outside the envelope still wins. `range_for` keeps reporting the unknown
+bound as `None`, and an error's `limits` shows the envelope bound that applied.
+A display envelope needs two ends as well, so `envelope` and `fahrenheit_envelope`
 assume `DEFAULT_MINIMUM`–`DEFAULT_MAXIMUM`, 5–30 °C (41–86 °F), for a bound
 none of the listed ranges advertises. That is the Mysa app's own default range
 (`MIN_TEMP` / `MAX_TEMP`) and the range the MQTT protocol enforces. When the
@@ -135,11 +159,17 @@ holds when `low` equals `high`) and `None` otherwise, and `delta` is true for
 an offset. `fahrenheit_limit` is the closest allowed whole °F on that bound
 (a whole °F delta for an offset). With `strict=False` the result is
 clamped to the nearest step-grid value at or inside the limit and its `clamp` is a `SetpointClamp(requested, limit,
-bound)` (otherwise `None`) for the caller's log. A heat/cool pair that is too
+bound)` (otherwise `None`) for the caller's log. The clamped value always lies
+inside the range. When no step-grid value does (inverted owner limits such as
+25 and 20 °C, or 20.2–20.4 °C with a 0.5 °C step), both modes raise
+`SetpointRangeEmptyError` with `limits`, `kind` and `side`. NaN, infinity and
+values beyond `MAX_MAGNITUDE` raise `SetpointValueError` (with `value`) in both
+modes. A heat/cool pair that is too
 close always raises `SetpointGapTooSmallError` with `low`, `high`, `gap` and
 `required`; the rules never move a value to make room. These errors,
-`SetpointLimitOrderError` and `SetpointModeError` subclass `SetpointError`, a
-`ValueError`. All numbers are in °C so callers can word
+`SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`,
+`SetpointValueError` and `SetpointConfigError` subclass `SetpointError`, a
+`ValueError`; a non-number value still raises `TypeError`. All numbers are in °C so callers can word
 messages in the user's unit.
 
 For Fahrenheit display, `fahrenheit_label(celsius)` rounds halfway values up
@@ -159,8 +189,9 @@ mode. With `rules`, both temperatures may be plain numbers:
 `requested_temperature` is in `unit` and checked strictly; `current_temperature`
 is the device's current target in °C and is clamped (`strict=False`), since the
 hold only re-sends it. A `Setpoint` is used as given, so typed callers keep
-working; without `rules` a plain number raises `TypeError`. An OFF hold carries
-no temperature. A heat/cool hold can't carry a single one: a requested
+working; without `rules` a plain number raises `TypeError`. An off, fan-only,
+dry, sleep or pre-cool hold carries no temperature: both temperatures are dropped
+without being checked, so `async_apply_hold` writes none. A heat/cool hold can't carry a single one: a requested
 temperature raises `SetpointModeError` (with `mode`), and the current target is
 dropped. `async_apply_hold` takes the resolved `HoldCommand`, so it needs no
 rules.
@@ -168,8 +199,8 @@ rules.
 `build_schedule_events(events, *, default_mode=Mode.HEAT,
 client_key="mysa-client", rules=None, unit="C")` does the same per event: with
 `rules`, each plain temperature is in `unit` and goes through
-`rules.schedule_event` for the event's `hvac_mode`, strictly. An `off` event's
-temperature is dropped, and an `auto` event with a temperature raises
+`rules.schedule_event` for the event's `hvac_mode`, strictly. The temperature
+of an `off`, `fan_only`, `dry`, `sleep` or `pre_cool` event is dropped unchecked, and an `auto` event with a temperature raises
 `SetpointModeError`.
 
 ## How it is organized
@@ -180,7 +211,7 @@ temperature is dropped, and an `auto` event with a temperature raises
 | [`client.py`](../../../src/mysa_client/cloud/client.py) | HTTP requests, endpoint methods, response handling, and explicit validated `execute_command()` |
 | [`commands.py`](../../../src/mysa_client/cloud/commands.py) | Semantic controls, enum conversion, schedule encoding |
 | [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | Setpoint rounding, range validation, and Fahrenheit display rules |
-| [`_temperature.py`](../../../src/mysa_client/_temperature.py) | The `Setpoint`, `TemperatureOffset` and `SetpointClamp` types and the `require_setpoint`/`require_offset` checks, outside every protocol package so HomeKit and MQTT can check them without importing cloud; it uses only the standard library. Import them from `setpoints.py`, which re-exports them and alone creates values. |
+| [`_temperature.py`](../../../src/mysa_client/_temperature.py) | The `Setpoint`, `SetpointLimit`, `TemperatureOffset` and `SetpointClamp` types and the `require_setpoint`/`require_limit`/`require_offset` checks, outside every protocol package so HomeKit and MQTT can check them without importing cloud; it uses only the standard library. Import them from `setpoints.py`, which re-exports them and alone creates values. |
 | [`models.py`](../../../src/mysa_client/cloud/models.py) | Typed response parsing, preserving original JSON in `raw`; `DeviceRecord.ac_temperature_range(mode)` reads a Mini-Split AC remote's per-mode temperatures |
 | [`const.py`](../../../src/mysa_client/cloud/const.py), [`exceptions.py`](../../../src/mysa_client/cloud/exceptions.py) | Hosts, protocol constants/enums, errors |
 
@@ -204,7 +235,7 @@ These submodule helpers are supported for standalone callers and integrations:
 | --- | --- |
 | [`commands.py`](../../../src/mysa_client/cloud/commands.py) | `CloudCommand`, `state_command`, `settings_command`, and field encoders including `auto_temperature_changes`, `button_lock_changes`, `display_brightness_changes`, `display_unit_settings`, `fan_speed_changes`, `heater_type_settings`, `hvac_fan_changes`, `mode_changes`, `setpoint_limit_changes`, `swing_changes`, `temperature_changes`, `temperature_offset_changes` |
 | [`device_commands.py`](../../../src/mysa_client/cloud/device_commands.py) | `climate_command`, `brightness_command`, `hvac_fan_command`, `hvac_fan_speed_command`, `display_unit_command` |
-| [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointLimitOrderError`, `SetpointModeError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM` (see [setpoint rules](#setpoint-rules)) |
+| [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, `SetpointLimit`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`, `SetpointValueError`, `SetpointConfigError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_limit`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM`, `SAFE_MINIMUM`, `SAFE_MAXIMUM`, `SAFE_OFFSET`, `MAX_MAGNITUDE` (see [setpoint rules](#setpoint-rules)) |
 | [`device.py`](../../../src/mysa_client/cloud/device.py) | `basic_modes`, `brightness_pair`, `heating_range`, `hvac_activity`, `hvac_fan_operation` |
 | [`const.py`](../../../src/mysa_client/cloud/const.py) | `API_BASE`, `EXPERIMENTAL_CLOUD_FAMILIES`, `SWING_VERTICAL`, `model_family`; public models and enums are also re-exported at the package level |
 | [`models.py`](../../../src/mysa_client/cloud/models.py) | The response models exported by the package root, retained at this submodule path for direct imports |
