@@ -13,13 +13,16 @@ if TYPE_CHECKING:
 
 
 class Field(StrEnum):
-    """A Mysa value exposed by its HomeKit thermostat service."""
+    """A Mysa value exposed by one of its HomeKit services."""
 
     CURRENT_TEMPERATURE = "current_temperature"
     TARGET_TEMPERATURE = "target_temperature"
     CURRENT_ACTION = "current_action"
     TARGET_MODE = "target_mode"
     DISPLAY_UNIT = "display_unit"
+    # Read-only lux from the optional Light Sensor service. Only some models
+    # advertise it (reported on the in-floor INF-V1-0).
+    AMBIENT_LIGHT = "ambient_light"
 
 
 class LocalMode(StrEnum):

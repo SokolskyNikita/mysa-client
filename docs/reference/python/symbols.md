@@ -160,26 +160,26 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [HomeKitDevice.__init__](../../../src/mysa_client/homekit/device.py#L240) | `(self, pairing: Any, pairing_data: Mapping[str, Any]) -> None` | Wrap a raw pairing without exposing it to callers. |
-| [HomeKitDevice.pairing_data](../../../src/mysa_client/homekit/device.py#L261) | `(self) -> dict[str, Any]` | Return a copy for persistence and endpoint updates. |
-| [HomeKitDevice.info](../../../src/mysa_client/homekit/device.py#L266) | `(self) -> AccessoryInfo` | Current accessory information, if it has been read. |
-| [HomeKitDevice.state](../../../src/mysa_client/homekit/device.py#L271) | `(self) -> Mapping[Field, Any]` | Current semantic values as an immutable view. |
-| [HomeKitDevice.failed_fields](../../../src/mysa_client/homekit/device.py#L276) | `(self) -> Mapping[Field, str]` | Fields whose latest required observation failed. |
-| [HomeKitDevice.capabilities](../../../src/mysa_client/homekit/device.py#L281) | `(self) -> Mapping[Field, CharacteristicInfo]` | Supported semantic fields and their advertised limits. |
-| [HomeKitDevice.supported_fields](../../../src/mysa_client/homekit/device.py#L288) | `(self) -> frozenset[Field]` | Fields present in this accessory's thermostat service. |
-| [HomeKitDevice.ready](../../../src/mysa_client/homekit/device.py#L293) | `(self) -> bool` | Whether the essential thermostat fields were discovered. |
-| [HomeKitDevice.host](../../../src/mysa_client/homekit/device.py#L298) | `(self) -> str \| None` | Last known accessory address, used by the HA repair message. |
-| [HomeKitDevice.supported_modes](../../../src/mysa_client/homekit/device.py#L304) | `(self) -> tuple[LocalMode, ...]` | Modes advertised by the thermostat, with a safe baseboard default. |
-| [HomeKitDevice.temperature_range](../../../src/mysa_client/homekit/device.py#L314) | `(self) -> tuple[float \| None, float \| None, float \| None]` | Setpoint minimum, maximum and step advertised by the accessory. |
-| [HomeKitDevice.add_listener](../../../src/mysa_client/homekit/device.py#L322) | `(self, listener: Callable[[HomeKitEvent], None]) -> Callable[[], None]` | Subscribe to semantic value and connection events. |
-| [HomeKitDevice.add_endpoint_listener](../../../src/mysa_client/homekit/device.py#L333) | `(self, listener: Callable[[HomeKitEndpoint], None]) -> Callable[[], None]` | Subscribe to changes in the saved accessory address and port. |
-| [HomeKitDevice.async_get_info](../../../src/mysa_client/homekit/device.py#L344) | `async (self) -> AccessoryInfo` | Refresh the accessory database and return its identity values. |
-| [HomeKitDevice.async_connect](../../../src/mysa_client/homekit/device.py#L363) | `async (self) -> None` | Refresh characteristics and subscriptions, with bounded retries. |
-| [HomeKitDevice.async_read](../../../src/mysa_client/homekit/device.py#L461) | `async (self, fields: Iterable[Field], *, timeout: float \| None=None) -> dict[Field, Any]` | Read semantic fields and update the cached values on success. |
-| [HomeKitDevice.async_write](../../../src/mysa_client/homekit/device.py#L582) | `async (self, values: Mapping[Field, Any]) -> None` | Write semantic fields, rejecting unsupported or failed operations. |
-| [HomeKitDevice.async_identify](../../../src/mysa_client/homekit/device.py#L635) | `async (self) -> None` | Ask the accessory to identify itself. |
-| [HomeKitDevice.async_close](../../../src/mysa_client/homekit/device.py#L657) | `async (self) -> None` | Unsubscribe and close this pairing session. |
-| [HomeKitDevice.diagnostics](../../../src/mysa_client/homekit/device.py#L673) | `(self) -> dict[str, Any]` | Return safe, semantic values without IDs or pairing credentials. |
+| [HomeKitDevice.__init__](../../../src/mysa_client/homekit/device.py#L248) | `(self, pairing: Any, pairing_data: Mapping[str, Any]) -> None` | Wrap a raw pairing without exposing it to callers. |
+| [HomeKitDevice.pairing_data](../../../src/mysa_client/homekit/device.py#L269) | `(self) -> dict[str, Any]` | Return a copy for persistence and endpoint updates. |
+| [HomeKitDevice.info](../../../src/mysa_client/homekit/device.py#L274) | `(self) -> AccessoryInfo` | Current accessory information, if it has been read. |
+| [HomeKitDevice.state](../../../src/mysa_client/homekit/device.py#L279) | `(self) -> Mapping[Field, Any]` | Current semantic values as an immutable view. |
+| [HomeKitDevice.failed_fields](../../../src/mysa_client/homekit/device.py#L284) | `(self) -> Mapping[Field, str]` | Fields whose latest required observation failed. |
+| [HomeKitDevice.capabilities](../../../src/mysa_client/homekit/device.py#L289) | `(self) -> Mapping[Field, CharacteristicInfo]` | Supported semantic fields and their advertised limits. |
+| [HomeKitDevice.supported_fields](../../../src/mysa_client/homekit/device.py#L296) | `(self) -> frozenset[Field]` | Fields present in this accessory's thermostat and sensor services. |
+| [HomeKitDevice.ready](../../../src/mysa_client/homekit/device.py#L301) | `(self) -> bool` | Whether the essential thermostat fields were discovered. |
+| [HomeKitDevice.host](../../../src/mysa_client/homekit/device.py#L306) | `(self) -> str \| None` | Last known accessory address, used by the HA repair message. |
+| [HomeKitDevice.supported_modes](../../../src/mysa_client/homekit/device.py#L312) | `(self) -> tuple[LocalMode, ...]` | Modes advertised by the thermostat, with a safe baseboard default. |
+| [HomeKitDevice.temperature_range](../../../src/mysa_client/homekit/device.py#L322) | `(self) -> tuple[float \| None, float \| None, float \| None]` | Setpoint minimum, maximum and step advertised by the accessory. |
+| [HomeKitDevice.add_listener](../../../src/mysa_client/homekit/device.py#L330) | `(self, listener: Callable[[HomeKitEvent], None]) -> Callable[[], None]` | Subscribe to semantic value and connection events. |
+| [HomeKitDevice.add_endpoint_listener](../../../src/mysa_client/homekit/device.py#L341) | `(self, listener: Callable[[HomeKitEndpoint], None]) -> Callable[[], None]` | Subscribe to changes in the saved accessory address and port. |
+| [HomeKitDevice.async_get_info](../../../src/mysa_client/homekit/device.py#L352) | `async (self) -> AccessoryInfo` | Refresh the accessory database and return its identity values. |
+| [HomeKitDevice.async_connect](../../../src/mysa_client/homekit/device.py#L371) | `async (self) -> None` | Refresh characteristics and subscriptions, with bounded retries. |
+| [HomeKitDevice.async_read](../../../src/mysa_client/homekit/device.py#L469) | `async (self, fields: Iterable[Field], *, timeout: float \| None=None) -> dict[Field, Any]` | Read semantic fields and update the cached values on success. |
+| [HomeKitDevice.async_write](../../../src/mysa_client/homekit/device.py#L590) | `async (self, values: Mapping[Field, Any]) -> None` | Write semantic fields, rejecting unsupported or failed operations. |
+| [HomeKitDevice.async_identify](../../../src/mysa_client/homekit/device.py#L645) | `async (self) -> None` | Ask the accessory to identify itself. |
+| [HomeKitDevice.async_close](../../../src/mysa_client/homekit/device.py#L667) | `async (self) -> None` | Unsubscribe and close this pairing session. |
+| [HomeKitDevice.diagnostics](../../../src/mysa_client/homekit/device.py#L683) | `(self) -> dict[str, Any]` | Return safe, semantic values without IDs or pairing credentials. |
 
 
 ## MQTT

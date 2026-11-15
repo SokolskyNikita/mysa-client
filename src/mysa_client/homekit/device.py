@@ -55,17 +55,23 @@ _CURRENT_STATE = CharacteristicsTypes.HEATING_COOLING_CURRENT
 _TARGET_STATE = CharacteristicsTypes.HEATING_COOLING_TARGET
 _DISPLAY_UNITS = CharacteristicsTypes.TEMPERATURE_UNITS
 _IDENTIFY = CharacteristicsTypes.IDENTIFY
+_AMBIENT_LIGHT = CharacteristicsTypes.LIGHT_LEVEL_CURRENT
 
-_FIELD_TO_CHAR: dict[Field, str] = {
-    Field.CURRENT_TEMPERATURE: _CURRENT_TEMPERATURE,
-    Field.TARGET_TEMPERATURE: _TARGET_TEMPERATURE,
-    Field.CURRENT_ACTION: _CURRENT_STATE,
-    Field.TARGET_MODE: _TARGET_STATE,
-    Field.DISPLAY_UNIT: _DISPLAY_UNITS,
+# Semantic fields by the service that carries them. A field is mapped only
+# when the accessory's database advertises that service and characteristic.
+_SERVICE_FIELDS: dict[str, dict[str, Field]] = {
+    ServicesTypes.THERMOSTAT: {
+        _CURRENT_TEMPERATURE: Field.CURRENT_TEMPERATURE,
+        _TARGET_TEMPERATURE: Field.TARGET_TEMPERATURE,
+        _CURRENT_STATE: Field.CURRENT_ACTION,
+        _TARGET_STATE: Field.TARGET_MODE,
+        _DISPLAY_UNITS: Field.DISPLAY_UNIT,
+    },
+    ServicesTypes.LIGHT_SENSOR: {
+        _AMBIENT_LIGHT: Field.AMBIENT_LIGHT,
+    },
 }
-_CHAR_TO_FIELD = {
-    characteristic: field for field, characteristic in _FIELD_TO_CHAR.items()
-}
+_READ_ONLY_FIELDS = frozenset({Field.AMBIENT_LIGHT})
 _INFO_CHAR_FIELDS = {
     CharacteristicsTypes.NAME: "name",
     CharacteristicsTypes.MODEL: "model",
@@ -148,6 +154,10 @@ def _decode(field: Field, value: Any) -> Any:
         if value == 1:
             return "F"
         return None
+    if field == Field.AMBIENT_LIGHT:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        return float(value)
     return value
 
 
@@ -187,7 +197,7 @@ def _parse_accessories(
     dict[Field, Any],
     tuple[int, int] | None,
 ]:
-    """Parse Mysa's information and thermostat services into semantic values."""
+    """Parse Mysa's information, thermostat and sensor services."""
     info: dict[str, str | None] = dict.fromkeys(_INFO_CHAR_FIELDS.values(), None)
     fields: dict[Field, _CharacteristicAddress] = {}
     values: dict[Field, Any] = {}
@@ -207,9 +217,7 @@ def _parse_accessories(
                         identify = (accessory.aid, characteristic.iid)
                     continue
 
-                if service.type != ServicesTypes.THERMOSTAT:
-                    continue
-                field = _CHAR_TO_FIELD.get(characteristic_type)
+                field = _SERVICE_FIELDS.get(service.type, {}).get(characteristic_type)
                 if field is None:
                     continue
                 valid = characteristic.valid_values
@@ -286,7 +294,7 @@ class HomeKitDevice:
 
     @property
     def supported_fields(self) -> frozenset[Field]:
-        """Fields present in this accessory's thermostat service."""
+        """Fields present in this accessory's thermostat and sensor services."""
         return frozenset(self.__fields)
 
     @property
@@ -596,6 +604,8 @@ class HomeKitDevice:
                 raise HomeKitWriteRejectedError(
                     f"HomeKit does not support {field.value}"
                 )
+            if field in _READ_ONLY_FIELDS:
+                raise HomeKitWriteRejectedError(f"HomeKit {field.value} is read-only")
             key = (address.aid, address.iid)
             payload.append((*key, _encode(field, value)))
             fields_by_address[key] = field

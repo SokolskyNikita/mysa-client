@@ -39,7 +39,9 @@ completion criteria, see the
 
 An accessory describes its services and characteristics, each addressed by an
 accessory ID and instance ID. `device.py` locates the thermostat service and
-builds a private address map. Callers use `Field` values instead:
+builds a private address map from the thermostat service and, when the
+accessory advertises one, the Light Sensor service. Callers use `Field` values
+instead:
 
 | Semantic field | HAP characteristic and interpretation |
 | --- | --- |
@@ -48,6 +50,14 @@ builds a private address map. Callers use `Field` values instead:
 | `CURRENT_ACTION` | Current Heating/Cooling State: 0 = idle, 1 = heating, 2 = cooling |
 | `TARGET_MODE` | Target Heating/Cooling State: 0 = off, 1 = heat, 2 = cool, 3 = auto |
 | `DISPLAY_UNIT` | Temperature Display Units: 0 = `"C"`, 1 = `"F"` |
+| `AMBIENT_LIGHT` | Current Ambient Light Level in the Light Sensor service; read-only float lux |
+
+`AMBIENT_LIGHT` is in `supported_fields` only when the accessory database
+advertises the Light Sensor service. The in-floor INF-V1-0 (firmware 3.17.6.5)
+was reported with one (0–1573 lux, step 1); this has not been verified on
+hardware here, and other models should be assumed not to have it. A failed
+light read is reported in `failed_fields` but never fails a thermostat read,
+and writes to it are rejected. Neither cloud API reports light level.
 
 Display units do not change the Celsius values of temperature characteristics.
 Modes and actions are exposed as `LocalMode` and `LocalAction`; unknown mode,
