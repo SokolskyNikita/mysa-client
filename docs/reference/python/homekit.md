@@ -54,8 +54,10 @@ instead:
 
 `AMBIENT_LIGHT` is in `supported_fields` only when the accessory database
 advertises the Light Sensor service. The in-floor INF-V1-0 (firmware 3.17.6.5)
-was reported with one (0–1573 lux, step 1); this has not been verified on
-hardware here, and other models should be assumed not to have it. A failed
+was reported with one (0–1573 lux, step 1), and Mysa app strings suggest some
+older baseboard units have one too, next to a display Lightbulb service that is
+not mapped. Neither has been verified on hardware here, so support is detected
+per accessory, never by model. A failed
 light read is reported in `failed_fields` but never fails a thermostat read,
 and writes to it are rejected. Neither cloud API reports light level.
 

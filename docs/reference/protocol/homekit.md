@@ -41,7 +41,7 @@ failure. An unauthenticated HTTP request returned 470, not a local REST API.
 | Identify / Accessory Information | Identify plus model/manufacturer/serial/firmware | Exposed |
 | Wi-Fi Transport (`0x22A`) / Configuration Control (`0x22D`) | Configuration TLV8 | Readable; successful migration unverified |
 | Accessory Runtime Information (`0x239`) | Runtime/ping/heartbeat surface | Exposed; not an additional thermostat control API |
-| Current Ambient Light Level (`0x6B`) in Light Sensor (`0x84`) | Float lux, read-only | Absent on the Lite. Reported on in-floor `INF-V1-0` firmware `3.17.6.5` (0–1573 lux, step 1) in [#29](https://github.com/SokolskyNikita/mysa-client/issues/29); not verified on hardware here |
+| Current Ambient Light Level (`0x6B`) in Light Sensor (`0x84`) | Float lux, read-only | Absent on the Lite. Reported on in-floor `INF-V1-0` firmware `3.17.6.5` (0–1573 lux, step 1) in [#29](https://github.com/SokolskyNikita/mysa-client/issues/29). App 3.26.0 strings suggest older baseboards may also list it, beside a display Lightbulb (`0x43`). Neither is verified on hardware here; detect per accessory |
 
 Use advertised characteristics and ranges; instance IDs are accessory-specific.
 The [sanitized accessory fixture](../../../tests/fixtures/homekit_bb_v2_0_l.json)

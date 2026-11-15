@@ -50,9 +50,45 @@ LIGHT_SENSOR_SERVICE = {
 }
 
 
-async def _light_sensor_device():
+# Strings in the Mysa 3.26.0 app suggest that older baseboard units also list a
+# display Lightbulb service. Not seen on hardware; it must not be mapped.
+DISPLAY_LIGHTBULB_SERVICE = {
+    "iid": 640,
+    "type": "00000043-0000-1000-8000-0026BB765291",
+    "characteristics": [
+        {
+            "type": "00000023-0000-1000-8000-0026BB765291",
+            "iid": 642,
+            "perms": ["pr"],
+            "format": "string",
+            "value": "Display",
+            "maxLen": 64,
+        },
+        {
+            "type": "00000025-0000-1000-8000-0026BB765291",
+            "iid": 643,
+            "perms": ["pr", "pw", "ev"],
+            "format": "bool",
+            "value": True,
+        },
+        {
+            "type": "00000008-0000-1000-8000-0026BB765291",
+            "iid": 644,
+            "perms": ["pr", "pw", "ev"],
+            "format": "int",
+            "value": 80,
+            "unit": "percentage",
+            "minValue": 0,
+            "maxValue": 100,
+            "minStep": 1,
+        },
+    ],
+}
+
+
+async def _light_sensor_device(*extra_services):
     profile = load_json("homekit_bb_v2_0_l.json")
-    profile[0]["services"].append(LIGHT_SENSOR_SERVICE)
+    profile[0]["services"].extend((LIGHT_SENSOR_SERVICE, *extra_services))
     controller = FakeController()
     await controller.async_start()
     pairing = await controller.add_paired_device(
@@ -158,4 +194,23 @@ async def test_light_level_cannot_be_written() -> None:
         await device.async_write({Field.AMBIENT_LIGHT: 50.0})
 
     put.assert_not_called()
+    await device.async_close()
+
+
+async def test_display_lightbulb_service_is_ignored() -> None:
+    """A display Lightbulb next to the light sensor adds no fields."""
+    _pairing, device = await _light_sensor_device(DISPLAY_LIGHTBULB_SERVICE)
+
+    assert device.ready
+    assert device.supported_fields == {
+        Field.CURRENT_TEMPERATURE,
+        Field.TARGET_TEMPERATURE,
+        Field.CURRENT_ACTION,
+        Field.TARGET_MODE,
+        Field.DISPLAY_UNIT,
+        Field.AMBIENT_LIGHT,
+    }
+    assert device.state[Field.AMBIENT_LIGHT] == 1.0
+    assert device.temperature_range == (5, 30, 0.5)
+    assert device.info.name != "Display"
     await device.async_close()
