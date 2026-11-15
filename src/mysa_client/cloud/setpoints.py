@@ -26,8 +26,10 @@ from mysa_client._temperature import (
     Bound,
     Setpoint,
     SetpointClamp,
+    SetpointLimit,
     TemperatureOffset,
     _RuledTemperature,
+    require_limit,
     require_offset,
     require_setpoint,
 )
@@ -49,6 +51,39 @@ other limits, and the MQTT protocol enforces the same range.
 DEFAULT_MAXIMUM: Final = 30.0
 """The highest target, in °C, an envelope assumes when no range advertises one."""
 
+SAFE_MINIMUM: Final = 5.0
+"""The lowest temperature, in °C, a write may use when its minimum is unknown.
+
+Validation and clamping use ``SAFE_MINIMUM``-``SAFE_MAXIMUM`` for any bound
+neither HomeKit, the capabilities, a record nor the owner advertises, so rules
+built before capabilities load never pass an absurd value to the cloud. No
+Mysa range in this repository's evidence starts below 5 °C (the app's
+``MIN_TEMP``).
+"""
+
+SAFE_MAXIMUM: Final = 35.0
+"""The highest temperature, in °C, a write may use when its maximum is unknown.
+
+35 °C is the highest bound any captured Mysa capability document advertises
+(Central HVAC cool and heat/cool cool targets); a known, wider range still
+wins.
+"""
+
+SAFE_OFFSET: Final = 5.0
+"""The largest calibration delta, in °C either way, when the offset range is unknown.
+
+The captured capability documents advertise -5 to 5 °C.
+"""
+
+MAX_MAGNITUDE: Final = 1000.0
+"""Any temperature, bound or step whose size in °C exceeds this is refused.
+
+Such values are not temperatures; refusing them early keeps the rounding
+arithmetic finite.
+"""
+
+_MAX_STEP: Final = 10.0
+
 Unit = Literal["C", "F"]
 Side = Literal["heat", "cool"]
 RangeTuple = tuple[float | None, float | None, float | None]
@@ -59,18 +94,26 @@ __all__ = [
     "DEFAULT_MAXIMUM",
     "DEFAULT_MINIMUM",
     "DEFAULT_STEP",
+    "MAX_MAGNITUDE",
+    "SAFE_MAXIMUM",
+    "SAFE_MINIMUM",
+    "SAFE_OFFSET",
     "Bound",
     "RangeTuple",
     "Setpoint",
     "SetpointClamp",
+    "SetpointConfigError",
     "SetpointError",
     "SetpointGapTooSmallError",
     "SetpointKind",
+    "SetpointLimit",
     "SetpointLimitOrderError",
     "SetpointModeError",
     "SetpointOutOfRangeError",
     "SetpointRange",
+    "SetpointRangeEmptyError",
     "SetpointRules",
+    "SetpointValueError",
     "Side",
     "TemperatureOffset",
     "Unit",
@@ -79,6 +122,7 @@ __all__ = [
     "fahrenheit_offset",
     "kind_for_mode",
     "limits_ordered",
+    "require_limit",
     "require_offset",
     "require_setpoint",
     "round_half_up",
@@ -109,11 +153,69 @@ class SetpointError(ValueError):
     """Base class for values the setpoint rules refuse."""
 
 
+class SetpointValueError(SetpointError):
+    """A requested value is not a usable temperature.
+
+    Raised for NaN, infinity and values beyond ``MAX_MAGNITUDE`` °C, in strict
+    and non-strict calls alike. ``value`` is what the caller passed.
+    """
+
+    def __init__(self, value: float, message: str) -> None:
+        """Store the refused value."""
+        self.value = value
+        super().__init__(message)
+
+
+class SetpointConfigError(SetpointError):
+    """``SetpointRules`` was given a range, limit or gap it cannot use.
+
+    Raised when the rules are built, for a non-finite or absurd bound, a
+    non-positive or absurd step, or a negative minimum gap. ``name`` says which
+    input and ``value`` holds it.
+    """
+
+    def __init__(self, name: str, value: object, message: str) -> None:
+        """Store the refused input."""
+        self.name = name
+        self.value = value
+        super().__init__(message)
+
+
+class SetpointRangeEmptyError(SetpointError):
+    """No value on the step grid lies inside the applicable range.
+
+    For example inverted owner limits (minimum 25, maximum 20 °C) or a range of
+    20.2-20.4 °C with a 0.5 °C step. Raised in strict and non-strict calls, since
+    no clamp could produce a valid value. ``limits`` is the range that applied
+    (``SAFE_*`` standing in for unknown bounds), ``kind`` and ``side`` as in
+    ``SetpointOutOfRangeError``.
+    """
+
+    def __init__(
+        self,
+        *,
+        limits: SetpointRange,
+        kind: SetpointKind | None = None,
+        side: Side | None = None,
+    ) -> None:
+        """Store the empty range."""
+        self.limits = limits
+        self.kind = kind
+        self.side: Side | None = side
+        what = f"{side.capitalize()} setpoint range" if side else "Setpoint range"
+        super().__init__(
+            f"{what} {limits.minimum}-{limits.maximum} °C has no value on its "
+            f"{limits.step} °C step"
+        )
+
+
 class SetpointOutOfRangeError(SetpointError):
     """A rounded value lies outside the applicable range.
 
     All numbers are in °C so callers can word the message in the user's unit.
-    ``limits`` is the whole range that was violated and ``kind`` the setpoint
+    ``limits`` is the whole range that was violated, with ``SAFE_MINIMUM``,
+    ``SAFE_MAXIMUM`` or ``SAFE_OFFSET`` standing in for a bound the rules do
+    not know, and ``kind`` the setpoint
     kind it belongs to (``None`` for the hardware limit range and the offset
     range). ``side`` names the failed half of a heat/cool pair and is ``None``
     otherwise. ``delta`` is true for a calibration offset, whose numbers are
@@ -243,9 +345,30 @@ def _unit(unit: str) -> Unit:
 def _finite(value: float) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise TypeError(f"Temperature must be a number, not {type(value).__name__}")
-    if not math.isfinite(value):
-        raise ValueError("Temperature must be finite")
-    return float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        number = math.inf
+    if not math.isfinite(number):
+        raise SetpointValueError(value, "Temperature must be finite")
+    if abs(number) > MAX_MAGNITUDE * 2:  # Allows the same size in °F.
+        raise SetpointValueError(value, f"{value} is not a plausible temperature")
+    return number
+
+
+def _config_number(name: str, value: object) -> float:
+    """A finite, plausible number from the rules' inputs, or a typed error."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise SetpointConfigError(
+            name, value, f"{name} must be a number, not {type(value).__name__}"
+        )
+    try:
+        number = float(value)
+    except OverflowError:
+        number = math.inf
+    if not math.isfinite(number) or abs(number) > MAX_MAGNITUDE:
+        raise SetpointConfigError(name, value, f"{name} {value!r} is not usable")
+    return number
 
 
 def fahrenheit_bounds(
@@ -284,12 +407,27 @@ def limits_ordered(minimum: float, maximum: float) -> bool:
     return round(minimum, 4) < round(maximum, 4)
 
 
-def _range(values: RangeTuple | None) -> SetpointRange:
+def _range(values: RangeTuple | None, name: str = "range") -> SetpointRange:
     low, high, step = values or (None, None, None)
+    if step is not None and step != 0:
+        step = _config_number(f"{name} step", step)
+        if not 0 < step <= _MAX_STEP:
+            raise SetpointConfigError(
+                f"{name} step", step, f"{name} step {step} must be in (0, 10] °C"
+            )
     return SetpointRange(
-        minimum=None if low is None else round(float(low), 4),
-        maximum=None if high is None else round(float(high), 4),
+        minimum=None if low is None else round(_config_number(f"{name} min", low), 4),
+        maximum=None if high is None else round(_config_number(f"{name} max", high), 4),
         step=float(step) if step else DEFAULT_STEP,
+    )
+
+
+def _with_fallback(limits: SetpointRange, low: float, high: float) -> SetpointRange:
+    """``limits`` with ``low`` and ``high`` standing in for unknown bounds."""
+    return SetpointRange(
+        minimum=low if limits.minimum is None else limits.minimum,
+        maximum=high if limits.maximum is None else limits.maximum,
+        step=limits.step,
     )
 
 
@@ -324,11 +462,13 @@ def _intersect(
 def kind_for_mode(mode: Mode | None) -> SetpointKind:
     """The single-setpoint range a mode writes, matching the command encoder.
 
-    Cool writes ``targetCool``; every other mode, including none, writes
-    ``targetHeat``. In heat/cool mode (``Mode.AUTO``) a single setpoint means
-    the heat target, so it uses the heat range; use
+    Cool uses the cool range (``targetCool``); every other mode, including
+    none, uses the heat range (``targetHeat``). In heat/cool mode
+    (``Mode.AUTO``) a single setpoint means the heat target; use
     :meth:`SetpointRules.heat_cool` for the pair. ``temperature_changes`` and
-    ``DeviceState.setpoint_for`` follow the same rule.
+    ``DeviceState.setpoint_for`` follow the same rule, except that
+    ``temperature_changes`` refuses fan-only, dry, sleep and pre-cool, which
+    have no setpoint section.
     """
     section = SETPOINT_SECTION_BY_MODE.get(mode or Mode.HEAT, "targetHeat")
     return SetpointKind.COOL if section == "targetCool" else SetpointKind.HEAT
@@ -350,9 +490,13 @@ class SetpointRules:
     owner's limits; they narrow the heat range but not the hardware range used
     to validate new limits, and :meth:`limit` keeps them strictly ordered.
     Without capabilities or a record (a local-only thermostat) only the HomeKit
-    range applies. A missing step is assumed to be 0.5 °C; a missing bound is
-    not checked when validating, and an :meth:`envelope` assumes
-    ``DEFAULT_MINIMUM``-``DEFAULT_MAXIMUM`` for it.
+    range applies. A missing step is assumed to be 0.5 °C. A missing bound
+    stays ``None`` in :meth:`range_for`, but every write is checked and
+    clamped against ``SAFE_MINIMUM``-``SAFE_MAXIMUM`` (5-35 °C) in its place,
+    or ``-SAFE_OFFSET``-``SAFE_OFFSET`` for an offset; an :meth:`envelope`
+    (for display) assumes ``DEFAULT_MINIMUM``-``DEFAULT_MAXIMUM`` instead.
+    A non-finite or absurd bound, step, owner limit or gap raises
+    ``SetpointConfigError`` here.
     """
 
     def __init__(
@@ -366,6 +510,13 @@ class SetpointRules:
     ) -> None:
         """Derive every range once from the thermostat's advertised limits."""
         local = homekit_range or (None, None, None)
+        _range(local, "homekit_range")
+        for name, limit in (
+            ("setpoint_min", setpoint_min),
+            ("setpoint_max", setpoint_max),
+        ):
+            if limit is not None:
+                _config_number(name, limit)
         caps = capabilities
         self.capabilities = caps
         self.record = record
@@ -391,6 +542,10 @@ class SetpointRules:
         }
         self.offset_range = _range(caps.offset_range if caps else None)
         delta = caps.min_setpoint_delta if caps else None
+        if delta is not None and _config_number("min_setpoint_delta", delta) < 0:
+            raise SetpointConfigError(
+                "min_setpoint_delta", delta, "min_setpoint_delta must not be negative"
+            )
         self.min_setpoint_delta = round(delta, 4) if delta is not None else 0.0
 
     def range_for(self, kind: SetpointKind | Mode | None) -> SetpointRange:
@@ -467,8 +622,11 @@ class SetpointRules:
         minimum: bool,
         unit: Unit = "C",
         strict: bool = True,
-    ) -> Setpoint:
+    ) -> SetpointLimit:
         """Normalise an owner minimum or maximum against the hardware heat range.
+
+        The result is a :class:`SetpointLimit`: ``setpoint_limit_changes``
+        accepts it, and every target writer refuses it with ``TypeError``.
 
         The rounded value must also stay strictly on its side of the other
         current limit (``setpoint_max`` for a new minimum, ``setpoint_min`` for
@@ -477,7 +635,11 @@ class SetpointRules:
         ``validate_cloud_command`` applies the same rule (:func:`limits_ordered`).
         """
         setpoint = self._normalise(
-            Setpoint, self.hardware_heat_range, _finite(value), unit, strict=strict
+            SetpointLimit,
+            self.hardware_heat_range,
+            _finite(value),
+            unit,
+            strict=strict,
         )
         other = self.setpoint_max if minimum else self.setpoint_min
         if other is not None and not limits_ordered(
@@ -591,10 +753,21 @@ class SetpointRules:
         delta: bool = False,
     ) -> _T:
         requested = to_celsius(value, unit)
+        if abs(requested) > MAX_MAGNITUDE:
+            raise SetpointValueError(value, f"{value} is not a plausible temperature")
+        limits = (
+            _with_fallback(limits, -SAFE_OFFSET, SAFE_OFFSET)
+            if delta
+            else _with_fallback(limits, SAFE_MINIMUM, SAFE_MAXIMUM)
+        )
+        assert limits.minimum is not None
+        assert limits.maximum is not None
+        if _clamp_on_grid(limits.minimum, limits.step, "min") > _clamp_on_grid(
+            limits.maximum, limits.step, "max"
+        ):
+            raise SetpointRangeEmptyError(limits=limits, kind=kind, side=side)
         rounded = round_to_step(requested, limits.step)
         for bound, limit in (("min", limits.minimum), ("max", limits.maximum)):
-            if limit is None:
-                continue
             if (rounded < limit) if bound == "min" else (rounded > limit):
                 if strict:
                     raise SetpointOutOfRangeError(

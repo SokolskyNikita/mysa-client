@@ -214,9 +214,13 @@ def test_local_only_thermostat_uses_the_homekit_range() -> None:
         28.5,
     )
     assert error.value.requested == 28.3
-    # A partial HomeKit range checks only the known bound.
+    # A partial HomeKit range checks the known bound, and SAFE_MAXIMUM stands
+    # in for the unknown one.
     partial = SetpointRules(homekit_range=(7.0, None, None))
-    assert partial.setpoint(Mode.HEAT, 45).celsius == 45.0
+    assert partial.setpoint(Mode.HEAT, 35).celsius == 35.0
+    with pytest.raises(SetpointOutOfRangeError) as error:
+        partial.setpoint(Mode.HEAT, 45)
+    assert (error.value.limit, error.value.bound) == (35.0, "max")
     with pytest.raises(SetpointOutOfRangeError):
         partial.setpoint(Mode.HEAT, 6.5)
 
@@ -444,8 +448,8 @@ def test_setpoint_cannot_be_constructed_directly() -> None:
     assert copy.deepcopy(setpoint) is setpoint
     assert repr(setpoint) == "Setpoint(21.5)"
     assert hash(setpoint) == hash(SetpointRules().setpoint(Mode.COOL, 21.5))
-    offset = SetpointRules().offset(21.5)
-    assert offset != setpoint
+    offset = SetpointRules().offset(5)
+    assert offset != SetpointRules().setpoint(Mode.HEAT, 5)
     assert setpoint != 21.5
 
 
@@ -460,7 +464,7 @@ PLAIN = 21.5
         lambda: make_state(Mode.HEAT, PLAIN),
         lambda: setpoint_limit_changes(PLAIN, minimum=True),
         lambda: temperature_offset_changes(1.0),
-        lambda: temperature_offset_changes(SetpointRules().setpoint(Mode.HEAT, 1)),
+        lambda: temperature_offset_changes(SetpointRules().setpoint(Mode.HEAT, 5)),
         lambda: setpoint_limit_changes(SetpointRules().offset(1), minimum=False),
         lambda: climate_command(ModelFamily.BASEBOARD_V2, Mode.HEAT, temperature=PLAIN),
         lambda: climate_command(

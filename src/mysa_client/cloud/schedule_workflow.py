@@ -18,7 +18,7 @@ from typing import Any, NoReturn, Protocol
 
 from .client import MysaClient
 from .commands import ScheduleEventSpec, encode_schedule_events
-from .const import Mode
+from .const import NO_SETPOINT_MODES, Mode
 from .setpoints import (
     Setpoint,
     SetpointModeError,
@@ -131,13 +131,21 @@ def build_schedule_events(
     ``SetpointOutOfRangeError``. A ``Setpoint`` is used as given. Without
     ``rules`` a plain number raises ``TypeError``. A temperature on a
     heat/cool (``auto``) event raises ``SetpointModeError``, since an event
-    stores a single setpoint; an ``off`` event's temperature is dropped.
+    stores a single setpoint. The temperature of an ``off``, ``fan_only``,
+    ``dry``, ``sleep`` or ``pre_cool`` event is dropped without being checked,
+    since those modes have no setpoint.
     """
     specs: list[ScheduleEventSpec] = []
     for event in events:
         mode = Mode[str(event.get("hvac_mode", default_mode.name)).upper()]
-        # An OFF event carries no setpoint, like an OFF hold.
-        temperature = None if mode == Mode.OFF else event.get("temperature")
+        # Off, fan-only, dry, sleep and pre-cool events carry no setpoint
+        # (``make_state`` writes none), so their temperature is dropped
+        # unchecked, like a hold's.
+        temperature = (
+            None
+            if mode == Mode.OFF or mode in NO_SETPOINT_MODES
+            else event.get("temperature")
+        )
         if temperature is not None:
             if mode == Mode.AUTO:
                 raise SetpointModeError(

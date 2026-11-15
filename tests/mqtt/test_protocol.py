@@ -132,8 +132,8 @@ def test_retained_marker_survives_parsing() -> None:
 
 
 def ruled(celsius: float) -> Setpoint:
-    """A setpoint from rules with no advertised bounds, so range checks stay ours."""
-    return SetpointRules().setpoint(None, celsius)
+    """A setpoint from rules wider than MQTT's 5-30 °C, so range checks stay ours."""
+    return SetpointRules(homekit_range=(0, 40, 0.5)).setpoint(None, celsius)
 
 
 def command(**kwargs):

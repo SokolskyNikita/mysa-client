@@ -109,6 +109,17 @@ class Setpoint(_RuledTemperature):
     __slots__ = ()
 
 
+class SetpointLimit(Setpoint):
+    """An owner minimum or maximum from ``SetpointRules.limit``.
+
+    It is a ``Setpoint``, so code that stores or displays limits keeps
+    working, but it was checked against the hardware range rather than a
+    mode's target range, so every target writer refuses it.
+    """
+
+    __slots__ = ()
+
+
 class TemperatureOffset(_RuledTemperature):
     """A room-temperature calibration delta in °C, rounded and checked."""
 
@@ -116,7 +127,28 @@ class TemperatureOffset(_RuledTemperature):
 
 
 def require_setpoint(value: object, name: str = "temperature") -> float:
-    """Return a ``Setpoint``'s °C value, or raise ``TypeError`` for anything else."""
+    """Return a target ``Setpoint``'s °C value, or raise ``TypeError``.
+
+    A ``SetpointLimit`` is refused too: it was checked as an owner limit, not
+    as a target for any mode.
+    """
+    if isinstance(value, SetpointLimit):
+        raise TypeError(
+            f"{name} must be a target Setpoint; a SetpointLimit from "
+            "SetpointRules.limit is an owner limit"
+        )
+    if not isinstance(value, Setpoint):
+        raise TypeError(
+            f"{name} must be a Setpoint from SetpointRules, not {type(value).__name__}"
+        )
+    return value.celsius
+
+
+def require_limit(value: object, name: str = "value") -> float:
+    """Return a ``Setpoint``'s °C value for an owner-limit write.
+
+    Accepts a ``SetpointLimit`` and, as before, a target ``Setpoint``.
+    """
     if not isinstance(value, Setpoint):
         raise TypeError(
             f"{name} must be a Setpoint from SetpointRules, not {type(value).__name__}"
