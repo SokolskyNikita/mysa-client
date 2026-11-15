@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 import json
 import logging
 import math
@@ -54,15 +54,20 @@ from .exceptions import (
 from .models import (
     Bootstrap,
     Capabilities,
+    DemandResponseState,
     DeviceRecord,
     DeviceState,
     FirmwareInfo,
     FirmwareRecord,
+    FleetFirmwareAvailability,
+    FleetFirmwareStatus,
+    SensorLink,
     StateChange,
     UsageDay,
 )
-from .setpoints import Setpoint, TemperatureOffset
+from .setpoints import Setpoint, SetpointKind, TemperatureOffset
 from .trace import route_template
+from .usage import UsageToday, local_day_start
 from .validation import validate_cloud_command
 
 _LOGGER = logging.getLogger(__name__)
@@ -596,10 +601,21 @@ class MysaClient:
         await self._request("POST", f"/state/{device_id}/update", body=body)
 
     async def set_temperature(
-        self, device_id: str, mode: Mode | None, temperature: Setpoint
+        self,
+        device_id: str,
+        mode: Mode | None,
+        temperature: Setpoint,
+        *,
+        family: ModelFamily | None = None,
     ) -> None:
-        """Set a thermostat's temperature target for the selected mode."""
-        await self.update_state(device_id, temperature_changes(mode, temperature))
+        """Set a thermostat's temperature target for the selected mode.
+
+        Heat/cool mode needs ``family=ModelFamily.AC`` (see
+        ``temperature_changes``).
+        """
+        await self.update_state(
+            device_id, temperature_changes(mode, temperature, family=family)
+        )
 
     async def set_mode(self, device_id: str, mode: Mode) -> None:
         """Set a thermostat's operating mode."""
@@ -652,12 +668,27 @@ class MysaClient:
         value: Setpoint,
         *,
         minimum: bool,
+        kind: SetpointKind = SetpointKind.HEAT,
+        family: ModelFamily | None = None,
         route: Literal["S", "R", "L"] = "S",
     ) -> None:
-        """Set the minimum or maximum allowed heating setpoint."""
+        """Set the minimum or maximum allowed heating or cooling setpoint.
+
+        ``kind`` and ``family`` are as in ``setpoint_limit_changes``: a cooling
+        limit writes ``targetCool``, and a Mini-Split AC gets the value under
+        both ``targetHeat`` and ``targetCool``. Cooling limits exist only in
+        the structured state, so a ``route`` other than ``"S"`` raises
+        ``ValueError`` for them. The cooling encodings are derived from Mysa's
+        app 4.21.1; not verified on a device.
+        """
+        changes = setpoint_limit_changes(
+            value, minimum=minimum, kind=kind, family=family
+        )
+        if route != "S" and "targetCool" in changes:
+            raise ValueError("Cooling limits support only the state route")
         await self._setting_route(
             device_id,
-            setpoint_limit_changes(value, minimum=minimum),
+            changes,
             {"MinSetpoint" if minimum else "MaxSetpoint": value.celsius},
             route,
         )
@@ -785,6 +816,79 @@ class MysaClient:
         """Ask Mysa to push the offered firmware. Irreversible."""
         await self._request("POST", f"/devices/{device_id}/firmware-update", body={})
 
+    # ---- read-only additions (0.4.0): fleet OTA, demand response, links ---
+
+    async def get_fleet_firmware_availability(
+        self, device_id: str, current_version: str | None = None
+    ) -> FleetFirmwareAvailability:
+        """Whether Mysa offers fleet (newer-model) firmware for this device.
+
+        Sends ``GET /ota/update/available/{id}``, with ``currentVersion`` when
+        given. Mysa's app 4.21.1 uses this for V3, Central HVAC, Climate
+        Sensor and water-heater models; legacy models use
+        ``get_firmware_info``. A 404 means Mysa has the device in no fleet and
+        returns ``FleetFirmwareAvailability.in_fleet`` False rather than
+        raising: confirmed on Baseboard Lite firmware 3.17.5.13. The fields of
+        a fleet answer are derived from Mysa's app 4.21.1; not verified on a
+        device. Read-only: this never starts an update.
+        """
+        params = {"currentVersion": current_version} if current_version else None
+        try:
+            data = await self._request(
+                "GET", f"/ota/update/available/{device_id}", params=params
+            )
+        except MysaNotFoundError:
+            return FleetFirmwareAvailability.not_in_fleet()
+        if not isinstance(data, dict):
+            raise MysaApiError("Unexpected fleet firmware availability response")
+        return FleetFirmwareAvailability.from_api(data)
+
+    async def get_fleet_firmware_status(self, request_id: str) -> FleetFirmwareStatus:
+        """The status of one fleet firmware request (``GET /ota/update/{requestId}``).
+
+        Unknown status strings are kept, not rejected. A 404 raises
+        ``MysaNotFoundError``. Derived from Mysa's app 4.21.1; not verified on
+        a device.
+        """
+        data = await self._request("GET", f"/ota/update/{request_id}")
+        if not isinstance(data, dict):
+            raise MysaApiError("Unexpected fleet firmware status response")
+        return FleetFirmwareStatus.from_api(data)
+
+    async def get_demand_response_state(self, device_id: str) -> DemandResponseState:
+        """The device's demand-response record from ``GET /devices/{id}/drstate``.
+
+        Separate from ``DeviceState.in_demand_response``. A device that is not
+        enrolled answers ``{"DeviceDrState": {}}`` and returns a state with
+        ``has_data`` False: confirmed on Baseboard Lite firmware 3.17.5.13.
+        Use ``DemandResponseState.in_event(now)`` for the app's event rule. A
+        missing envelope, or a ``Device`` other than ``device_id``, raises
+        ``MysaApiError``.
+        """
+        data = await self._request("GET", f"/devices/{device_id}/drstate")
+        record = data.get("DeviceDrState") if isinstance(data, dict) else None
+        if not isinstance(record, dict):
+            raise MysaApiError("Unexpected drstate response")
+        state = DemandResponseState.from_api(record)
+        if state.device_id is not None and state.device_id != device_id:
+            raise MysaApiError("drstate response is for another device")
+        return state
+
+    async def get_sensor_links(self, target_id: str) -> list[SensorLink]:
+        """Sensors linked to a thermostat (``GET /linking?targetId={id}``).
+
+        Returns every entry, participating or not; see
+        ``SensorLink.participating``. Entries that are not objects are
+        skipped; a body that is not a list raises ``MysaApiError``. An empty
+        list is confirmed on Baseboard Lite firmware 3.17.5.13; entry fields
+        are derived from Mysa's app 4.21.1; not verified on a device.
+        Read-only: there is no create, update or delete.
+        """
+        data = await self._request("GET", "/linking", params={"targetId": target_id})
+        if not isinstance(data, list):
+            raise MysaApiError("Unexpected linking response")
+        return [SensorLink.from_api(item) for item in data if isinstance(item, dict)]
+
     # ---- history -------------------------------------------------------
 
     async def get_usage(
@@ -806,6 +910,31 @@ class MysaClient:
             return []
         days = [UsageDay.from_api(day) for day in data if isinstance(day, dict)]
         return [day for day in days if day is not None]
+
+    async def get_usage_today(
+        self,
+        device_id: str,
+        time_zone: tzinfo,
+        *,
+        time_zone_name: str | None = None,
+        now: datetime | None = None,
+    ) -> UsageToday:
+        """Heating on-time since local midnight, and the window it covers.
+
+        ``time_zone`` is the thermostat's zone as a ready ``tzinfo`` (for
+        example ``zoneinfo.ZoneInfo("America/Toronto")``, loaded off the event
+        loop). The window runs from ``local_day_start(now, time_zone)`` to
+        ``now`` (default: the current time), so a 23- or 25-hour day is
+        handled. ``time_zone_name`` is the IANA name sent to Mysa, which uses
+        it to split days; it defaults to ``str(time_zone)``, the key of a
+        ``ZoneInfo``. One ``get_usage()`` request; the same errors.
+        """
+        end = datetime.now(UTC) if now is None else now
+        start = local_day_start(end, time_zone)
+        days = await self.get_usage(
+            device_id, time_zone_name or str(time_zone), start, end
+        )
+        return UsageToday.from_days(days, start, end)
 
     async def get_state_history(
         self, device_id: str, start: datetime, end: datetime

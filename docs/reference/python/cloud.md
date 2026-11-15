@@ -3,11 +3,14 @@
 - [Authentication](#authentication)
 - [Using the client](#using-the-client)
 - [Semantic command execution](#semantic-command-execution)
+- [Today's usage](#todays-usage)
 - [Setpoint rules](#setpoint-rules)
 - [How it is organized](#how-it-is-organized)
 - [Public API and integration helpers](#public-api-and-integration-helpers)
 - [Errors, timeouts, retries, and caller responsibilities](#errors-timeouts-retries-and-caller-responsibilities)
 - [Device record and firmware catalog reads](#device-record-and-firmware-catalog-reads)
+- [Device health and electrical fields](#device-health-and-electrical-fields)
+- [Demand-response, fleet firmware, and sensor-link reads](#demand-response-fleet-firmware-and-sensor-link-reads)
 
 Start with [connecting clients](../../guides/connect.md).
 Wire formats belong to the [cloud protocol reference](../protocol/cloud.md);
@@ -41,6 +44,40 @@ implicit discovery, state reads or confirmation. Validation can raise
 [confirmation guide](../../guides/state-and-commands.md#send-and-confirm-a-command)
 for the caller sequence.
 
+## Today's usage
+
+`await client.get_usage_today(device_id, time_zone, *, time_zone_name=None,
+now=None)` returns a `UsageToday`: the heating seconds since the thermostat's
+local midnight (`heat_seconds`), the window it covers (`start`, `end`) and the
+parsed `UsageDay` list (`days`). It makes one `get_usage()` request from
+`local_day_start(now, time_zone)` to `now` (default: the current time) and
+sums the days that start at or after `start`, allowing one minute for Mysa's
+rounding; a day without a value counts as zero.
+
+```python
+from zoneinfo import ZoneInfo
+
+toronto = await asyncio.to_thread(ZoneInfo, "America/Toronto")
+usage = await client.get_usage_today(device_id, toronto)
+print(usage.start, usage.heat_seconds)
+```
+
+`time_zone` is a ready `tzinfo`; loading one can read the disk, so do it off
+the event loop as above (Home Assistant has `dt_util.async_get_time_zone`).
+Mysa splits days by the IANA name it is sent: `time_zone_name`, or else
+`str(time_zone)`, which is a `ZoneInfo`'s key. Pass the name explicitly for a
+fixed-offset `tzinfo`, or to keep the device's own zone name when it could not
+be loaded.
+
+Days when the clocks change are handled. The window is computed on UTC
+instants, so it is 23 or 25 hours long on a full daylight-saving day. When the
+clocks skip midnight, `start` is the moment of the change (shown as 01:00);
+when midnight happens twice, it is the first one. `local_day_start()` is
+exported for callers that need the same day boundary, and
+`UsageToday.from_days(days, start, end)` sums a `get_usage()` response they
+fetched themselves. A naive `now` raises `ValueError`; request errors are those
+of `get_usage()`.
+
 ## Setpoint rules
 
 Mysa accepts setpoints only on its step grid, usually 0.5 °C. Every temperature
@@ -67,9 +104,12 @@ and the MQTT `set_setpoint`, `set_mode(setpoint=...)` and
 `encode_thermostat_command(setpoint=...)` take a `Setpoint` too.
 
 `SetpointRules(capabilities=None, homekit_range=None, *, setpoint_min=None,
-setpoint_max=None, record=None)` derives one `SetpointRange(minimum, maximum,
-step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
-`offset_range` and `min_setpoint_delta`:
+setpoint_max=None, record=None, cool_min=None, cool_max=None, family=None)`
+derives one `SetpointRange(minimum, maximum, step)` per `SetpointKind` (heat,
+cool, auto heat, auto cool, and auto, a Mini-Split AC's single auto target),
+plus `offset_range` and `min_setpoint_delta`. `family` (exposed as
+`rules.family`) is read from `record.model`, else `capabilities.model`, when not
+given:
 
 - Heat intersects the HomeKit `(min, max, step)` range, the capability heat
   range and the owner's limits, as `heating_range()` does; the HomeKit step wins.
@@ -79,9 +119,18 @@ step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
   the remote's `SupportedModes[<mode>].temperatures`, else `TempRange`, step 1 °C
   unless the list is finer), and failing that from the HomeKit range. An AC
   record's heat-mode range likewise stands in for a missing capability heat
-  range. Other models' records are not read for ranges.
+  range. Other models' records are not read for ranges. The owner's cooling
+  limits `cool_min` / `cool_max` (`DeviceState.cool_min` / `cool_max`) narrow
+  it. `hardware_cool_range` is the capability or AC record cool range without
+  them (the HomeKit range does not count).
 - Both heat/cool ranges come from capabilities only. Owner limits apply to
-  none of these.
+  neither.
+- Auto (`SetpointKind.AUTO`) exists only when `family` is `ModelFamily.AC`:
+  the record's auto-mode range (`ac_temperature_range(Mode.AUTO)`:
+  `SupportedModes["2"].temperatures`, else `TempRange`), else the HomeKit
+  range, else 16–30 °C in whole degrees (`AC_MIN_TEMP`–`MAX_TEMP`, what Mysa's
+  app 4.21.1 shows an AC without a `TempRange`). For other families its bounds
+  are unknown.
 - Without capabilities or a record, only the HomeKit range applies. Any part
   may be absent: a missing step is 0.5 °C, and a missing bound stays `None` in
   `range_for` but is checked as described under **Unknown bounds** below.
@@ -90,11 +139,30 @@ step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
   `min_setpoint_delta`) raises `SetpointConfigError` (`name`, `value`) when the
   rules are built.
 
-In heat/cool mode (`Mode.AUTO`) a single setpoint means the heat target: it
-uses the heat range and is written to `targetHeat`. `kind_for_mode`,
-`temperature_changes`, `SetpointRules.setpoint` and `DeviceState.setpoint_for`
-all follow this rule, so a single-setpoint write in auto mode can be confirmed
-by reading the mode's setpoint back. Use `heat_cool(low, high)` for the pair.
+In heat/cool mode (`Mode.AUTO`) only a Mini-Split AC has a single target, as
+in Mysa's app 4.21.1 ([auto-mode targets](../protocol/cloud-state.md#auto-mode-targets)):
+`kind_for_mode(Mode.AUTO, ModelFamily.AC)` is `SetpointKind.AUTO`, and
+`temperature_changes(Mode.AUTO, sp, family=ModelFamily.AC)` and
+`climate_command(ModelFamily.AC, Mode.AUTO, temperature=sp)` write
+`targetAuto.setpoint`, which `DeviceState.setpoint_for(Mode.AUTO)` reads back
+(`auto_setpoint`). For any other family, or none, a single temperature in auto
+mode raises `SetpointModeError` in all four. A Central HVAC's auto targets are
+the pair: `heat_cool(low, high)` for both, or `heat_cool_side("heat" | "cool",
+value, other=...)` to change one and keep the other, written with
+`climate_command(..., low=...)` or `high=...` alone; `setpoint_for(Mode.AUTO)`
+is `None` for it. 0.3.0 treated a single auto setpoint as the heat target and
+wrote `targetHeat`; the app never does. The AC auto and single-side writes are
+derived from the app and not verified on a device.
+
+`climate_command(family, selected_mode, *, mode=None, temperature=None,
+low=None, high=None)` writes a single `temperature` to `targetHeat` in heat,
+emergency heat, off or no mode (the app's writer tests `HEAT || EMERGENCY_HEAT`)
+and to `targetCool` in cool. Every refusal raises `SetpointModeError` (`mode`,
+possibly `None`): a single temperature in auto mode except on an AC, `low` /
+`high` outside auto mode or on anything but a Central HVAC, `temperature`
+together with `low` / `high`, and fan-only, dry, sleep or pre-cool.
+`validate_cloud_command` checks a single auto side against the state's other
+side (or a pending write of it) and refuses it when that side is unknown.
 Fan-only, dry, sleep and pre-cool have no setpoint section (see the
 [mode table](../protocol/cloud-state.md#mode-and-heater-enums)), so
 `temperature_changes` raises `SetpointModeError` for them instead of writing
@@ -108,9 +176,10 @@ converts with `(f - 32) / 1.8` before rounding (an offset delta with `/ 1.8`).
 
 | Method | Range used | Returns |
 | --- | --- | --- |
-| `setpoint(mode, value)` | Cool for `Mode.COOL`, heat otherwise (including `Mode.AUTO`) | `Setpoint` |
+| `setpoint(mode, value)` | Cool for `Mode.COOL`; auto for `Mode.AUTO` on a Mini-Split AC (`SetpointModeError` on any other family); heat otherwise | `Setpoint` |
 | `heat_cool(low, high)` | Auto heat and auto cool; the rounded gap must be at least `min_setpoint_delta` (0 when unknown) | `(Setpoint, Setpoint)` |
-| `limit(value, minimum=...)` | Hardware heat range, then strictly below `setpoint_max` (a minimum) or above `setpoint_min` (a maximum) | `SetpointLimit` |
+| `heat_cool_side(side, value, *, other)` | Auto heat (`side="heat"`) or auto cool (`"cool"`); then the gap to `other`, the other side's current target in °C or a `Setpoint`. `other=None` raises `SetpointGapUnknownError` (`side`) | `Setpoint` |
+| `limit(value, minimum=..., kind=SetpointKind.HEAT)` | Hardware heat range, then strictly below `setpoint_max` (a minimum) or above `setpoint_min` (a maximum). With `kind=SetpointKind.COOL`, `hardware_cool_range` and `cool_max` / `cool_min`; `SetpointModeError` when the model advertises no cooling range. Other kinds raise `ValueError` | `SetpointLimit` |
 | `offset(delta)` | Offset range | `TemperatureOffset` |
 | `schedule_event(mode, value)` | Same as `setpoint` | `Setpoint` |
 | `range_for(kind_or_mode)` | — | `SetpointRange` |
@@ -145,7 +214,27 @@ one step (one °F) above the minimum.
 checks the new value against the other current limit and raises
 `SetpointLimitOrderError` (`value`, `other`, `minimum`) when they are equal or
 reversed, whatever `strict` says; `validate_cloud_command` refuses the same pairs
-with `"Minimum setpoint must be below the maximum"`. Equal limits are refused
+with `"Minimum setpoint must be below the maximum"` (and the cooling pair with
+`"Minimum cooling setpoint must be below the maximum"`). Mysa's app also keeps
+the two limits at least 2 °C apart; these rules don't.
+
+**Limit writes.** `setpoint_limit_changes(value, *, minimum, kind=SetpointKind.HEAT,
+family=None)` writes `targetHeat.lockoutMin` / `lockoutMax`, or `targetCool` for
+`kind=SetpointKind.COOL`. A Mini-Split AC (`family=ModelFamily.AC`) gets the
+value under both sections in one body, whatever `kind`, as Mysa's app does.
+A cooling limit for a heat-only family raises `SetpointModeError`; any kind
+other than heat or cool raises `ValueError` (the app has no auto-section
+limit). `MysaClient.set_setpoint_limit(device_id, value, *, minimum,
+kind=SetpointKind.HEAT, family=None, route="S")` sends it; cooling limits
+have no settings-record field, so a `route` other than `"S"` raises
+`ValueError` for them. The read-back is `DeviceState.cool_min` / `cool_max`.
+On a Mini-Split AC read the limits from the heating section (`setpoint_min` /
+`setpoint_max`): two real ACs in a third-party capture reported them only
+under `targetHeat`, with no limits under `targetCool`.
+One `kind` parameter, defaulting to heat, keeps 0.3.0 calls unchanged and
+matches the `SetpointKind` that `limit()` checked the value against; pass the
+same `kind` to both. The cooling and AC encodings are derived from Mysa's app
+4.21.1 and not verified on a device. Equal limits are refused
 because they leave a single allowed target: every other write would fail and
 every range a UI shows would collapse to one point.
 
@@ -167,7 +256,7 @@ values beyond `MAX_MAGNITUDE` raise `SetpointValueError` (with `value`) in both
 modes. A heat/cool pair that is too
 close always raises `SetpointGapTooSmallError` with `low`, `high`, `gap` and
 `required`; the rules never move a value to make room. These errors,
-`SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`,
+`SetpointGapUnknownError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`,
 `SetpointValueError` and `SetpointConfigError` subclass `SetpointError`, a
 `ValueError`; a non-number value still raises `TypeError`. All numbers are in °C so callers can word
 messages in the user's unit.
@@ -181,6 +270,14 @@ delta.
 
 <a id="holds-and-schedules"></a>
 ### Holds and schedules
+
+Modes in holds and schedule events go through `modes.parse_mode`, which
+accepts a `Mode`, its name in any case (`"HEAT"`, `"heat"`, `"Fan_Only"`), the
+capability names (`"fanOnly"`, `"emergencyHeat"`) and Home Assistant's
+lowercase `HVACMode` values (`"heat_cool"` is `Mode.AUTO`), and raises
+`UnknownModeError` (a `ValueError` with `value`) for anything else, including a
+plain number. `HoldCommand` and `ScheduleEventSpec` normalise their `mode`
+the same way.
 
 `resolve_hold(*, requested_mode, current_mode, requested_temperature,
 current_temperature, until=None, rules=None, unit="C")` picks the hold's mode
@@ -199,7 +296,8 @@ rules.
 `build_schedule_events(events, *, default_mode=Mode.HEAT,
 client_key="mysa-client", rules=None, unit="C")` does the same per event: with
 `rules`, each plain temperature is in `unit` and goes through
-`rules.schedule_event` for the event's `hvac_mode`, strictly. The temperature
+`rules.schedule_event` for the event's `hvac_mode` (`default_mode` when it is
+missing or `None`; both take any spelling `parse_mode` accepts), strictly. The temperature
 of an `off`, `fan_only`, `dry`, `sleep` or `pre_cool` event is dropped unchecked, and an `auto` event with a temperature raises
 `SetpointModeError`.
 
@@ -235,17 +333,19 @@ These submodule helpers are supported for standalone callers and integrations:
 | --- | --- |
 | [`commands.py`](../../../src/mysa_client/cloud/commands.py) | `CloudCommand`, `state_command`, `settings_command`, and field encoders including `auto_temperature_changes`, `button_lock_changes`, `display_brightness_changes`, `display_unit_settings`, `fan_speed_changes`, `heater_type_settings`, `hvac_fan_changes`, `mode_changes`, `setpoint_limit_changes`, `swing_changes`, `temperature_changes`, `temperature_offset_changes` |
 | [`device_commands.py`](../../../src/mysa_client/cloud/device_commands.py) | `climate_command`, `brightness_command`, `hvac_fan_command`, `hvac_fan_speed_command`, `display_unit_command` |
-| [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, `SetpointLimit`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`, `SetpointValueError`, `SetpointConfigError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_limit`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM`, `SAFE_MINIMUM`, `SAFE_MAXIMUM`, `SAFE_OFFSET`, `MAX_MAGNITUDE` (see [setpoint rules](#setpoint-rules)) |
+| [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, `SetpointLimit`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointGapUnknownError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`, `SetpointValueError`, `SetpointConfigError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_limit`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM`, `SAFE_MINIMUM`, `SAFE_MAXIMUM`, `SAFE_OFFSET`, `MAX_MAGNITUDE` (see [setpoint rules](#setpoint-rules)) |
 | [`device.py`](../../../src/mysa_client/cloud/device.py) | `basic_modes`, `brightness_pair`, `heating_range`, `hvac_activity`, `hvac_fan_operation` |
 | [`const.py`](../../../src/mysa_client/cloud/const.py) | `API_BASE`, `EXPERIMENTAL_CLOUD_FAMILIES`, `SWING_VERTICAL`, `model_family`; public models and enums are also re-exported at the package level |
-| [`models.py`](../../../src/mysa_client/cloud/models.py) | The response models exported by the package root, retained at this submodule path for direct imports |
+| [`models.py`](../../../src/mysa_client/cloud/models.py) | The response models exported by the package root, retained at this submodule path for direct imports; also `DR_EVENT_STATES`, `DR_STATE_MAX_HOURS` and `FLEET_FINAL_STATUSES` |
 | [`exceptions.py`](../../../src/mysa_client/cloud/exceptions.py) | The public `MysaError` exception hierarchy, retained at this submodule path for direct imports |
 | [`observations.py`](../../../src/mysa_client/cloud/observations.py) | `MEASUREMENT_MAX_AGE`, `MEASUREMENTS`, `STATE_FIELDS`, `TELEMETRY_FIELDS`, `Observation`, `number`, `observe`, `valid_value` |
 | [`reconciliation.py`](../../../src/mysa_client/cloud/reconciliation.py) | `reconcile`, `PendingCommand`, `PendingCommandTracker`, `pending_command` |
 | [`trace.py`](../../../src/mysa_client/cloud/trace.py) | `route_template` for redacted request-route reporting |
+| [`usage.py`](../../../src/mysa_client/cloud/usage.py) | `UsageToday` and `local_day_start`, also exported by the package root (see [today's usage](#todays-usage)) |
 | [`validation.py`](../../../src/mysa_client/cloud/validation.py) | `validate_basic_command` and `validate_cloud_command` for device/capability validation |
 | [`schedule_workflow.py`](../../../src/mysa_client/cloud/schedule_workflow.py) | `ScheduleWorkflow`, `ScheduleJournal`, `ScheduleTransport`, and `MysaScheduleTransport` for replacement, clear, and recovery |
 | [`holds.py`](../../../src/mysa_client/cloud/holds.py) | `resolve_hold`, `async_apply_hold` |
+| [`modes.py`](../../../src/mysa_client/cloud/modes.py) | `parse_mode`, `UnknownModeError` |
 | [`account_workflow.py`](../../../src/mysa_client/cloud/account_workflow.py) | Model eligibility, minimal account claim, and best-effort cleanup before account removal |
 
 Other names prefixed with an underscore are private implementation details.
@@ -312,8 +412,134 @@ Constructed regression fixtures derived from those envelope shapes:
 [firmware catalog](../../../tests/fixtures/firmware_catalog.json). They use
 synthetic identifiers and are not additional hardware observations.
 
+## Device health and electrical fields
+
+`DeviceState` names these structured-state values (0.4.0). Each is `None` when
+absent, of the wrong type, outside a plausible range, or in a section whose own
+clock is malformed or in the future; nothing is converted. Values from
+`latestTelemetry.reading` share `reading_time`; values from `power.reported`
+share `power_time`. Only `reported` power values count, as for other sections.
+
+| Field | Source | Unit | Evidence |
+| --- | --- | --- | --- |
+| `free_heap` | `reading.freeHeap`, else `diagnostics.reported.freeHeap` | bytes | Confirmed on Baseboard Lite firmware 3.17.5.13 |
+| `raw_temperature` | `reading.rawTemperature` | °C | Confirmed on Baseboard Lite firmware 3.17.5.13 (above room temperature, as an uncorrected sensor would be) |
+| `core_temperature` | `reading.coreTemperature` | °C | Confirmed on Baseboard Lite firmware 3.17.5.13 (above room temperature) |
+| `voltage` | `power.reported.voltage`, else `reading.voltage` | V | Confirmed on Baseboard Lite firmware 3.17.5.13 (240) |
+| `probe_temperature` | `reading.probeTemperature` | °C | Derived from Mysa's app 4.21.1; not verified on a device |
+| `power_wattage` | `power.reported.wattage` | W, rated load | Derived from Mysa's app 4.21.1; not verified on a device (0 observed) |
+| `power_duty_cycle` | `power.reported.dutyCycle` | percent, 0–100 | Derived from Mysa's app 4.21.1; not verified on a device (0 observed). `duty_cycle` stays the 0–1 telemetry fraction |
+| `power_current` | `power.reported.current` | mA | Only 0 observed here. A third-party Baseboard V3 capture ([axelrtgs/mysa](https://github.com/axelrtgs/mysa)) shows 240 V, 12458 and 2989 W together, and the app names it `currentMa` |
+| `max_current` | `reading.maxCurrent` | A, highest load current seen | Only 0 observed here; the app never reads it. Third-party captures show a float in amps that stays non-zero while idle (axelrtgs/mysa; [kgelinas/Mysa_HA#32](https://github.com/kgelinas/Mysa_HA/issues/32); [dlenski/mysotherm](https://github.com/dlenski/mysotherm)) |
+| `power_consumed` | `reading.powerConsumed` | unverified | Only 0 observed; the app never reads it; the name suggests energy per reading interval |
+| `instant_load` | `reading.instantLoad` | unverified | Only 0 observed; the app never reads it; the name suggests the present load |
+| `on_time` | `reading.onTime` | unverified | Only 0 observed here; the app never reads it. Two Mini-Split ACs in a third-party capture reported 30 while heating, which fits seconds on per 30-second interval |
+| `effective_setpoint` | `reading.effectiveSetpoint` | °C as sent | Meaning unconfirmed: a Lite reported 23 while its setpoint was 10 |
+| `demand_response_state` | `drState.state` | text | Confirmed on Baseboard Lite firmware 3.17.5.13 (`"none"`); the app's other values are `"event"`, `"preheat"` and `"precool"` |
+
+The `power` section can be stale. A third-party Baseboard V3 capture returned the same voltage, current and wattage a day later with the heater off, so compare `power_time` with `reading_time` before treating `power_*` values as live.
+
+Two properties follow the app: `power_load_watts` is
+`round(power_duty_cycle × power_wattage / 100)`, the estimate the app displays,
+and `ground_fault` is true when an In-Floor thermostat reports 0 V (`None` for
+other models). Both are derived from Mysa's app 4.21.1; not verified on a
+device.
+
+```python
+state = await client.get_state(device_id)
+if state.core_temperature is not None:
+    print(f"internal {state.core_temperature} °C, heap {state.free_heap} B")
+```
+
+None of these fields join `TELEMETRY_FIELDS`, `MEASUREMENTS` or
+`STATE_FIELDS`, and none gets an entry in `observations`. Those sets decide
+which fields `reconcile()` arbitrates between cloud, legacy and HomeKit
+sources, which values command confirmation compares, and which fields an
+integration's event history records. These values have a single source (the
+structured state) and no command writes them, so there is nothing to
+arbitrate or confirm, and diagnostics such as free heap change on every
+reading. A reconciled `DeviceState` carries them from the structured state it
+is based on; a legacy-only state has none. Check freshness with `reading_time`
+and `power_time`.
+
+## Demand-response, fleet firmware, and sensor-link reads
+
+These 0.4.0 methods only read. Each keeps the response in `raw`.
+
+`await client.get_demand_response_state(device_id)` sends
+`GET /devices/{id}/drstate` and returns `DemandResponseState`. A device that is
+not enrolled answers `{"DeviceDrState": {}}`, giving `has_data` false, which is
+different from an explicit `new_state == "none"`: confirmed on Baseboard Lite
+firmware 3.17.5.13. The populated fields (`device_id`, `new_state`,
+`timestamp`, and the pass-through `device_time`, `current_state`,
+`current_setpoint`, `new_setpoint`) are derived from Mysa's app 4.21.1; not
+verified on a device. `state.in_event(now)` applies the app's rule: `new_state`
+in `DR_EVENT_STATES` and a timestamp no more than `DR_STATE_MAX_HOURS` (8)
+whole hours old. Unlike the app, a record without a usable timestamp is never
+in an event. This stays separate from `DeviceState.in_demand_response`.
+
+```python
+dr = await client.get_demand_response_state(device_id)
+if dr.has_data and dr.in_event(datetime.now(UTC)):
+    print("demand-response event:", dr.new_state)
+```
+
+`await client.get_fleet_firmware_availability(device_id, current_version=None)`
+sends `GET /ota/update/available/{id}` and returns
+`FleetFirmwareAvailability`. A 404 returns `in_fleet` false instead of raising:
+confirmed on Baseboard Lite firmware 3.17.5.13, which Mysa keeps in no fleet.
+The offer fields (`update_available`, `message`, `version_id`, `version`,
+`description`, `release_notes`) are derived from Mysa's app 4.21.1; not
+verified on a device. `await client.get_fleet_firmware_status(request_id)`
+sends `GET /ota/update/{requestId}` and returns `FleetFirmwareStatus` with the
+raw `status` string, `known_status` (a `FleetUpdateStatus`, or `None` for an
+unknown value), `finished`, and `percent_complete`; derived from Mysa's app
+4.21.1; not verified on a device. `firmware_versions_match(reported, target)`
+is the app's completion check: both versions trimmed, a leading `v` removed and
+anything from the first `-` dropped (`normalize_firmware_version`). Starting
+and cancelling fleet updates are not implemented.
+
+```python
+offer = await client.get_fleet_firmware_availability(device_id)
+if not offer.in_fleet:
+    info = await client.get_firmware_info(device_id)  # legacy models
+elif offer.update_available:
+    print(offer.version, offer.release_notes)
+```
+
+`await client.get_sensor_links(target_id)` sends
+`GET /linking?targetId={id}` and returns `list[SensorLink]`, each with
+`link_id`, `source_id`, `target_id`, `weight` and `enabled`. `participating`
+is the app's rule (`enabled` not false and `weight > 0`); `own_sensor` marks
+the target's built-in sensor. An empty list is confirmed on Baseboard Lite
+firmware 3.17.5.13; entry fields are derived from Mysa's app 4.21.1; not
+verified on a device. There are no link writes.
+
+```python
+links = await client.get_sensor_links(device_id)
+remote = [l.source_id for l in links if l.participating and not l.own_sensor]
+```
+
+A malformed body raises `MysaApiError`; other HTTP errors follow the
+[error rules](#errors-timeouts-retries-and-caller-responsibilities). The wire
+formats are in the protocol reference: [demand-response state](../protocol/cloud-state.md#demand-response-state),
+[newer OTA service](../protocol/firmware-and-connectivity.md#newer-ota-service)
+and [remote temperature tracking](../protocol/cloud-state.md#remote-temperature-tracking).
+Regression fixtures are in [reads_0_4_0.json](../../../tests/fixtures/reads_0_4_0.json),
+each entry marked live-sanitized or app-derived.
+
 [Documentation index](../../README.md)
 
 <!-- api-symbol: mysa_client.cloud.client:MysaClient.execute_command -->
 <!-- api-symbol: mysa_client.cloud.client:MysaClient.get_firmware_catalog -->
 <!-- api-symbol: mysa_client.cloud.auth:MysaAuth.sign_in -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_demand_response_state -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_fleet_firmware_availability -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_fleet_firmware_status -->
+<!-- api-symbol: mysa_client.cloud.client:MysaClient.get_sensor_links -->
+<!-- api-symbol: mysa_client.cloud.models:DemandResponseState.in_event -->
+<!-- api-symbol: mysa_client.cloud.models:firmware_versions_match -->
+<!-- api-symbol: mysa_client.cloud.models:normalize_firmware_version -->
+<!-- api-symbol: mysa_client.cloud.models:SensorLink.participating -->
+<!-- api-symbol: mysa_client.cloud.models:DeviceState.power_load_watts -->
+<!-- api-symbol: mysa_client.cloud.models:DeviceState.ground_fault -->

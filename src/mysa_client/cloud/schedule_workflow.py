@@ -19,6 +19,7 @@ from typing import Any, NoReturn, Protocol
 from .client import MysaClient
 from .commands import ScheduleEventSpec, encode_schedule_events
 from .const import NO_SETPOINT_MODES, Mode
+from .modes import parse_mode
 from .setpoints import (
     Setpoint,
     SetpointModeError,
@@ -116,15 +117,18 @@ def _raise_delete_not_confirmed() -> NoReturn:
 def build_schedule_events(
     events: Iterable[Mapping[str, Any]],
     *,
-    default_mode: Mode = Mode.HEAT,
+    default_mode: Mode | str = Mode.HEAT,
     client_key: str = "mysa-client",
     rules: SetpointRules | None = None,
     unit: Unit = "C",
 ) -> list[dict[str, Any]]:
     """Encode semantic weekday events in the cloud schedule representation.
 
-    Each event has ``days``, ``time``, an optional ``hvac_mode`` (a ``Mode``
-    name, else ``default_mode``) and an optional ``temperature``. With
+    Each event has ``days``, ``time``, an optional ``hvac_mode`` and an
+    optional ``temperature``. ``hvac_mode`` (``default_mode`` when missing or
+    ``None``) is a ``Mode``, its name in any case, or a Home Assistant mode
+    name such as ``"heat_cool"`` (:func:`~mysa_client.cloud.modes.parse_mode`);
+    anything else raises ``UnknownModeError``. With
     ``rules``, a temperature may be a plain number in ``unit``; it is rounded
     and strictly checked for the event's mode
     (``SetpointRules.schedule_event``), so an out-of-range value raises
@@ -136,8 +140,10 @@ def build_schedule_events(
     since those modes have no setpoint.
     """
     specs: list[ScheduleEventSpec] = []
+    fallback = parse_mode(default_mode)
     for event in events:
-        mode = Mode[str(event.get("hvac_mode", default_mode.name)).upper()]
+        given = event.get("hvac_mode")
+        mode = fallback if given is None else parse_mode(given)
         # Off, fan-only, dry, sleep and pre-cool events carry no setpoint
         # (``make_state`` writes none), so their temperature is dropped
         # unchecked, like a hold's.

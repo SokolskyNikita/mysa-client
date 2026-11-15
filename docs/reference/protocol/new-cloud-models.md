@@ -67,7 +67,9 @@ state or physical operation; apply the normal [write confirmation policy](../../
 ## Linking and provisioning
 
 The app exposes a sensor-linking flow for Central HVAC through `GET` and
-`POST /linking`, with `sourceId`, `targetId`, and `weight`. Account enrollment,
+`POST /linking`, with `sourceId`, `targetId`, and `weight`; Python reads links
+with [`get_sensor_links()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads)
+but cannot change them. Account enrollment,
 credential transfer, fleet registration, pairing finalization, and Matter
 setup-code routes are documented in the [newer-model enrollment sequence](cloud-workflows.md#baseboard-v3-central-hvac-and-climate-sensor).
 That sequence is not a hardware-validated setup guide.

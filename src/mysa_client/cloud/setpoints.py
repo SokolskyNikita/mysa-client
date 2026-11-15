@@ -84,6 +84,10 @@ arithmetic finite.
 
 _MAX_STEP: Final = 10.0
 
+# Mysa's app 4.21.1 shows a Mini-Split AC without a TempRange the range
+# AC_MIN_TEMP-MAX_TEMP (16-30 °C) in whole degrees (getPickerPropsByDevice).
+_AC_DEFAULT_RANGE: Final = (16.0, 30.0, 1.0)
+
 Unit = Literal["C", "F"]
 Side = Literal["heat", "cool"]
 RangeTuple = tuple[float | None, float | None, float | None]
@@ -105,6 +109,7 @@ __all__ = [
     "SetpointConfigError",
     "SetpointError",
     "SetpointGapTooSmallError",
+    "SetpointGapUnknownError",
     "SetpointKind",
     "SetpointLimit",
     "SetpointLimitOrderError",
@@ -132,12 +137,18 @@ __all__ = [
 
 
 class SetpointKind(StrEnum):
-    """The setpoint ranges a thermostat can advertise, each with its own step."""
+    """The setpoint ranges a thermostat can advertise, each with its own step.
+
+    ``AUTO`` is a Mini-Split AC's single target in auto mode
+    (``targetAuto.setpoint``); ``AUTO_HEAT`` and ``AUTO_COOL`` are a Central
+    HVAC's heat/cool pair.
+    """
 
     HEAT = "heat"
     COOL = "cool"
     AUTO_HEAT = "auto_heat"
     AUTO_COOL = "auto_cool"
+    AUTO = "auto"
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,17 +291,37 @@ class SetpointLimitOrderError(SetpointError):
 
 
 class SetpointModeError(SetpointError):
-    """A single setpoint was given for a mode that cannot carry one here.
+    """A setpoint was given for a mode or model that cannot carry it.
 
-    Holds and schedule events store one ``targetHeat`` or ``targetCool``
-    setpoint; heat/cool mode needs a pair, so a hold or event in that mode
-    cannot carry a temperature.
+    Raised for a single temperature in heat/cool mode on anything but a
+    Mini-Split AC (a Central HVAC needs ``low`` and/or ``high``), for a heat/cool
+    side outside heat/cool mode, for a mode with no setpoint section (fan-only,
+    dry, sleep, pre-cool), for a hold or schedule event in heat/cool mode, and
+    for a cooling limit on a model that doesn't advertise cooling. ``mode`` is
+    the mode refused (``None`` when no mode was selected).
     """
 
-    def __init__(self, mode: Mode, message: str) -> None:
+    def __init__(self, mode: Mode | None, message: str) -> None:
         """Store the mode that was refused."""
         self.mode = mode
         super().__init__(message)
+
+
+class SetpointGapUnknownError(SetpointError):
+    """One heat/cool side was given, but the other side's value is unknown.
+
+    The minimum gap can't be checked without it, so the side is refused rather
+    than written unchecked. ``side`` is the side being set.
+    """
+
+    def __init__(self, side: Side) -> None:
+        """Store the side that could not be checked."""
+        self.side: Side = side
+        other = "cool" if side == "heat" else "heat"
+        super().__init__(
+            f"The current {other} setpoint is unknown, so the {side} setpoint's "
+            "gap can't be checked; pass both sides"
+        )
 
 
 class SetpointGapTooSmallError(SetpointError):
@@ -459,17 +490,40 @@ def _intersect(
     return low, high, step
 
 
-def kind_for_mode(mode: Mode | None) -> SetpointKind:
+def _auto_mode_error(family: ModelFamily | None) -> SetpointModeError:
+    """The refusal for a single temperature in heat/cool mode on ``family``."""
+    if family == ModelFamily.CENTRAL_HVAC:
+        message = (
+            "A Central HVAC in heat/cool mode has a heat and a cool target; "
+            "pass low, high or both instead of a single temperature"
+        )
+    else:
+        message = (
+            "Only a Mini-Split AC has a single temperature in heat/cool mode; "
+            "a Central HVAC takes low, high or both"
+        )
+    return SetpointModeError(Mode.AUTO, message)
+
+
+def kind_for_mode(mode: Mode | None, family: ModelFamily | None = None) -> SetpointKind:
     """The single-setpoint range a mode writes, matching the command encoder.
 
-    Cool uses the cool range (``targetCool``); every other mode, including
-    none, uses the heat range (``targetHeat``). In heat/cool mode
-    (``Mode.AUTO``) a single setpoint means the heat target; use
-    :meth:`SetpointRules.heat_cool` for the pair. ``temperature_changes`` and
-    ``DeviceState.setpoint_for`` follow the same rule, except that
-    ``temperature_changes`` refuses fan-only, dry, sleep and pre-cool, which
-    have no setpoint section.
+    Cool uses the cool range (``targetCool``). Heat/cool mode (``Mode.AUTO``)
+    has a single target only on a Mini-Split AC (``family`` is
+    ``ModelFamily.AC``), whose auto range is ``SetpointKind.AUTO``
+    (``targetAuto.setpoint``, as Mysa's app 4.21.1 writes it); for any other
+    family, or none, it raises ``SetpointModeError``: a Central HVAC's auto
+    targets are the pair (:meth:`SetpointRules.heat_cool` and
+    :meth:`SetpointRules.heat_cool_side`). Every other mode, including
+    emergency heat and none, uses the heat range (``targetHeat``).
+    ``temperature_changes`` and ``DeviceState.setpoint_for`` follow the same
+    rule, except that ``temperature_changes`` refuses fan-only, dry, sleep and
+    pre-cool, which have no setpoint section.
     """
+    if mode == Mode.AUTO:
+        if family == ModelFamily.AC:
+            return SetpointKind.AUTO
+        raise _auto_mode_error(family)
     section = SETPOINT_SECTION_BY_MODE.get(mode or Mode.HEAT, "targetHeat")
     return SetpointKind.COOL if section == "targetCool" else SetpointKind.HEAT
 
@@ -489,6 +543,17 @@ class SetpointRules:
     ``capabilities`` only. ``setpoint_min`` and ``setpoint_max`` are the
     owner's limits; they narrow the heat range but not the hardware range used
     to validate new limits, and :meth:`limit` keeps them strictly ordered.
+    ``cool_min`` and ``cool_max`` are the owner's cooling limits
+    (``DeviceState.cool_min`` / ``cool_max``) and do the same for the cool range
+    and :attr:`hardware_cool_range`, the capability cool range or a Mini-Split
+    AC record's cool-mode range (the HomeKit range doesn't count, so a model
+    advertising neither has no cooling limits).
+    ``family`` is the model family, read from ``record.model``, else
+    ``capabilities.model``, when not given. It decides what a single target in
+    heat/cool mode means (:func:`kind_for_mode`): on a Mini-Split AC its range
+    (``SetpointKind.AUTO``) is the record's auto-mode range
+    (:meth:`DeviceRecord.ac_temperature_range`), else the HomeKit range, else
+    16-30 °C in whole degrees, the range Mysa's app shows an AC without one.
     Without capabilities or a record (a local-only thermostat) only the HomeKit
     range applies. A missing step is assumed to be 0.5 °C. A missing bound
     stays ``None`` in :meth:`range_for`, but every write is checked and
@@ -507,6 +572,9 @@ class SetpointRules:
         setpoint_min: float | None = None,
         setpoint_max: float | None = None,
         record: DeviceRecord | None = None,
+        cool_min: float | None = None,
+        cool_max: float | None = None,
+        family: ModelFamily | None = None,
     ) -> None:
         """Derive every range once from the thermostat's advertised limits."""
         local = homekit_range or (None, None, None)
@@ -514,31 +582,51 @@ class SetpointRules:
         for name, limit in (
             ("setpoint_min", setpoint_min),
             ("setpoint_max", setpoint_max),
+            ("cool_min", cool_min),
+            ("cool_max", cool_max),
         ):
             if limit is not None:
                 _config_number(name, limit)
         caps = capabilities
         self.capabilities = caps
         self.record = record
+        if family is None:
+            family = model_family(record.model if record else None) or model_family(
+                caps.model if caps else None
+            )
+        self.family: ModelFamily | None = family
         # Only a Mini-Split AC's record describes its remote's temperatures.
         ac = record if record and model_family(record.model) == ModelFamily.AC else None
         if ac is not None and (caps is None or caps.heat_setpoint_range is None):
             local = _intersect(local, ac.ac_temperature_range(Mode.HEAT))
-        cool: RangeTuple | None = caps.cool_setpoint_range if caps else None
-        if cool is None and ac is not None:
-            cool = ac.ac_temperature_range(Mode.COOL)
+        hardware_cool: RangeTuple | None = caps.cool_setpoint_range if caps else None
+        if hardware_cool is None and ac is not None:
+            hardware_cool = ac.ac_temperature_range(Mode.COOL)
+        self._advertises_cooling = hardware_cool is not None
+        cool = hardware_cool
         if cool is None and homekit_range is not None:
             cool = homekit_range
+        auto: RangeTuple | None = None
+        if family == ModelFamily.AC:
+            auto = ac.ac_temperature_range(Mode.AUTO) if ac is not None else None
+            if auto is None:
+                auto = homekit_range or _AC_DEFAULT_RANGE
         self.setpoint_min = None if setpoint_min is None else round(setpoint_min, 4)
         self.setpoint_max = None if setpoint_max is None else round(setpoint_max, 4)
+        self.cool_min = None if cool_min is None else round(cool_min, 4)
+        self.cool_max = None if cool_max is None else round(cool_max, 4)
         self.hardware_heat_range = _range(heating_range(local, caps, None, None))
+        self.hardware_cool_range = _range(hardware_cool)
         self._ranges = {
             SetpointKind.HEAT: _range(
                 heating_range(local, caps, setpoint_min, setpoint_max)
             ),
-            SetpointKind.COOL: _range(cool),
+            SetpointKind.COOL: _range(
+                _intersect(cool or (None, None, None), (cool_min, cool_max, None))
+            ),
             SetpointKind.AUTO_HEAT: _range(caps.auto_heat_range if caps else None),
             SetpointKind.AUTO_COOL: _range(caps.auto_cool_range if caps else None),
+            SetpointKind.AUTO: _range(auto),
         }
         self.offset_range = _range(caps.offset_range if caps else None)
         delta = caps.min_setpoint_delta if caps else None
@@ -551,7 +639,7 @@ class SetpointRules:
     def range_for(self, kind: SetpointKind | Mode | None) -> SetpointRange:
         """The normalised range for a setpoint kind or a single-setpoint mode."""
         if not isinstance(kind, SetpointKind):
-            kind = kind_for_mode(kind)
+            kind = kind_for_mode(kind, self.family)
         return self._ranges[kind]
 
     def setpoint(
@@ -562,12 +650,14 @@ class SetpointRules:
         unit: Unit = "C",
         strict: bool = True,
     ) -> Setpoint:
-        """Normalise a single heat or cool target for ``mode``.
+        """Normalise a single target for ``mode``.
 
-        In heat/cool mode a single target is the heat target
-        (see :func:`kind_for_mode`).
+        In heat/cool mode only a Mini-Split AC has a single target (its auto
+        range); for any other family this raises ``SetpointModeError``, and a
+        Central HVAC uses :meth:`heat_cool` or :meth:`heat_cool_side` (see
+        :func:`kind_for_mode`).
         """
-        kind = kind_for_mode(mode)
+        kind = kind_for_mode(mode, self.family)
         return self._normalise(
             Setpoint,
             self._ranges[kind],
@@ -615,33 +705,108 @@ class SetpointRules:
             )
         return heat, cool
 
+    def heat_cool_side(
+        self,
+        side: Side,
+        value: float,
+        *,
+        other: float | Setpoint | None,
+        unit: Unit = "C",
+        strict: bool = True,
+    ) -> Setpoint:
+        """Normalise one side of a heat/cool pair, keeping the other as it is.
+
+        Mysa's app 4.21.1 changes a Central HVAC's auto targets one at a time,
+        writing only the changed one, and refuses a change that would leave the
+        pair closer than ``min_setpoint_delta``; it never moves the other side.
+        ``side`` is ``"heat"`` (the auto heat range) or ``"cool"`` (the auto
+        cool range), and ``other`` the other side's current target in °C
+        (``DeviceState.auto_cool_setpoint`` or ``auto_heat_setpoint``), or a
+        ``Setpoint``. The rounded value is range-checked like
+        :meth:`heat_cool`, then the gap: ``SetpointGapTooSmallError``, whatever
+        ``strict`` says. An unknown ``other`` raises
+        ``SetpointGapUnknownError``; pass both sides to :meth:`heat_cool`
+        instead.
+        """
+        if side not in ("heat", "cool"):
+            raise ValueError(f"A heat/cool side is 'heat' or 'cool', not {side!r}")
+        kind = SetpointKind.AUTO_HEAT if side == "heat" else SetpointKind.AUTO_COOL
+        setpoint = self._normalise(
+            Setpoint,
+            self._ranges[kind],
+            _finite(value),
+            unit,
+            strict=strict,
+            kind=kind,
+            side=side,
+        )
+        if other is None:
+            raise SetpointGapUnknownError(side)
+        current = round(
+            other.celsius if isinstance(other, Setpoint) else _finite(other), 4
+        )
+        low, high = (
+            (setpoint.celsius, current)
+            if side == "heat"
+            else (current, setpoint.celsius)
+        )
+        if round(high - low, 4) < self.min_setpoint_delta:
+            raise SetpointGapTooSmallError(
+                low=low, high=high, required=self.min_setpoint_delta
+            )
+        return setpoint
+
     def limit(
         self,
         value: float,
         *,
         minimum: bool,
+        kind: SetpointKind = SetpointKind.HEAT,
         unit: Unit = "C",
         strict: bool = True,
     ) -> SetpointLimit:
-        """Normalise an owner minimum or maximum against the hardware heat range.
+        """Normalise an owner minimum or maximum against the hardware range.
+
+        ``kind`` is ``SetpointKind.HEAT`` (the default: the heating limits,
+        checked against :attr:`hardware_heat_range`) or ``SetpointKind.COOL``
+        (the cooling limits, checked against :attr:`hardware_cool_range`; a
+        model that advertises no cooling range raises ``SetpointModeError``).
+        Any other kind raises ``ValueError``.
 
         The result is a :class:`SetpointLimit`: ``setpoint_limit_changes``
         accepts it, and every target writer refuses it with ``TypeError``.
 
         The rounded value must also stay strictly on its side of the other
-        current limit (``setpoint_max`` for a new minimum, ``setpoint_min`` for
-        a new maximum), or ``SetpointLimitOrderError`` is raised, whatever
-        ``strict`` says: equal limits would leave a single allowed target.
-        ``validate_cloud_command`` applies the same rule (:func:`limits_ordered`).
+        current limit of the same kind (``setpoint_max`` or ``cool_max`` for a
+        new minimum, ``setpoint_min`` or ``cool_min`` for a new maximum), or
+        ``SetpointLimitOrderError`` is raised, whatever ``strict`` says: equal
+        limits would leave a single allowed target. ``validate_cloud_command``
+        applies the same rule (:func:`limits_ordered`). Mysa's app 4.21.1 also
+        keeps the two limits at least 2 °C apart; this rule does not.
         """
+        if kind == SetpointKind.HEAT:
+            hardware = self.hardware_heat_range
+            other = self.setpoint_max if minimum else self.setpoint_min
+        elif kind == SetpointKind.COOL:
+            if not self._advertises_cooling:
+                raise SetpointModeError(
+                    Mode.COOL,
+                    "This thermostat advertises no cooling range, so it has no "
+                    "cooling limits",
+                )
+            hardware = self.hardware_cool_range
+            other = self.cool_max if minimum else self.cool_min
+        else:
+            raise ValueError(
+                f"Setpoint limits are heating or cooling limits, not {kind.value}"
+            )
         setpoint = self._normalise(
             SetpointLimit,
-            self.hardware_heat_range,
+            hardware,
             _finite(value),
             unit,
             strict=strict,
         )
-        other = self.setpoint_max if minimum else self.setpoint_min
         if other is not None and not limits_ordered(
             setpoint.celsius if minimum else other,
             other if minimum else setpoint.celsius,

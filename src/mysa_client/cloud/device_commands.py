@@ -15,7 +15,7 @@ from .commands import (
 )
 from .const import EXPERIMENTAL_CLOUD_FAMILIES, Mode, ModelFamily
 from .device import brightness_pair
-from .setpoints import Setpoint
+from .setpoints import Setpoint, SetpointModeError
 
 
 def climate_command(
@@ -27,27 +27,46 @@ def climate_command(
     low: Setpoint | None = None,
     high: Setpoint | None = None,
 ) -> CloudCommand:
-    """Build one mode/target operation, preserving native HVAC auto targets.
+    """Build one mode/target operation, as Mysa's app 4.21.1 encodes it.
 
-    Temperatures must come from ``SetpointRules``; a plain number raises
-    ``TypeError``.
+    The targets apply to ``mode`` when given (it is written in the same
+    request), else to ``selected_mode``, the thermostat's current mode.
+
+    ``temperature`` is a single target: ``targetHeat`` in heat, emergency heat,
+    off or no mode, ``targetCool`` in cool. In heat/cool mode (``Mode.AUTO``)
+    only a Mini-Split AC has one, written as ``targetAuto.setpoint``.
+
+    ``low`` and ``high`` are a Central HVAC's heat/cool targets
+    (``targetAuto.heatSetpoint`` / ``coolSetpoint``) and need heat/cool mode.
+    Either may be given alone; the app writes only the side that changed. Check
+    the gap to the other side first with ``SetpointRules.heat_cool_side`` (or
+    ``heat_cool`` for both).
+
+    Every refusal raises ``SetpointModeError``: a single ``temperature`` in
+    heat/cool mode on anything but a Mini-Split AC (a Central HVAC takes
+    ``low``, ``high`` or both), ``low``/``high`` outside heat/cool mode or on
+    another family, ``temperature`` together with ``low``/``high``, and a
+    temperature in fan-only, dry, sleep or pre-cool. Temperatures must come
+    from ``SetpointRules``; a plain number raises ``TypeError``.
+
+    The emergency-heat, AC auto and single-side encodings are derived from
+    Mysa's app 4.21.1; not verified on a device.
     """
     selected = mode if mode is not None else selected_mode
     changes = mode_changes(mode) if mode is not None else {}
     if low is not None or high is not None:
-        if (
-            family != ModelFamily.CENTRAL_HVAC
-            or temperature is not None
-            or selected != Mode.AUTO
-            or low is None
-            or high is None
-        ):
-            raise ValueError("Supply both low and high setpoints in heat/cool mode")
+        if temperature is not None:
+            raise SetpointModeError(
+                selected, "Pass either a temperature or low/high, not both"
+            )
+        if family != ModelFamily.CENTRAL_HVAC or selected != Mode.AUTO:
+            raise SetpointModeError(
+                selected,
+                "Low and high setpoints need a Central HVAC in heat/cool mode",
+            )
         changes.update(auto_temperature_changes(low, high))
     if temperature is not None:
-        if selected not in (Mode.HEAT, Mode.COOL, Mode.OFF):
-            raise ValueError("A single setpoint requires heat or cool mode")
-        changes.update(temperature_changes(selected, temperature))
+        changes.update(temperature_changes(selected, temperature, family=family))
     return state_command(changes)
 
 

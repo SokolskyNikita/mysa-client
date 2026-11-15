@@ -1,0 +1,29 @@
+{
+  "id": "ota-availability.not-in-fleet",
+  "kind": "live-sanitized",
+  "evidence": {
+    "source": "../../docs/reference/protocol/firmware-and-connectivity.md#newer-ota-service",
+    "observationDate": "2026-11-15",
+    "model": "BB-V2-0-L",
+    "firmware": "3.17.5.13",
+    "host": "https://mysa-backend.mysa.cloud",
+    "confirmation": "HTTP 404 for a legacy model; the client returns in_fleet False",
+    "notes": "The message was recorded earlier in the protocol notes; this check recorded only the status. The device ID is a placeholder."
+  },
+  "request": {
+    "method": "GET",
+    "baseUrl": "https://mysa-backend.mysa.cloud",
+    "path": "/ota/update/available/a1b2c3d4e5f6",
+    "authentication": "cognito-id-token",
+    "headers": {
+      "accept": "application/json"
+    }
+  },
+  "response": {
+    "status": 404,
+    "representation": "projection",
+    "body": {
+      "message": "No fleet found containing device"
+    }
+  }
+}

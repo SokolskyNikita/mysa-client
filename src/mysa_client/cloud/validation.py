@@ -51,6 +51,10 @@ def validate_cloud_command(
         "setpoint_min": caps.heat_setpoint_range,
         "setpoint_max": caps.heat_setpoint_range,
     }
+    # A Mini-Split AC's cooling range may be only in its settings record, which
+    # SetpointRules.limit checks; other models must advertise cooling.
+    if caps.cool_setpoint_range is not None or family != ModelFamily.AC:
+        ranges["cool_min"] = ranges["cool_max"] = caps.cool_setpoint_range
     for name, limits in ranges.items():
         if name in expected and (
             limits is None
@@ -98,6 +102,21 @@ def validate_cloud_command(
             and not limits_ordered(low_number, high_number)
         ):
             raise ValueError("Minimum setpoint must be below the maximum")
+
+    if "cool_min" in expected or "cool_max" in expected:
+        low = expected.get(
+            "cool_min", command_value("cool_min", state.cool_min if state else None)
+        )
+        high = expected.get(
+            "cool_max", command_value("cool_max", state.cool_max if state else None)
+        )
+        low_number, high_number = number(low), number(high)
+        if (
+            low_number is not None
+            and high_number is not None
+            and not limits_ordered(low_number, high_number)
+        ):
+            raise ValueError("Minimum cooling setpoint must be below the maximum")
 
 
 def validate_basic_command(
@@ -215,15 +234,36 @@ def _validate_basic_command(
                 raise ValueError("Target exceeds known device limits")
 
     if "auto_heat_setpoint" in expected or "auto_cool_setpoint" in expected:
-        low = number(expected.get("auto_heat_setpoint"))
-        high = number(expected.get("auto_cool_setpoint"))
+        # One side alone keeps the other as it is (Mysa's app writes only the
+        # changed side), so the gap is checked against its current value.
+        low = number(
+            expected.get(
+                "auto_heat_setpoint",
+                command_value(
+                    "auto_heat_setpoint", state.auto_heat_setpoint if state else None
+                ),
+            )
+        )
+        high = number(
+            expected.get(
+                "auto_cool_setpoint",
+                command_value(
+                    "auto_cool_setpoint", state.auto_cool_setpoint if state else None
+                ),
+            )
+        )
         delta = max(
             caps.min_setpoint_delta or 0,
             state.auto_deadband or 0 if state else 0,
         )
-        if low is None or high is None or high <= low or high - low < delta - 1e-6:
+        if low is None or high is None:
             raise ValueError(
-                "Both auto setpoints must be supplied in order, with the required minimum gap"
+                "The other auto setpoint is unknown, so the minimum gap can't be "
+                "checked; supply both"
+            )
+        if high <= low or high - low < delta - 1e-6:
+            raise ValueError(
+                "Auto setpoints must be in order, with the required minimum gap"
             )
     if "fan_mode" in expected and (
         family != ModelFamily.CENTRAL_HVAC

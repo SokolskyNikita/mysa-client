@@ -8,12 +8,31 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 from mysa_client.cloud import DeviceRecord, DeviceState, Mode, ModelFamily
 from mysa_client.cloud.const import EXPERIMENTAL_CLOUD_FAMILIES
 from mysa_client.cloud.device import hvac_activity
 from mysa_client.cloud.observations import number, valid_value
+
+#: HomeKit target mode (``homekit.LocalMode`` value) to the cloud ``Mode``.
+#: Keys are plain strings so this module never imports the HomeKit SDK;
+#: ``LocalMode`` is a ``StrEnum``, so its members work as keys too.
+LOCAL_MODE_TO_MODE: Mapping[str, Mode] = MappingProxyType(
+    {
+        "off": Mode.OFF,
+        "heat": Mode.HEAT,
+        "cool": Mode.COOL,
+        "auto": Mode.AUTO,
+    }
+)
+#: The reverse of ``LOCAL_MODE_TO_MODE``. Cloud modes with no HomeKit
+#: equivalent (fan-only, dry, ...) are absent. Values are plain strings equal
+#: to the ``LocalMode`` members; ``LocalMode(value)`` converts one.
+MODE_TO_LOCAL_MODE: Mapping[Mode, str] = MappingProxyType(
+    {mode: local for local, mode in LOCAL_MODE_TO_MODE.items()}
+)
 
 
 def _not_fresh(_name: str) -> bool:
@@ -63,12 +82,7 @@ class DeviceView:
             value = self.local.get("target_mode")
             if not isinstance(value, str):
                 return None
-            return {
-                "off": Mode.OFF,
-                "heat": Mode.HEAT,
-                "cool": Mode.COOL,
-                "auto": Mode.AUTO,
-            }.get(value)
+            return LOCAL_MODE_TO_MODE.get(value)
         return self.state.mode if self.state else None
 
     @property

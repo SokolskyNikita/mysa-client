@@ -1,7 +1,72 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-15)
 
+- **Breaking:** a single temperature in heat/cool (auto) mode is no longer the
+  heat target. Mysa's app 4.21.1 never writes `targetHeat` in auto, so
+  `kind_for_mode(Mode.AUTO)`, `SetpointRules.setpoint(Mode.AUTO, ...)`,
+  `temperature_changes(Mode.AUTO, ...)` and `climate_command(..., temperature=...)`
+  in auto raise `SetpointModeError`, except on a Mini-Split AC.
+  `DeviceState.setpoint_for(Mode.AUTO)` returns the new `auto_setpoint` (`None`
+  on a Central HVAC) instead of the heat setpoint.
+- A Mini-Split AC's auto target is written as `targetAuto.setpoint`: pass
+  `family=ModelFamily.AC` to `temperature_changes`, `MysaClient.set_temperature`
+  or `SetpointRules`, or use `climate_command(ModelFamily.AC, Mode.AUTO,
+  temperature=...)`. Its range is the remote's auto-mode list, else its
+  temperature range, else HomeKit's, else 16-30 °C in whole degrees. New:
+  `SetpointKind.AUTO`, `rules.family`, `DeviceState.auto_setpoint`. Derived from
+  Mysa's app; not verified on a device.
+- A Central HVAC's auto targets can change one at a time:
+  `climate_command(..., low=...)` or `high=...` alone writes only that field, and
+  `SetpointRules.heat_cool_side(side, value, other=...)` checks the gap to the
+  other side (new `SetpointGapUnknownError` when it is unknown). Derived from
+  the app; not verified on a device.
+- **Breaking:** `climate_command` raises `SetpointModeError` (still a
+  `ValueError`) for every refusal, and accepts emergency heat and no mode as
+  heat. `validate_cloud_command` has separate messages for an unknown other side
+  and a too-small gap.
+- **Breaking:** `SetpointKind` has a new member, `AUTO`; code that iterates
+  `SetpointKind` sees it.
+- Fix `build_schedule_events`, `resolve_hold`, `HoldCommand`, `ScheduleEventSpec`
+  and `make_state` refusing their own `Mode` values: `Mode.HEAT` raised
+  `KeyError: '4'`, and `HoldCommand(mode="heat")` dropped its temperature. They
+  accept a `Mode`, its name in any case, a capability name or a Home Assistant
+  mode name (`"heat_cool"` is auto) through the new `parse_mode`, and raise the
+  new `UnknownModeError` for anything else.
+- Add cooling setpoint limits (#10): `setpoint_limit_changes`,
+  `SetpointRules.limit` and `MysaClient.set_setpoint_limit` take
+  `kind=SetpointKind.COOL` and write `targetCool.lockoutMin` / `lockoutMax`; a
+  Mini-Split AC (`family=ModelFamily.AC`) gets the value under both sections.
+  New rule inputs `cool_min` / `cool_max` and `hardware_cool_range`. Models
+  without a cooling range are refused. Derived from the app; not verified on a
+  device.
+- Add `MysaClient.get_demand_response_state()` and `DemandResponseState` for
+  `GET /devices/{id}/drstate` (#5). An empty answer (`has_data` false, confirmed
+  on Baseboard Lite firmware 3.17.5.13) stays distinct from an explicit `none`;
+  `in_event(now)` applies the app's rule.
+- Add health and electrical fields to `DeviceState` (#1): `free_heap`,
+  `raw_temperature`, `core_temperature` and `voltage` (confirmed on the Lite);
+  `probe_temperature`, `power_wattage`, `power_duty_cycle` and `power_time` (from
+  the app); `power_current` (mA) and `max_current` (A, the highest load current
+  seen), from third-party captures; `power_consumed`, `instant_load`, `on_time`
+  and `effective_setpoint`, whose units or meaning are unverified. Plus the
+  `power_load_watts` and `ground_fault` properties, and
+  `demand_response_state` (the text next to `in_demand_response`).
+- Add read-only firmware calls for the newer models (#19):
+  `get_fleet_firmware_availability()`, which returns `in_fleet=False` for a
+  device outside the service (confirmed on the Lite), `get_fleet_firmware_status()`,
+  `FleetUpdateStatus`, `normalize_firmware_version()` and
+  `firmware_versions_match()`. Starting and cancelling an update are not included.
+- Add `MysaClient.get_sensor_links()` and `SensorLink` for `GET /linking` (#13,
+  read only).
+- Add `homekit.ESSENTIAL_FIELDS` and `HomeKitDevice.healthy`.
+- Add `runtime.errors.error_category()`, `is_outcome_unknown()` and
+  `ERROR_CATEGORIES`. **Changed:** `CommandRouter` uses them when the caller
+  passes no classifier; it used to record every error as `unexpected_error` and
+  never treat a cloud error as ambiguous.
+- Add `runtime.state.LOCAL_MODE_TO_MODE` and `MODE_TO_LOCAL_MODE`.
+- Add `MysaClient.get_usage_today()`, `UsageToday` and `local_day_start()`: usage
+  since the thermostat's local midnight, correct on 23- and 25-hour days.
 - **Breaking:** a bound no range advertises is no longer unchecked. Writes are
   checked and clamped against `SAFE_MINIMUM`-`SAFE_MAXIMUM` (5-35 °C) for
   targets and owner limits and ±`SAFE_OFFSET` (5 °C) for offsets in its place,

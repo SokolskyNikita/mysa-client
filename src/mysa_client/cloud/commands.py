@@ -23,16 +23,32 @@ from .const import (
     ButtonLock,
     HeaterType,
     Mode,
+    ModelFamily,
     Swing,
 )
+from .modes import parse_mode
 from .observations import STATE_FIELDS
 from .setpoints import (
     Setpoint,
+    SetpointKind,
     SetpointModeError,
     TemperatureOffset,
+    _auto_mode_error,
     require_limit,
     require_offset,
     require_setpoint,
+)
+
+# Families that have no cooling: a cooling limit is refused for them.
+_HEAT_ONLY_FAMILIES = frozenset(
+    {
+        ModelFamily.BASEBOARD_V1,
+        ModelFamily.BASEBOARD_V2,
+        ModelFamily.BASEBOARD_LITE,
+        ModelFamily.BASEBOARD_V3,
+        ModelFamily.INFLOOR,
+        ModelFamily.CLIMATE_SENSOR,
+    }
 )
 
 StateChanges = dict[str, dict[str, Any]]
@@ -181,7 +197,12 @@ _WEEKDAY_NUMBERS = {
 
 @dataclass(frozen=True, slots=True)
 class ScheduleEventSpec:
-    """A schedule event before encoding it for Mysa's cloud API."""
+    """A schedule event before encoding it for Mysa's cloud API.
+
+    ``mode`` may be given as any spelling :func:`~mysa_client.cloud.modes.parse_mode`
+    accepts and is stored as a ``Mode``; anything else raises
+    ``UnknownModeError``.
+    """
 
     days: tuple[str, ...]
     at: time
@@ -190,36 +211,65 @@ class ScheduleEventSpec:
     client_key: str
 
     def __post_init__(self) -> None:
-        """Reject temperatures that did not pass through ``SetpointRules``."""
+        """Normalise the mode; reject temperatures not from ``SetpointRules``."""
+        object.__setattr__(self, "mode", parse_mode(self.mode))
         if self.temperature is not None:
             require_setpoint(self.temperature)
 
 
-def temperature_changes(mode: Mode | None, temperature: Setpoint) -> StateChanges:
+def temperature_changes(
+    mode: Mode | None,
+    temperature: Setpoint,
+    *,
+    family: ModelFamily | None = None,
+) -> StateChanges:
     """Encode a setpoint change for the selected operating mode.
 
-    Cool writes ``targetCool``; heat, emergency heat, heat/cool (the single
-    target is the heat target), off and no mode write ``targetHeat``.
-    Fan-only, dry, sleep and pre-cool have no setpoint section, so they raise
-    ``SetpointModeError`` rather than write a target the mode ignores.
+    Cool writes ``targetCool``; heat, emergency heat, off and no mode write
+    ``targetHeat``. Heat/cool (``Mode.AUTO``) has a single target only on a
+    Mini-Split AC (``family`` is ``ModelFamily.AC``), written as
+    ``targetAuto.setpoint``; for any other family, or none, it raises
+    ``SetpointModeError`` (a Central HVAC's auto targets are the pair, see
+    :func:`auto_temperature_changes`). Fan-only, dry, sleep and pre-cool have
+    no setpoint section, so they raise ``SetpointModeError`` rather than write
+    a target the mode ignores.
+
+    The emergency-heat and AC auto encodings are derived from Mysa's app
+    4.21.1 (``useControlService``); not verified on a device.
     """
     value = require_setpoint(temperature)
     if mode in NO_SETPOINT_MODES:
         raise SetpointModeError(
             mode, f"Mode {mode.name.lower()} has no setpoint to write"
         )
+    if mode == Mode.AUTO:
+        if family != ModelFamily.AC:
+            raise _auto_mode_error(family)
+        return {"targetAuto": {"setpoint": value}}
     section = SETPOINT_SECTION_BY_MODE.get(mode or Mode.HEAT, "targetHeat")
     return {section: {"setpoint": value}}
 
 
-def auto_temperature_changes(low: Setpoint, high: Setpoint) -> StateChanges:
-    """APK 4.20.1 non-legacy AUTO uses a dedicated pair, never targetHeat/Cool."""
-    return {
-        "targetAuto": {
-            "heatSetpoint": require_setpoint(low, "low"),
-            "coolSetpoint": require_setpoint(high, "high"),
-        }
-    }
+def auto_temperature_changes(
+    low: Setpoint | None, high: Setpoint | None
+) -> StateChanges:
+    """Encode a Central HVAC's heat/cool targets, one or both.
+
+    Writes ``targetAuto.heatSetpoint`` for ``low`` and
+    ``targetAuto.coolSetpoint`` for ``high``, never ``targetHeat`` or
+    ``targetCool``. Mysa's app 4.21.1 writes only the side that changed; a
+    single side is derived from it and not verified on a device. Check the gap
+    to the other side first (:meth:`SetpointRules.heat_cool_side`). At least
+    one side is required.
+    """
+    fields: dict[str, float] = {}
+    if low is not None:
+        fields["heatSetpoint"] = require_setpoint(low, "low")
+    if high is not None:
+        fields["coolSetpoint"] = require_setpoint(high, "high")
+    if not fields:
+        raise ValueError("Supply low, high or both")
+    return {"targetAuto": fields}
 
 
 def hvac_fan_changes(mode: str) -> StateChanges:
@@ -243,8 +293,13 @@ def mode_changes(mode: Mode) -> StateChanges:
 
 
 def make_state(mode: Mode, temperature: Setpoint | None) -> StateChanges:
-    """Build the state object used by a hold or schedule event."""
+    """Build the state object used by a hold or schedule event.
+
+    ``mode`` may be any spelling :func:`~mysa_client.cloud.modes.parse_mode`
+    accepts.
+    """
     value = None if temperature is None else require_setpoint(temperature)
+    mode = parse_mode(mode)
     changes: StateChanges = mode_changes(mode)
     section = SETPOINT_SECTION_BY_MODE.get(mode)
     if section is not None and value is not None:
@@ -307,10 +362,42 @@ def button_lock_changes(value: ButtonLock) -> StateChanges:
     return {"physicalInterface": {"lockout": int(value)}}
 
 
-def setpoint_limit_changes(value: Setpoint, *, minimum: bool) -> StateChanges:
-    """Encode the minimum or maximum allowed heating setpoint."""
+def setpoint_limit_changes(
+    value: Setpoint,
+    *,
+    minimum: bool,
+    kind: SetpointKind = SetpointKind.HEAT,
+    family: ModelFamily | None = None,
+) -> StateChanges:
+    """Encode the minimum or maximum allowed heating or cooling setpoint.
+
+    ``kind`` is ``SetpointKind.HEAT`` (``targetHeat.lockoutMin`` /
+    ``lockoutMax``, the default) or ``SetpointKind.COOL`` (``targetCool``);
+    any other kind raises ``ValueError``, since Mysa's app has no limit for
+    the auto section. A cooling limit on a heat-only ``family`` (baseboards,
+    in-floor, the Climate Sensor) raises ``SetpointModeError``. On a Mini-Split
+    AC (``family`` is ``ModelFamily.AC``) the value goes under both
+    ``targetHeat`` and ``targetCool`` in one write, whichever ``kind``, as
+    Mysa's app does. Pass a ``SetpointLimit`` from ``SetpointRules.limit``
+    with the same ``kind``.
+
+    The cooling and AC encodings are derived from Mysa's app 4.21.1
+    (``HardwareLockoutOptions``); not verified on a device.
+    """
+    if kind not in (SetpointKind.HEAT, SetpointKind.COOL):
+        raise ValueError(
+            f"Setpoint limits are heating or cooling limits, not {kind.value}"
+        )
+    if kind == SetpointKind.COOL and family in _HEAT_ONLY_FAMILIES:
+        raise SetpointModeError(
+            Mode.COOL, f"A {family.value} thermostat has no cooling limits"
+        )
     field = "lockoutMin" if minimum else "lockoutMax"
-    return {"targetHeat": {field: require_limit(value, "value")}}
+    limit = require_limit(value, "value")
+    if family == ModelFamily.AC:
+        return {"targetHeat": {field: limit}, "targetCool": {field: limit}}
+    section = "targetCool" if kind == SetpointKind.COOL else "targetHeat"
+    return {section: {field: limit}}
 
 
 def temperature_offset_changes(value: TemperatureOffset) -> StateChanges:

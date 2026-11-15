@@ -15,6 +15,7 @@ MEASUREMENTS = frozenset(
 STATE_FIELDS = {
     "auto_heat_setpoint": ("targetAuto", "heatSetpoint"),
     "auto_cool_setpoint": ("targetAuto", "coolSetpoint"),
+    "auto_setpoint": ("targetAuto", "setpoint"),
     "auto_enabled": ("targetAuto", "enabled"),
     "auto_deadband": ("targetAuto", "deadband"),
     "cool_min": ("targetCool", "lockoutMin"),
@@ -87,6 +88,7 @@ def valid_value(field: str, value: Any) -> bool:
         "cool_setpoint",
         "auto_heat_setpoint",
         "auto_cool_setpoint",
+        "auto_setpoint",
         "cool_min",
         "cool_max",
         "setpoint_min",

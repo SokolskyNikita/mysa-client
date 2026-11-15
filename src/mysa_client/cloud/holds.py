@@ -9,6 +9,7 @@ from typing import Any
 
 from .commands import StateChanges, make_state
 from .const import NO_SETPOINT_MODES, Mode
+from .modes import parse_mode
 from .setpoints import (
     Setpoint,
     SetpointModeError,
@@ -20,14 +21,20 @@ from .setpoints import (
 
 @dataclass(frozen=True, slots=True)
 class HoldCommand:
-    """A resolved hold state ready to send to Mysa."""
+    """A resolved hold state ready to send to Mysa.
+
+    ``mode`` may be given as any spelling :func:`~mysa_client.cloud.modes.parse_mode`
+    accepts and is stored as a ``Mode``; anything else raises
+    ``UnknownModeError``.
+    """
 
     mode: Mode
     temperature: Setpoint | None
     until: datetime | None = None
 
     def __post_init__(self) -> None:
-        """Reject temperatures that did not pass through ``SetpointRules``."""
+        """Normalise the mode; reject temperatures not from ``SetpointRules``."""
+        object.__setattr__(self, "mode", parse_mode(self.mode))
         if self.temperature is not None:
             require_setpoint(self.temperature)
 
@@ -39,8 +46,8 @@ class HoldCommand:
 
 def resolve_hold(
     *,
-    requested_mode: Mode | None,
-    current_mode: Mode | None,
+    requested_mode: Mode | str | None,
+    current_mode: Mode | str | None,
     requested_temperature: float | Setpoint | None,
     current_temperature: float | Setpoint | None,
     until: datetime | None = None,
@@ -50,6 +57,9 @@ def resolve_hold(
     """Apply Mysa's default-mode and OFF/setpoint rules to a hold request.
 
     The hold's mode is ``requested_mode``, else ``current_mode``, else heat.
+    Either may be a ``Mode`` or any spelling
+    :func:`~mysa_client.cloud.modes.parse_mode` accepts (``"cool"``,
+    ``"HEAT"``, ``"heat_cool"``); anything else raises ``UnknownModeError``.
     With ``rules``, temperatures may be plain numbers and are normalised for
     that mode here: ``requested_temperature`` (in ``unit``) strictly, raising
     ``SetpointOutOfRangeError``; ``current_temperature`` (the device's target,
@@ -63,9 +73,9 @@ def resolve_hold(
     and the current target is dropped.
     """
     if requested_mode is not None:
-        mode = requested_mode
+        mode = parse_mode(requested_mode)
     elif current_mode is not None:
-        mode = current_mode
+        mode = parse_mode(current_mode)
     else:
         mode = Mode.HEAT
     temperature: Setpoint | None = None

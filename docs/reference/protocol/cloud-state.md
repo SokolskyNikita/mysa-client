@@ -69,8 +69,9 @@ The [state fixture](../../../tests/fixtures/state_batch.json) shows the full res
 
 | Section | Fields and interpretation |
 | --- | --- |
-| `latestTelemetry.reading` | `roomTemperature`, `humidity`, `rawTemperature`, `coreTemperature`, `heatSetpoint`, `effectiveSetpoint`, `mode`, `dutyCycle`, `onTime`, `rssi`, `freeHeap`, `voltage`, `maxCurrent`, `powerConsumed`, `instantLoad` |
-| `targetHeat` / `targetCool` | `setpoint`; the Lite's `targetHeat.reported` also has hardware limits `lockoutMin` / `lockoutMax` |
+| `latestTelemetry.reading` | `roomTemperature`, `humidity`, `rawTemperature`, `coreTemperature`, `heatSetpoint`, `effectiveSetpoint`, `mode`, `dutyCycle`, `onTime`, `rssi`, `freeHeap`, `voltage`, `maxCurrent`, `powerConsumed`, `instantLoad`; probe and In-Floor models also have `probeTemperature` (°C, app-derived) |
+| `targetHeat` / `targetCool` | `setpoint`; the Lite's `targetHeat.reported` also has hardware limits `lockoutMin` / `lockoutMax`; `targetCool` carries the cooling limits under the same names |
+| `targetAuto` | Central HVAC: `heatSetpoint`, `coolSetpoint`, `enabled`, `deadband`; Mini-Split AC: `setpoint` (Mysa's app 4.21.1, not observed on a device) |
 | `modes` | `mode`; AC also uses `fan_mode` and swing fields |
 | `physicalInterface` | `lockout`, `activeIntensity`, `idleIntensity`, `format`, `intensityMode` |
 | `identity.reported` | `family` (`"BB"` on the Lite), `model`, `fw` |
@@ -78,13 +79,25 @@ The [state fixture](../../../tests/fixtures/state_batch.json) shows the full res
 | `bbConfig.reported` | `controlType`: 8 fan forced, 9 baseboard |
 | `power.reported` | `voltage`, `current`, `wattage`, `dutyCycle`; all were zero on the Lite |
 | `diagnostics.reported` | `freeHeap`; demand-response `drState` was also recorded here |
-| `drState` | `inEvent`, `state`; a top-level object in the fixture, used by the Python parser |
+| `drState` | `inEvent`, `state`; a top-level object in the fixture, used by the Python parser. The separate [demand-response state](#demand-response-state) endpoint is another read |
 
 Telemetry voltage was 240 V, a configured value. The Lite has no current sensor; zero power fields do not show whether its heater is running. Python uses telemetry `dutyCycle > 0` for heating. The value is the relay's share of the reading interval, so it can be fractional.
+
+On 2026-11-15 an idle Lite reported `rawTemperature` 28.3 and `coreTemperature` 31.1 with `roomTemperature` 22.9, so both read as °C sensor temperatures above the corrected room value. The same reading had `freeHeap` 69320 (also in `diagnostics.reported`), `voltage` 240, and `effectiveSetpoint` 23 while the setpoint was 10; what `effectiveSetpoint` means is unconfirmed. `onTime`, `maxCurrent`, `powerConsumed`, `instantLoad` and every `power.reported` value except voltage were 0, so their units are unknown.
+
+Mysa's app 4.21.1 reads `power.reported.dutyCycle` as a percentage (0–100, unlike the 0–1 telemetry `dutyCycle`), `power.reported.wattage` as watts, and displays `round(dutyCycle × wattage / 100)` W, so `wattage` behaves as rated load. It treats `power.reported.voltage` 0 on an In-Floor as a ground fault, and stores `power.reported.current` as `currentMa` for the water-heater controller only. It never reads `freeHeap`, `rawTemperature`, `coreTemperature`, `maxCurrent`, `powerConsumed`, `instantLoad` or `onTime`. The [Python field names](../python/cloud.md#device-health-and-electrical-fields) record which of these are confirmed.
 
 Do not apply the `modes.mode` enum to `latestTelemetry.reading.mode`. On the Lite, heating appeared as telemetry mode 3 while `modes.reported.mode` was 4.
 
 Additional state-section names include `latestTelemetry`, `targetHeat`, `targetCool`, `targetAuto`, `modes`, `tracking`, `physicalInterface`, `hvacConfig`, `identity` and `telemetry`. The response can contain further sections, as the table shows.
+
+### Demand-response state
+
+`GET /devices/{dev}/drstate` returns `{"DeviceDrState": {...}}`. Mysa's app 4.21.1 calls it for every device when a home loads and keys the result by `DeviceDrState.Device`. Both Lites, not enrolled in demand response, returned HTTP 200 with an empty object on both the modern and the legacy host on 2026-11-15:
+
+[Not-enrolled demand-response state](../../../examples/cloud/drstate.not-enrolled.json)
+
+A populated record, from the app only, has `Device`, `NewState` (`event`, `none`, `preheat` or `precool`) and `Timestamp` (unix seconds), and passes through `DeviceTime`, `CurrentState`, `CurrentSetpoint` and `NewSetpoint`, whose types and setpoint unit are not established. The app counts a device as in an event when `NewState` is `event`, `preheat` or `precool` and the timestamp is no more than 8 whole hours old. An empty object (no data) differs from an explicit `none`. This record is separate from the structured `drState` section. See the [Python method](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads).
 
 ### Live mode and liveness
 
@@ -194,12 +207,13 @@ The following values are `CONTROL_MODE_TYPE`, used in `modes.mode`. Capability d
 The `Mode` enum defines these values. Python writes no setpoint for the "None"
 and "No established mapping" rows: `temperature_changes` raises
 `SetpointModeError` for fan-only, dry, sleep and pre-cool, and holds and
-schedule events in those modes and in off drop their temperature. A single
-target given while off is still written to `targetHeat` by
-`temperature_changes` and `climate_command`. `DeviceState` retains AUTO's two targets
-as `auto_heat_setpoint` and `auto_cool_setpoint`; `setpoint_for(AUTO)` returns
-the heat setpoint, since a single setpoint in heat/cool mode is the heat target
-(written to `targetHeat`). `commands.py` contains field encoders, while
+schedule events in those modes and in off drop their temperature. (Mysa's app
+4.21.1 does write `targetCool.setpoint` with a dry-mode change and both
+`targetHeat` and `targetCool` with a fan-only change; Python doesn't follow it
+there.) A single target given while off is still written to `targetHeat` by
+`temperature_changes` and `climate_command`. What auto mode's targets are
+depends on the model; see [Auto-mode targets](#auto-mode-targets).
+`commands.py` contains field encoders, while
 `device_commands.climate_command()` builds a semantic command with both a
 protocol payload and normalized expected effects. Run it through
 `validation.validate_cloud_command()` before sending. The direct
@@ -209,6 +223,60 @@ Both take `Setpoint` values from the
 values off its step grid;
 applications needing paired AUTO targets can build the command with
 `climate_command(low=..., high=...)` and send it with `execute_command()`.
+
+### Auto-mode targets
+
+Mysa's app 4.21.1 writes auto-mode targets as follows (static analysis of the
+setpoint writer in `useControlService`, bytecode function 41848, and of
+`AutoModeSetpointControl`). None of it has been verified on a device. Every
+write is `POST /state/{dev}/update` with `source: 3`.
+
+| Model | Mode | Body | Python |
+| --- | --- | --- | --- |
+| Mini-Split AC (`AC-V1-0`, `AC-V1`) | auto | `{"targetAuto": {"setpoint": v}}` | `climate_command(AC, Mode.AUTO, temperature=...)`, `temperature_changes(Mode.AUTO, ..., family=AC)` |
+| Central HVAC (`ST-V1-0`, `ST-V1`, `LV`) | auto, one side | `{"targetAuto": {"heatSetpoint": v}}` or `{"targetAuto": {"coolSetpoint": v}}` | `climate_command(CENTRAL_HVAC, Mode.AUTO, low=...)` or `high=...` |
+| Central HVAC | auto, both sides | `{"targetAuto": {"heatSetpoint": l, "coolSetpoint": h}}` (app 4.20.1) | `climate_command(..., low=..., high=...)` |
+| any | heat or emergency heat | `{"targetHeat": {"setpoint": v}}` (the bytecode tests `HEAT \|\| EMERGENCY_HEAT`; the decompiled pseudo-JS drops the emergency-heat test) | `temperature_changes`, `climate_command` |
+
+The app changes a Central HVAC's auto targets one at a time and refuses a
+change that would leave heat not below cool or the pair closer than the
+capability's `minSetpointDelta` (`areSetpointsValid`); it never moves the
+other target. `SetpointRules.heat_cool_side` applies the same check against
+the other side's current value, and `validate_cloud_command` repeats it
+against the state. A single temperature in auto mode on a Central HVAC, or on
+any model without an auto mode, raises `SetpointModeError`: the app never
+writes `targetHeat` for auto mode, which 0.3.0 of this library did.
+
+The app reads an AC's auto target back from `targetAuto.reported.setpoint`;
+`DeviceState.auto_setpoint` parses it and `setpoint_for(Mode.AUTO)` returns
+it, or `None` (a Central HVAC's pair is `auto_heat_setpoint` /
+`auto_cool_setpoint`). The AC's auto range is its remote's
+`SupportedModes["2"].temperatures`, else the record's `TempRange`
+(`DeviceRecord.ac_temperature_range(Mode.AUTO)`).
+
+### Setpoint limits
+
+Owner setpoint limits are `lockoutMin` / `lockoutMax` in `targetHeat`
+(heating) and `targetCool` (cooling), one limit per request. From Mysa's app
+4.21.1 (`HardwareLockoutOptions` and the lockout writers in
+`useControlService`, bytecode generators 41872 and 41873); the cooling and AC
+forms are not verified on a device:
+
+| Model | Limit | Body |
+| --- | --- | --- |
+| heat-capable models | heating minimum/maximum | `{"source": 3, "targetHeat": {"lockoutMin": v}}` / `lockoutMax` |
+| cooling models (Central HVAC) | cooling minimum/maximum | `{"source": 3, "targetCool": {"lockoutMin": v}}` / `lockoutMax` |
+| Mini-Split AC | either | the same value under both `targetHeat` and `targetCool` in one body |
+
+There is no limit for the auto section. Values are °C. Before writing, the app
+requires a new maximum at or above the current minimum, a new minimum at or
+below the current maximum, and the two at least 2 °C apart
+(`validateSetpointLimits`); it offers only values from the capability's cool
+`setpoint.validValues`, or for an AC the whole degrees of its remote's range.
+It confirms the write from `targetCool.reported.lockoutMin` / `lockoutMax`
+(`DeviceState.cool_min` / `cool_max`). Python's `SetpointRules.limit(...,
+kind=SetpointKind.COOL)` checks the cooling hardware range and keeps the limits
+strictly ordered, but does not require the 2 °C gap (nor does it for heating).
 
 `DutyCycleOpt` is a different enum: 0 is BB1 baseboard, 4 BB1 radiant, 5/6/7 BB1 fan forced short/medium/long, 8 BB2 fan forced and 9 BB2 baseboard. The Lite uses the BB2 values. The examined mobile app enables heater-type selection for V2 and Lite from firmware 3.17.0; that gate is not a hardware-verified minimum.
 
@@ -261,7 +329,7 @@ The newer sensor-linking flow uses `GET/POST /linking` with `{sourceId,targetId,
 
 Tracking modes are 0 ambient, 1 probe and 2 remote; 480 seconds is the reference TTL. The request does not submit a replacement temperature. The cloud supplies the linked sensor's readings.
 
-The Lite advertises `sensing.temperature.sensors.remote: false`, `trackingSensor.validValues: ["internal"]` and no external temperature probe connector. `GET /linking?targetId={dev}` returned an empty list. A direct remote-tracking write reached `desired`, but no `tracking` value appeared in `reported`, in either normal or live mode.
+The Lite advertises `sensing.temperature.sensors.remote: false`, `trackingSensor.validValues: ["internal"]` and no external temperature probe connector. `GET /linking?targetId={dev}` returned an empty list ([example](../../../examples/cloud/linking.empty.json), again on 2026-11-15). In Mysa's app 4.21.1 each entry has `linkId`, `sourceId`, `targetId`, `weight` and `enabled`; a link takes part when `enabled` is not false and `weight > 0`, and a link whose source is its target is the thermostat's own sensor. The app offers only Climate Sensors as sources and Central HVAC as targets. Python reads links with [`get_sensor_links()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads) and does not create, change or remove them. A direct remote-tracking write reached `desired`, but no `tracking` value appeared in `reported`, in either normal or live mode.
 
 In contrast, `ambientOffset` changes reached reported state within about a
 second and changed both cloud and HomeKit room temperature. Offset adjustment

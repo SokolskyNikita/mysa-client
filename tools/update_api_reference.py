@@ -23,6 +23,7 @@ SECTIONS = {
         "_temperature.py": (),
         "cloud/device_commands.py": (),
         "cloud/reconciliation.py": ("PendingCommand", "PendingCommandTracker"),
+        "cloud/usage.py": ("UsageToday",),
         "cloud/validation.py": (),
         "cloud/schedule_workflow.py": (
             "ScheduleWorkflow",
@@ -34,6 +35,7 @@ SECTIONS = {
         "cloud/account_workflow.py": (),
         "runtime/state.py": ("DeviceView",),
         "runtime/routing.py": ("CommandRouter", "LocalTransport"),
+        "runtime/errors.py": (),
         "runtime/telemetry.py": ("MqttTelemetryState", "MqttLiveStatusRenewal"),
     },
 }

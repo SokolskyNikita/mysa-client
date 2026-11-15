@@ -11,6 +11,7 @@ import inspect
 import time
 from typing import Any, Generic, Protocol, TypeVar
 
+from .errors import error_category as default_error_category, is_outcome_unknown
 from .events import NullHistory, RuntimeHistory, as_string_mapping
 
 Key = TypeVar("Key")
@@ -88,6 +89,10 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
 
     The router knows only semantic values and injected callbacks. It does not
     import a HomeKit SDK, an application framework, or a particular cloud API.
+    Unless the caller passes its own, ``error_category`` defaults to
+    ``runtime.errors.error_category`` and ``is_ambiguous_cloud_error`` to
+    ``runtime.errors.is_outcome_unknown``; the other predicates default to
+    never matching.
     """
 
     def __init__(
@@ -126,13 +131,9 @@ class CommandRouter(Generic[Key, Value, Cloud, State]):
         self._is_cloud_confirmation_error = is_cloud_confirmation_error or (
             lambda _error: False
         )
-        self._is_ambiguous_cloud_error = is_ambiguous_cloud_error or (
-            lambda _error: False
-        )
+        self._is_ambiguous_cloud_error = is_ambiguous_cloud_error or is_outcome_unknown
         self._is_reconcile_error = is_reconcile_error or (lambda _error: False)
-        self._error_category = error_category or (
-            lambda error: "none" if error is None else "unexpected_error"
-        )
+        self._error_category = error_category or default_error_category
         self._write_lock = asyncio.Lock()
         self._pending_local: asyncio.Task[None] | None = None
         self._pending_values: dict[str, Any] = {}
