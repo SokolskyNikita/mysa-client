@@ -61,6 +61,7 @@ from .models import (
     StateChange,
     UsageDay,
 )
+from .setpoints import Setpoint, TemperatureOffset
 from .trace import route_template
 from .validation import validate_cloud_command
 
@@ -595,7 +596,7 @@ class MysaClient:
         await self._request("POST", f"/state/{device_id}/update", body=body)
 
     async def set_temperature(
-        self, device_id: str, mode: Mode | None, temperature: float
+        self, device_id: str, mode: Mode | None, temperature: Setpoint
     ) -> None:
         """Set a thermostat's temperature target for the selected mode."""
         await self.update_state(device_id, temperature_changes(mode, temperature))
@@ -648,7 +649,7 @@ class MysaClient:
     async def set_setpoint_limit(
         self,
         device_id: str,
-        value: float,
+        value: Setpoint,
         *,
         minimum: bool,
         route: Literal["S", "R", "L"] = "S",
@@ -657,11 +658,13 @@ class MysaClient:
         await self._setting_route(
             device_id,
             setpoint_limit_changes(value, minimum=minimum),
-            {"MinSetpoint" if minimum else "MaxSetpoint": value},
+            {"MinSetpoint" if minimum else "MaxSetpoint": value.celsius},
             route,
         )
 
-    async def set_temperature_offset(self, device_id: str, value: float) -> None:
+    async def set_temperature_offset(
+        self, device_id: str, value: TemperatureOffset
+    ) -> None:
         """Set the room-temperature correction offset."""
         await self.update_state(device_id, temperature_offset_changes(value))
 

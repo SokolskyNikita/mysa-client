@@ -197,7 +197,10 @@ no scalar target. `commands.py` contains field encoders, while
 `device_commands.climate_command()` builds a semantic command with both a
 protocol payload and normalized expected effects. Run it through
 `validation.validate_cloud_command()` before sending. The direct
-`MysaClient.set_temperature()` method remains available for simple callers;
+`MysaClient.set_temperature()` method remains available for simple callers.
+Both take `Setpoint` values from the
+[setpoint rules](../python/cloud.md#setpoint-rules), since Mysa rejects
+values off its step grid;
 applications needing paired AUTO targets can use the command description and
 pass its payload to `update_state()`.
 

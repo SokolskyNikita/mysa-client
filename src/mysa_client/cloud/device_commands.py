@@ -15,6 +15,7 @@ from .commands import (
 )
 from .const import EXPERIMENTAL_CLOUD_FAMILIES, Mode, ModelFamily
 from .device import brightness_pair
+from .setpoints import Setpoint
 
 
 def climate_command(
@@ -22,11 +23,15 @@ def climate_command(
     selected_mode: Mode | None,
     *,
     mode: Mode | None = None,
-    temperature: float | None = None,
-    low: float | None = None,
-    high: float | None = None,
+    temperature: Setpoint | None = None,
+    low: Setpoint | None = None,
+    high: Setpoint | None = None,
 ) -> CloudCommand:
-    """Build one mode/target operation, preserving native HVAC auto targets."""
+    """Build one mode/target operation, preserving native HVAC auto targets.
+
+    Temperatures must come from ``SetpointRules``; a plain number raises
+    ``TypeError``.
+    """
     selected = mode if mode is not None else selected_mode
     changes = mode_changes(mode) if mode is not None else {}
     if low is not None or high is not None:

@@ -25,6 +25,7 @@ from .const import (
     Swing,
 )
 from .observations import STATE_FIELDS
+from .setpoints import Setpoint, TemperatureOffset, require_offset, require_setpoint
 
 StateChanges = dict[str, dict[str, Any]]
 SettingsChanges = dict[str, Any]
@@ -177,19 +178,30 @@ class ScheduleEventSpec:
     days: tuple[str, ...]
     at: time
     mode: Mode
-    temperature: float | None
+    temperature: Setpoint | None
     client_key: str
 
+    def __post_init__(self) -> None:
+        """Reject temperatures that did not pass through ``SetpointRules``."""
+        if self.temperature is not None:
+            require_setpoint(self.temperature)
 
-def temperature_changes(mode: Mode | None, temperature: float) -> StateChanges:
+
+def temperature_changes(mode: Mode | None, temperature: Setpoint) -> StateChanges:
     """Encode a setpoint change for the selected operating mode."""
+    value = require_setpoint(temperature)
     section = SETPOINT_SECTION_BY_MODE.get(mode or Mode.HEAT, "targetHeat")
-    return {section: {"setpoint": temperature}}
+    return {section: {"setpoint": value}}
 
 
-def auto_temperature_changes(low: float, high: float) -> StateChanges:
+def auto_temperature_changes(low: Setpoint, high: Setpoint) -> StateChanges:
     """APK 4.20.1 non-legacy AUTO uses a dedicated pair, never targetHeat/Cool."""
-    return {"targetAuto": {"heatSetpoint": low, "coolSetpoint": high}}
+    return {
+        "targetAuto": {
+            "heatSetpoint": require_setpoint(low, "low"),
+            "coolSetpoint": require_setpoint(high, "high"),
+        }
+    }
 
 
 def hvac_fan_changes(mode: str) -> StateChanges:
@@ -212,12 +224,13 @@ def mode_changes(mode: Mode) -> StateChanges:
     return {"modes": {"mode": int(mode)}}
 
 
-def make_state(mode: Mode, temperature: float | None) -> StateChanges:
+def make_state(mode: Mode, temperature: Setpoint | None) -> StateChanges:
     """Build the state object used by a hold or schedule event."""
+    value = None if temperature is None else require_setpoint(temperature)
     changes: StateChanges = mode_changes(mode)
     section = SETPOINT_SECTION_BY_MODE.get(mode)
-    if section is not None and temperature is not None:
-        changes[section] = {"setpoint": temperature}
+    if section is not None and value is not None:
+        changes[section] = {"setpoint": value}
     return changes
 
 
@@ -276,15 +289,15 @@ def button_lock_changes(value: ButtonLock) -> StateChanges:
     return {"physicalInterface": {"lockout": int(value)}}
 
 
-def setpoint_limit_changes(value: float, *, minimum: bool) -> StateChanges:
+def setpoint_limit_changes(value: Setpoint, *, minimum: bool) -> StateChanges:
     """Encode the minimum or maximum allowed heating setpoint."""
     field = "lockoutMin" if minimum else "lockoutMax"
-    return {"targetHeat": {field: value}}
+    return {"targetHeat": {field: require_setpoint(value, "value")}}
 
 
-def temperature_offset_changes(value: float) -> StateChanges:
+def temperature_offset_changes(value: TemperatureOffset) -> StateChanges:
     """Encode the ambient temperature offset."""
-    return {"tracking": {"ambientOffset": value}}
+    return {"tracking": {"ambientOffset": require_offset(value, "value")}}
 
 
 def heater_type_settings(heater_type: int | HeaterType) -> SettingsChanges:

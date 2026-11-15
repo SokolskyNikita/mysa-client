@@ -23,10 +23,13 @@ from mysa_client.cloud.schedule_workflow import (
     ScheduleWorkflowError,
     schedule_content_matches,
 )
+from mysa_client.cloud.setpoints import Setpoint, SetpointRules
 
 DEVICE = "0a0b0c0d0e01"
 OTHER = "0a0b0c0d0e02"
 HOME = "home-1"
+
+RULES = SetpointRules()
 
 
 class MemoryJournal:
@@ -174,7 +177,13 @@ async def test_schedule_replacement_preserves_shared_attachment_and_journal_shap
     journal = MemoryJournal()
     workflow = _workflow(transport, journal)
     await workflow.async_set(
-        [{"days": ["tue"], "time": time(7, 30), "temperature": 21}]
+        [
+            {
+                "days": ["tue"],
+                "time": time(7, 30),
+                "temperature": RULES.schedule_event(Mode.HEAT, 21),
+            }
+        ]
     )
 
     assert journal.data is None
@@ -241,7 +250,13 @@ async def test_lost_create_response_is_reconciled_as_success() -> None:
     journal = MemoryJournal()
 
     await _workflow(transport, journal).async_set(
-        [{"days": ["tue"], "time": time(7, 30), "temperature": 21}]
+        [
+            {
+                "days": ["tue"],
+                "time": time(7, 30),
+                "temperature": RULES.schedule_event(Mode.HEAT, 21),
+            }
+        ]
     )
 
     assert journal.data is None
@@ -257,7 +272,13 @@ async def test_app_edit_is_kept_when_replacement_recovery_is_uncertain() -> None
 
     with pytest.raises(ScheduleWorkflowError) as err:
         await _workflow(transport, journal).async_set(
-            [{"days": ["tue"], "time": time(7, 30), "temperature": 21}]
+            [
+                {
+                    "days": ["tue"],
+                    "time": time(7, 30),
+                    "temperature": RULES.schedule_event(Mode.HEAT, 21),
+                }
+            ]
         )
     assert err.value.code == "schedule-replacement-failed"
 
@@ -272,7 +293,15 @@ async def test_cancelled_delete_leaves_recoverable_journal() -> None:
     journal = MemoryJournal()
     workflow = _workflow(transport, journal)
     task = asyncio.create_task(
-        workflow.async_set([{"days": ["tue"], "time": time(7, 30), "temperature": 21}])
+        workflow.async_set(
+            [
+                {
+                    "days": ["tue"],
+                    "time": time(7, 30),
+                    "temperature": RULES.schedule_event(Mode.HEAT, 21),
+                }
+            ]
+        )
     )
     await transport.removed.wait()
     assert journal.data is not None
@@ -399,8 +428,8 @@ async def test_hold_resolution_and_application_preserve_explicit_off() -> None:
     command = resolve_hold(
         requested_mode=Mode.OFF,
         current_mode=Mode.HEAT,
-        requested_temperature=19,
-        current_temperature=20,
+        requested_temperature=RULES.setpoint(Mode.OFF, 19),
+        current_temperature=RULES.setpoint(Mode.HEAT, 20),
     )
     assert command.state == {"modes": {"mode": 0}}
     writes: list[Any] = []
@@ -411,7 +440,7 @@ async def test_hold_resolution_and_application_preserve_explicit_off() -> None:
     async def set_mode(mode: Mode) -> None:
         writes.append(("mode", mode))
 
-    async def set_temperature(temperature: float) -> None:
+    async def set_temperature(temperature: Setpoint) -> None:
         writes.append(("temperature", temperature))
 
     await async_apply_hold(

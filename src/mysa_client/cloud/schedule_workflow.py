@@ -19,6 +19,7 @@ from typing import Any, NoReturn, Protocol
 from .client import MysaClient
 from .commands import ScheduleEventSpec, encode_schedule_events
 from .const import Mode
+from .setpoints import require_setpoint
 
 
 class ScheduleJournal(Protocol):
@@ -112,19 +113,26 @@ def build_schedule_events(
     default_mode: Mode = Mode.HEAT,
     client_key: str = "mysa-client",
 ) -> list[dict[str, Any]]:
-    """Encode semantic weekday events in the cloud schedule representation."""
-    return encode_schedule_events(
-        [
+    """Encode semantic weekday events in the cloud schedule representation.
+
+    Each event's ``temperature`` must be ``None`` or a ``Setpoint`` from
+    ``SetpointRules.schedule_event``; a plain number raises ``TypeError``.
+    """
+    specs: list[ScheduleEventSpec] = []
+    for event in events:
+        temperature = event.get("temperature")
+        if temperature is not None:
+            require_setpoint(temperature, "Schedule event temperature")
+        specs.append(
             ScheduleEventSpec(
                 days=tuple(event["days"]),
                 at=event["time"],
                 mode=Mode[str(event.get("hvac_mode", default_mode.name)).upper()],
-                temperature=event.get("temperature"),
+                temperature=temperature,
                 client_key=client_key,
             )
-            for event in events
-        ]
-    )
+        )
+    return encode_schedule_events(specs)
 
 
 def schedule_content_matches(
