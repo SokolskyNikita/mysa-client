@@ -49,6 +49,8 @@ EXPECTED = {
     "SetpointLimitOrderError": "validation_failed",
     "SetpointModeError": "validation_failed",
     "SetpointGapTooSmallError": "validation_failed",
+    "SetpointGapUnknownError": "validation_failed",
+    "UnknownModeError": "validation_failed",
     "HomeKitError": "unexpected_error",
     "HomeKitConnectionError": "connection_error",
     "HomeKitNotFoundError": "connection_error",

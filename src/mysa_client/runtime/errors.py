@@ -19,6 +19,7 @@ from mysa_client.cloud.exceptions import (
     MysaNotFoundError,
     MysaRateLimitError,
 )
+from mysa_client.cloud.modes import UnknownModeError
 from mysa_client.cloud.schedule_workflow import ScheduleWorkflowError
 from mysa_client.cloud.setpoints import SetpointError
 
@@ -68,7 +69,7 @@ def error_category(error: BaseException | None) -> str:
     - ``"request_rejected"``: ``MysaApiError``, ``HomeKitWriteRejectedError``,
       ``HomeKitUnavailableError``, ``HomeKitMaxPeersError``,
       ``MqttProtocolError``.
-    - ``"validation_failed"``: ``SetpointError`` and its subclasses,
+    - ``"validation_failed"``: ``SetpointError`` and its subclasses, ``UnknownModeError``,
       ``HomeKitMalformedPinError``.
     - ``"connection_error"``: ``MysaConnectionError``,
       ``HomeKitConnectionError`` (including ``HomeKitNotFoundError``),
@@ -115,7 +116,12 @@ def error_category(error: BaseException | None) -> str:
     ):
         return "request_rejected"
     if isinstance(
-        error, (SetpointError, *_loaded(_HOMEKIT, "HomeKitMalformedPinError"))
+        error,
+        (
+            SetpointError,
+            UnknownModeError,
+            *_loaded(_HOMEKIT, "HomeKitMalformedPinError"),
+        ),
     ):
         return "validation_failed"
     if isinstance(

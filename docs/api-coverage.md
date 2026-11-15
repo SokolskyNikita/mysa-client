@@ -9,9 +9,9 @@ standalone client. HA orchestration and user-facing management behavior have a
 separate map in the [Mysa Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md).
 
 <!-- api-coverage:start -->
-![Cloud & account APIs: 61 of 89 implemented (68.5 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
+![Cloud & account APIs: 62 of 89 implemented (69.7 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
 
-**01 Cloud & account APIs:** 61 of 89 known rows fully implemented (68.5%). Partial: 2; missing: 26.
+**01 Cloud & account APIs:** 62 of 89 known rows fully implemented (69.7%). Partial: 1; missing: 26.
 
 **02 Local & provisioning APIs:** 12 of 22 known rows fully implemented (54.5%). Partial: 0; missing: 10.
 
@@ -19,7 +19,7 @@ separate map in the [Mysa Home Assistant repository](https://github.com/Sokolsky
 | --- | --- | ---: | ---: | ---: | ---: |
 | Cloud & account APIs | Authentication | 2 | 0 | 0 | 2 |
 | Cloud & account APIs | State & history | 22 | 0 | 7 | 29 |
-| Cloud & account APIs | Device controls | 17 | 1 | 12 | 30 |
+| Cloud & account APIs | Device controls | 18 | 0 | 12 | 30 |
 | Cloud & account APIs | Schedules & templates | 12 | 1 | 4 | 17 |
 | Cloud & account APIs | Device services | 8 | 0 | 3 | 11 |
 | Local & provisioning APIs | HomeKit | 12 | 0 | 1 | 13 |
