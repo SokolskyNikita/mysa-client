@@ -369,10 +369,15 @@ def test_central_hvac_uses_per_mode_ranges_and_steps() -> None:
     assert (heat.celsius, cool.celsius) == (20.5, 24.0)
     with pytest.raises(SetpointOutOfRangeError):
         rules.heat_cool(9.5, 24)
-    # A single setpoint in heat/cool mode is the heat target.
-    assert rules.setpoint(Mode.AUTO, 21.3).celsius == 21.5
-    assert rules.range_for(Mode.AUTO) == rules.range_for(SetpointKind.HEAT)
-    assert rules.fahrenheit_bounds(Mode.AUTO) == rules.fahrenheit_bounds(Mode.HEAT)
+    # A Central HVAC has no single target in heat/cool mode, only the pair.
+    hvac = SetpointRules(HVAC, family=ModelFamily.CENTRAL_HVAC)
+    for call in (
+        lambda: hvac.setpoint(Mode.AUTO, 21.3),
+        lambda: hvac.range_for(Mode.AUTO),
+        lambda: hvac.fahrenheit_bounds(Mode.AUTO),
+    ):
+        with pytest.raises(SetpointModeError, match="low, high or both"):
+            call()
 
 
 @pytest.mark.parametrize(
@@ -727,14 +732,16 @@ def test_limits_must_stay_strictly_ordered() -> None:
 # ---- One rule for a single setpoint in heat/cool mode -----------------------
 
 
-def test_single_setpoint_in_auto_is_the_heat_target_everywhere() -> None:
+def test_single_setpoint_in_auto_is_never_the_heat_target() -> None:
+    """0.3.0 wrote targetHeat; Mysa's app 4.21.1 never does (0.4.0)."""
     rules = SetpointRules(HVAC)
-    assert kind_for_mode(Mode.AUTO) is SetpointKind.HEAT
-    setpoint = rules.setpoint(Mode.AUTO, 21.3)
-    assert setpoint.celsius == 21.5
-    assert temperature_changes(Mode.AUTO, setpoint) == {
-        "targetHeat": {"setpoint": 21.5}
-    }
+    with pytest.raises(SetpointModeError):
+        kind_for_mode(Mode.AUTO)
+    with pytest.raises(SetpointModeError):
+        rules.setpoint(Mode.AUTO, 21.3)
+    heat = rules.setpoint(Mode.HEAT, 21.3)
+    with pytest.raises(SetpointModeError):
+        temperature_changes(Mode.AUTO, heat)
     state = DeviceState.from_api(
         "device",
         {
@@ -743,8 +750,8 @@ def test_single_setpoint_in_auto_is_the_heat_target_everywhere() -> None:
             "targetCool": {"reported": {"setpoint": 25.0}},
         },
     )
-    # A write confirmed by reading the mode's single setpoint can now match.
-    assert state.setpoint_for(state.mode) == setpoint.celsius
+    assert state.setpoint_for(state.mode) is None
+    assert state.setpoint_for(Mode.HEAT) == 21.5
     assert state.setpoint_for(Mode.COOL) == 25.0
 
 

@@ -9,9 +9,9 @@ standalone client. HA orchestration and user-facing management behavior have a
 separate map in the [Mysa Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md).
 
 <!-- api-coverage:start -->
-![Cloud & account APIs: 55 of 88 implemented (62.5 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
+![Cloud & account APIs: 56 of 88 implemented (63.6 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
 
-**01 Cloud & account APIs:** 55 of 88 known rows fully implemented (62.5%). Partial: 4; missing: 29.
+**01 Cloud & account APIs:** 56 of 88 known rows fully implemented (63.6%). Partial: 3; missing: 29.
 
 **02 Local & provisioning APIs:** 12 of 22 known rows fully implemented (54.5%). Partial: 0; missing: 10.
 
@@ -19,7 +19,7 @@ separate map in the [Mysa Home Assistant repository](https://github.com/Sokolsky
 | --- | --- | ---: | ---: | ---: | ---: |
 | Cloud & account APIs | Authentication | 2 | 0 | 0 | 2 |
 | Cloud & account APIs | State & history | 18 | 2 | 8 | 28 |
-| Cloud & account APIs | Device controls | 17 | 1 | 12 | 30 |
+| Cloud & account APIs | Device controls | 18 | 0 | 12 | 30 |
 | Cloud & account APIs | Schedules & templates | 12 | 1 | 4 | 17 |
 | Cloud & account APIs | Device services | 6 | 0 | 5 | 11 |
 | Local & provisioning APIs | HomeKit | 12 | 0 | 1 | 13 |
@@ -126,15 +126,15 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | ID | Operation | Status | Evidence and remaining gap |
 | --- | --- | --- | --- |
 | <a id="api-write-01"></a>API-WRITE-01 | Send arbitrary structured state update primitive | Implemented | [client.py](../src/mysa_client/cloud/client.py) update_state() sends the source and supplied sections to POST /state/{id}/update; this primitive is counted once and does not grant credit for every field. |
-| <a id="api-write-02"></a>API-WRITE-02 | Encode and send heat/cool setpoint changes | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) temperature_changes() and [client.py](../src/mysa_client/cloud/client.py) set_temperature() provide the named setpoint command. |
-| <a id="api-write-03"></a>API-WRITE-03 | Encode separate Central HVAC AUTO heat/cool targets | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) auto_temperature_changes() encodes the paired target fields; integration exposure is outside raw support. |
+| <a id="api-write-02"></a>API-WRITE-02 | Encode and send heat/cool setpoint changes | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) temperature_changes() and [client.py](../src/mysa_client/cloud/client.py) set_temperature() provide the named setpoint command, including emergency heat (`targetHeat`) and a Mini-Split AC's single auto target (`targetAuto.setpoint`, `family=ModelFamily.AC`); those two are derived from Mysa's app 4.21.1, not verified on a device. |
+| <a id="api-write-03"></a>API-WRITE-03 | Encode separate Central HVAC AUTO heat/cool targets | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) auto_temperature_changes() encodes the pair or one side alone, as Mysa's app 4.21.1 writes it; [setpoints.py](../src/mysa_client/cloud/setpoints.py) heat_cool_side() checks the gap to the other side. The single-side form is not verified on a device; integration exposure is outside raw support. |
 | <a id="api-write-04"></a>API-WRITE-04 | Encode and send operating mode changes | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) mode_changes() and [client.py](../src/mysa_client/cloud/client.py) set_mode() encode structured mode changes. |
 | <a id="api-write-05"></a>API-WRITE-05 | Encode fixed Central HVAC on/auto/off fan operation | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) hvac_fan_changes() encodes known on/auto/off runtime fields; control availability comes from capabilities. |
 | <a id="api-write-06"></a>API-WRITE-06 | Encode Mini-Split AC fan speed | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) fan_speed_changes() and [client.py](../src/mysa_client/cloud/client.py) set_fan_speed() encode AC fan commands. |
 | <a id="api-write-07"></a>API-WRITE-07 | Encode vertical or horizontal AC swing | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) swing_changes() and [client.py](../src/mysa_client/cloud/client.py) set_swing() encode the two directions. |
 | <a id="api-write-08"></a>API-WRITE-08 | Encode physical button lock/unlock | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) and [client.py](../src/mysa_client/cloud/client.py) provide the named basic 0/3 lock operation; extended PIN/threshold modes are separate. |
 | <a id="api-write-09"></a>API-WRITE-09 | Encode paired wake/idle brightness values | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) and [client.py](../src/mysa_client/cloud/client.py) encode both active and idle brightness settings. |
-| <a id="api-write-10"></a>API-WRITE-10 | Encode minimum/maximum setpoint limits | Partial | [client.py](../src/mysa_client/cloud/client.py) exposes set_setpoint_limit(); the structured command encoder targets heating limits, with no equivalent typed cooling-limit write. |
+| <a id="api-write-10"></a>API-WRITE-10 | Encode minimum/maximum setpoint limits | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) setpoint_limit_changes() and [client.py](../src/mysa_client/cloud/client.py) set_setpoint_limit() write heating (`targetHeat`) or cooling (`targetCool`, `kind=SetpointKind.COOL`) limits, and both sections for a Mini-Split AC; [setpoints.py](../src/mysa_client/cloud/setpoints.py) limit() checks a cooling limit against the cooling hardware range. The cooling and AC forms are derived from Mysa's app 4.21.1, not verified on a device. |
 | <a id="api-write-11"></a>API-WRITE-11 | Encode ambient temperature calibration offset | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) temperature_offset_changes() and [client.py](../src/mysa_client/cloud/client.py) set_temperature_offset() provide the named operation. |
 | <a id="api-write-12"></a>API-WRITE-12 | Encode Celsius/Fahrenheit thermostat display units | Implemented | [commands.py](../src/mysa_client/cloud/commands.py) display_unit_settings() and [client.py](../src/mysa_client/cloud/client.py) set_display_unit() encode the stored setting. |
 | <a id="api-write-13"></a>API-WRITE-13 | Encode heater profile for V1/V2/Lite baseboard families | Implemented | [const.py](../src/mysa_client/cloud/const.py) names known DutyCycleOpt integer values and [client.py](../src/mysa_client/cloud/client.py) set_heater_type() accepts the integer/enum. This method-level credit does not imply a particular caller interface. |

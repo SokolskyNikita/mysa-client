@@ -146,6 +146,8 @@ class DeviceState:
 
     auto_heat_setpoint: float | None = None
     auto_cool_setpoint: float | None = None
+    # targetAuto.setpoint: a Mini-Split AC's single target in auto mode.
+    auto_setpoint: float | None = None
     auto_enabled: bool | int | None = None
     auto_deadband: float | None = None
     cool_min: float | None = None
@@ -178,6 +180,7 @@ class DeviceState:
             device_id=device_id,
             auto_heat_setpoint=_float(_section(data, "targetAuto").get("heatSetpoint")),
             auto_cool_setpoint=_float(_section(data, "targetAuto").get("coolSetpoint")),
+            auto_setpoint=_float(_section(data, "targetAuto").get("setpoint")),
             auto_enabled=_section(data, "targetAuto").get("enabled"),
             auto_deadband=_float(_section(data, "targetAuto").get("deadband")),
             cool_min=_float(cool.get("lockoutMin")),
@@ -320,11 +323,15 @@ class DeviceState:
     def setpoint_for(self, mode: Mode | None) -> float | None:
         """The single setpoint that applies in a mode (heat setpoint by default).
 
-        In heat/cool mode a single setpoint means the heat target, the same
-        rule as ``kind_for_mode`` and ``temperature_changes``, which write it to
-        ``targetHeat``. A heat/cool pair is ``auto_heat_setpoint`` /
+        Cool reads ``targetCool``; heat, emergency heat, every other mode and
+        none read ``targetHeat``. Heat/cool mode reads ``auto_setpoint``
+        (``targetAuto.setpoint``), the single target only a Mini-Split AC has,
+        where ``temperature_changes`` writes it; it is ``None`` for a Central
+        HVAC, whose auto targets are the pair ``auto_heat_setpoint`` /
         ``auto_cool_setpoint``.
         """
+        if mode == Mode.AUTO:
+            return self.auto_setpoint
         if mode is not None and SETPOINT_SECTION_BY_MODE.get(mode) == "targetCool":
             return self.cool_setpoint
         return self.heat_setpoint

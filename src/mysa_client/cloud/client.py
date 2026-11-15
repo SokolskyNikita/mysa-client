@@ -61,7 +61,7 @@ from .models import (
     StateChange,
     UsageDay,
 )
-from .setpoints import Setpoint, TemperatureOffset
+from .setpoints import Setpoint, SetpointKind, TemperatureOffset
 from .trace import route_template
 from .validation import validate_cloud_command
 
@@ -596,10 +596,21 @@ class MysaClient:
         await self._request("POST", f"/state/{device_id}/update", body=body)
 
     async def set_temperature(
-        self, device_id: str, mode: Mode | None, temperature: Setpoint
+        self,
+        device_id: str,
+        mode: Mode | None,
+        temperature: Setpoint,
+        *,
+        family: ModelFamily | None = None,
     ) -> None:
-        """Set a thermostat's temperature target for the selected mode."""
-        await self.update_state(device_id, temperature_changes(mode, temperature))
+        """Set a thermostat's temperature target for the selected mode.
+
+        Heat/cool mode needs ``family=ModelFamily.AC`` (see
+        ``temperature_changes``).
+        """
+        await self.update_state(
+            device_id, temperature_changes(mode, temperature, family=family)
+        )
 
     async def set_mode(self, device_id: str, mode: Mode) -> None:
         """Set a thermostat's operating mode."""
@@ -652,12 +663,27 @@ class MysaClient:
         value: Setpoint,
         *,
         minimum: bool,
+        kind: SetpointKind = SetpointKind.HEAT,
+        family: ModelFamily | None = None,
         route: Literal["S", "R", "L"] = "S",
     ) -> None:
-        """Set the minimum or maximum allowed heating setpoint."""
+        """Set the minimum or maximum allowed heating or cooling setpoint.
+
+        ``kind`` and ``family`` are as in ``setpoint_limit_changes``: a cooling
+        limit writes ``targetCool``, and a Mini-Split AC gets the value under
+        both ``targetHeat`` and ``targetCool``. Cooling limits exist only in
+        the structured state, so a ``route`` other than ``"S"`` raises
+        ``ValueError`` for them. The cooling encodings are derived from Mysa's
+        app 4.21.1; not verified on a device.
+        """
+        changes = setpoint_limit_changes(
+            value, minimum=minimum, kind=kind, family=family
+        )
+        if route != "S" and "targetCool" in changes:
+            raise ValueError("Cooling limits support only the state route")
         await self._setting_route(
             device_id,
-            setpoint_limit_changes(value, minimum=minimum),
+            changes,
             {"MinSetpoint" if minimum else "MaxSetpoint": value.celsius},
             route,
         )

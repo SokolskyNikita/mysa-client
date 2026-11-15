@@ -67,9 +67,12 @@ and the MQTT `set_setpoint`, `set_mode(setpoint=...)` and
 `encode_thermostat_command(setpoint=...)` take a `Setpoint` too.
 
 `SetpointRules(capabilities=None, homekit_range=None, *, setpoint_min=None,
-setpoint_max=None, record=None)` derives one `SetpointRange(minimum, maximum,
-step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
-`offset_range` and `min_setpoint_delta`:
+setpoint_max=None, record=None, cool_min=None, cool_max=None, family=None)`
+derives one `SetpointRange(minimum, maximum, step)` per `SetpointKind` (heat,
+cool, auto heat, auto cool, and auto, a Mini-Split AC's single auto target),
+plus `offset_range` and `min_setpoint_delta`. `family` (exposed as
+`rules.family`) is read from `record.model`, else `capabilities.model`, when not
+given:
 
 - Heat intersects the HomeKit `(min, max, step)` range, the capability heat
   range and the owner's limits, as `heating_range()` does; the HomeKit step wins.
@@ -79,9 +82,18 @@ step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
   the remote's `SupportedModes[<mode>].temperatures`, else `TempRange`, step 1 °C
   unless the list is finer), and failing that from the HomeKit range. An AC
   record's heat-mode range likewise stands in for a missing capability heat
-  range. Other models' records are not read for ranges.
+  range. Other models' records are not read for ranges. The owner's cooling
+  limits `cool_min` / `cool_max` (`DeviceState.cool_min` / `cool_max`) narrow
+  it. `hardware_cool_range` is the capability or AC record cool range without
+  them (the HomeKit range does not count).
 - Both heat/cool ranges come from capabilities only. Owner limits apply to
-  none of these.
+  neither.
+- Auto (`SetpointKind.AUTO`) exists only when `family` is `ModelFamily.AC`:
+  the record's auto-mode range (`ac_temperature_range(Mode.AUTO)`:
+  `SupportedModes["2"].temperatures`, else `TempRange`), else the HomeKit
+  range, else 16–30 °C in whole degrees (`AC_MIN_TEMP`–`MAX_TEMP`, what Mysa's
+  app 4.21.1 shows an AC without a `TempRange`). For other families its bounds
+  are unknown.
 - Without capabilities or a record, only the HomeKit range applies. Any part
   may be absent: a missing step is 0.5 °C, and a missing bound stays `None` in
   `range_for` but is checked as described under **Unknown bounds** below.
@@ -90,11 +102,30 @@ step)` per `SetpointKind` (heat, cool, auto heat, auto cool), plus
   `min_setpoint_delta`) raises `SetpointConfigError` (`name`, `value`) when the
   rules are built.
 
-In heat/cool mode (`Mode.AUTO`) a single setpoint means the heat target: it
-uses the heat range and is written to `targetHeat`. `kind_for_mode`,
-`temperature_changes`, `SetpointRules.setpoint` and `DeviceState.setpoint_for`
-all follow this rule, so a single-setpoint write in auto mode can be confirmed
-by reading the mode's setpoint back. Use `heat_cool(low, high)` for the pair.
+In heat/cool mode (`Mode.AUTO`) only a Mini-Split AC has a single target, as
+in Mysa's app 4.21.1 ([auto-mode targets](../protocol/cloud-state.md#auto-mode-targets)):
+`kind_for_mode(Mode.AUTO, ModelFamily.AC)` is `SetpointKind.AUTO`, and
+`temperature_changes(Mode.AUTO, sp, family=ModelFamily.AC)` and
+`climate_command(ModelFamily.AC, Mode.AUTO, temperature=sp)` write
+`targetAuto.setpoint`, which `DeviceState.setpoint_for(Mode.AUTO)` reads back
+(`auto_setpoint`). For any other family, or none, a single temperature in auto
+mode raises `SetpointModeError` in all four. A Central HVAC's auto targets are
+the pair: `heat_cool(low, high)` for both, or `heat_cool_side("heat" | "cool",
+value, other=...)` to change one and keep the other, written with
+`climate_command(..., low=...)` or `high=...` alone; `setpoint_for(Mode.AUTO)`
+is `None` for it. 0.3.0 treated a single auto setpoint as the heat target and
+wrote `targetHeat`; the app never does. The AC auto and single-side writes are
+derived from the app and not verified on a device.
+
+`climate_command(family, selected_mode, *, mode=None, temperature=None,
+low=None, high=None)` writes a single `temperature` to `targetHeat` in heat,
+emergency heat, off or no mode (the app's writer tests `HEAT || EMERGENCY_HEAT`)
+and to `targetCool` in cool. Every refusal raises `SetpointModeError` (`mode`,
+possibly `None`): a single temperature in auto mode except on an AC, `low` /
+`high` outside auto mode or on anything but a Central HVAC, `temperature`
+together with `low` / `high`, and fan-only, dry, sleep or pre-cool.
+`validate_cloud_command` checks a single auto side against the state's other
+side (or a pending write of it) and refuses it when that side is unknown.
 Fan-only, dry, sleep and pre-cool have no setpoint section (see the
 [mode table](../protocol/cloud-state.md#mode-and-heater-enums)), so
 `temperature_changes` raises `SetpointModeError` for them instead of writing
@@ -108,9 +139,10 @@ converts with `(f - 32) / 1.8` before rounding (an offset delta with `/ 1.8`).
 
 | Method | Range used | Returns |
 | --- | --- | --- |
-| `setpoint(mode, value)` | Cool for `Mode.COOL`, heat otherwise (including `Mode.AUTO`) | `Setpoint` |
+| `setpoint(mode, value)` | Cool for `Mode.COOL`; auto for `Mode.AUTO` on a Mini-Split AC (`SetpointModeError` on any other family); heat otherwise | `Setpoint` |
 | `heat_cool(low, high)` | Auto heat and auto cool; the rounded gap must be at least `min_setpoint_delta` (0 when unknown) | `(Setpoint, Setpoint)` |
-| `limit(value, minimum=...)` | Hardware heat range, then strictly below `setpoint_max` (a minimum) or above `setpoint_min` (a maximum) | `SetpointLimit` |
+| `heat_cool_side(side, value, *, other)` | Auto heat (`side="heat"`) or auto cool (`"cool"`); then the gap to `other`, the other side's current target in °C or a `Setpoint`. `other=None` raises `SetpointGapUnknownError` (`side`) | `Setpoint` |
+| `limit(value, minimum=..., kind=SetpointKind.HEAT)` | Hardware heat range, then strictly below `setpoint_max` (a minimum) or above `setpoint_min` (a maximum). With `kind=SetpointKind.COOL`, `hardware_cool_range` and `cool_max` / `cool_min`; `SetpointModeError` when the model advertises no cooling range. Other kinds raise `ValueError` | `SetpointLimit` |
 | `offset(delta)` | Offset range | `TemperatureOffset` |
 | `schedule_event(mode, value)` | Same as `setpoint` | `Setpoint` |
 | `range_for(kind_or_mode)` | — | `SetpointRange` |
@@ -145,7 +177,24 @@ one step (one °F) above the minimum.
 checks the new value against the other current limit and raises
 `SetpointLimitOrderError` (`value`, `other`, `minimum`) when they are equal or
 reversed, whatever `strict` says; `validate_cloud_command` refuses the same pairs
-with `"Minimum setpoint must be below the maximum"`. Equal limits are refused
+with `"Minimum setpoint must be below the maximum"` (and the cooling pair with
+`"Minimum cooling setpoint must be below the maximum"`). Mysa's app also keeps
+the two limits at least 2 °C apart; these rules don't.
+
+**Limit writes.** `setpoint_limit_changes(value, *, minimum, kind=SetpointKind.HEAT,
+family=None)` writes `targetHeat.lockoutMin` / `lockoutMax`, or `targetCool` for
+`kind=SetpointKind.COOL`. A Mini-Split AC (`family=ModelFamily.AC`) gets the
+value under both sections in one body, whatever `kind`, as Mysa's app does.
+A cooling limit for a heat-only family raises `SetpointModeError`; any kind
+other than heat or cool raises `ValueError` (the app has no auto-section
+limit). `MysaClient.set_setpoint_limit(device_id, value, *, minimum,
+kind=SetpointKind.HEAT, family=None, route="S")` sends it; cooling limits
+have no settings-record field, so a `route` other than `"S"` raises
+`ValueError` for them. The read-back is `DeviceState.cool_min` / `cool_max`.
+One `kind` parameter, defaulting to heat, keeps 0.3.0 calls unchanged and
+matches the `SetpointKind` that `limit()` checked the value against; pass the
+same `kind` to both. The cooling and AC encodings are derived from Mysa's app
+4.21.1 and not verified on a device. Equal limits are refused
 because they leave a single allowed target: every other write would fail and
 every range a UI shows would collapse to one point.
 
@@ -167,7 +216,7 @@ values beyond `MAX_MAGNITUDE` raise `SetpointValueError` (with `value`) in both
 modes. A heat/cool pair that is too
 close always raises `SetpointGapTooSmallError` with `low`, `high`, `gap` and
 `required`; the rules never move a value to make room. These errors,
-`SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`,
+`SetpointGapUnknownError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`,
 `SetpointValueError` and `SetpointConfigError` subclass `SetpointError`, a
 `ValueError`; a non-number value still raises `TypeError`. All numbers are in °C so callers can word
 messages in the user's unit.
@@ -181,6 +230,14 @@ delta.
 
 <a id="holds-and-schedules"></a>
 ### Holds and schedules
+
+Modes in holds and schedule events go through `modes.parse_mode`, which
+accepts a `Mode`, its name in any case (`"HEAT"`, `"heat"`, `"Fan_Only"`), the
+capability names (`"fanOnly"`, `"emergencyHeat"`) and Home Assistant's
+lowercase `HVACMode` values (`"heat_cool"` is `Mode.AUTO`), and raises
+`UnknownModeError` (a `ValueError` with `value`) for anything else, including a
+plain number. `HoldCommand` and `ScheduleEventSpec` normalise their `mode`
+the same way.
 
 `resolve_hold(*, requested_mode, current_mode, requested_temperature,
 current_temperature, until=None, rules=None, unit="C")` picks the hold's mode
@@ -199,7 +256,8 @@ rules.
 `build_schedule_events(events, *, default_mode=Mode.HEAT,
 client_key="mysa-client", rules=None, unit="C")` does the same per event: with
 `rules`, each plain temperature is in `unit` and goes through
-`rules.schedule_event` for the event's `hvac_mode`, strictly. The temperature
+`rules.schedule_event` for the event's `hvac_mode` (`default_mode` when it is
+missing or `None`; both take any spelling `parse_mode` accepts), strictly. The temperature
 of an `off`, `fan_only`, `dry`, `sleep` or `pre_cool` event is dropped unchecked, and an `auto` event with a temperature raises
 `SetpointModeError`.
 
@@ -235,7 +293,7 @@ These submodule helpers are supported for standalone callers and integrations:
 | --- | --- |
 | [`commands.py`](../../../src/mysa_client/cloud/commands.py) | `CloudCommand`, `state_command`, `settings_command`, and field encoders including `auto_temperature_changes`, `button_lock_changes`, `display_brightness_changes`, `display_unit_settings`, `fan_speed_changes`, `heater_type_settings`, `hvac_fan_changes`, `mode_changes`, `setpoint_limit_changes`, `swing_changes`, `temperature_changes`, `temperature_offset_changes` |
 | [`device_commands.py`](../../../src/mysa_client/cloud/device_commands.py) | `climate_command`, `brightness_command`, `hvac_fan_command`, `hvac_fan_speed_command`, `display_unit_command` |
-| [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, `SetpointLimit`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`, `SetpointValueError`, `SetpointConfigError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_limit`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM`, `SAFE_MINIMUM`, `SAFE_MAXIMUM`, `SAFE_OFFSET`, `MAX_MAGNITUDE` (see [setpoint rules](#setpoint-rules)) |
+| [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py) | `SetpointRules`, `Setpoint`, `TemperatureOffset`, `SetpointKind`, `SetpointRange`, `SetpointClamp`, `SetpointLimit`, the `SetpointError` hierarchy (`SetpointOutOfRangeError`, `SetpointGapTooSmallError`, `SetpointGapUnknownError`, `SetpointLimitOrderError`, `SetpointModeError`, `SetpointRangeEmptyError`, `SetpointValueError`, `SetpointConfigError`), `fahrenheit_bounds`, `fahrenheit_label`, `fahrenheit_offset`, `limits_ordered`, `round_to_step`, `round_half_up`, `to_celsius`, `kind_for_mode`, `require_setpoint`, `require_limit`, `require_offset`, `DEFAULT_STEP`, `DEFAULT_MINIMUM`, `DEFAULT_MAXIMUM`, `SAFE_MINIMUM`, `SAFE_MAXIMUM`, `SAFE_OFFSET`, `MAX_MAGNITUDE` (see [setpoint rules](#setpoint-rules)) |
 | [`device.py`](../../../src/mysa_client/cloud/device.py) | `basic_modes`, `brightness_pair`, `heating_range`, `hvac_activity`, `hvac_fan_operation` |
 | [`const.py`](../../../src/mysa_client/cloud/const.py) | `API_BASE`, `EXPERIMENTAL_CLOUD_FAMILIES`, `SWING_VERTICAL`, `model_family`; public models and enums are also re-exported at the package level |
 | [`models.py`](../../../src/mysa_client/cloud/models.py) | The response models exported by the package root, retained at this submodule path for direct imports |
@@ -246,6 +304,7 @@ These submodule helpers are supported for standalone callers and integrations:
 | [`validation.py`](../../../src/mysa_client/cloud/validation.py) | `validate_basic_command` and `validate_cloud_command` for device/capability validation |
 | [`schedule_workflow.py`](../../../src/mysa_client/cloud/schedule_workflow.py) | `ScheduleWorkflow`, `ScheduleJournal`, `ScheduleTransport`, and `MysaScheduleTransport` for replacement, clear, and recovery |
 | [`holds.py`](../../../src/mysa_client/cloud/holds.py) | `resolve_hold`, `async_apply_hold` |
+| [`modes.py`](../../../src/mysa_client/cloud/modes.py) | `parse_mode`, `UnknownModeError` |
 | [`account_workflow.py`](../../../src/mysa_client/cloud/account_workflow.py) | Model eligibility, minimal account claim, and best-effort cleanup before account removal |
 
 Other names prefixed with an underscore are private implementation details.

@@ -7,7 +7,7 @@ import pytest
 from mysa_client.cloud import DeviceState, Mode, ModelFamily
 from mysa_client.cloud.device import brightness_pair, hvac_activity, hvac_fan_operation
 from mysa_client.cloud.device_commands import brightness_command, climate_command
-from mysa_client.cloud.setpoints import SetpointRules
+from mysa_client.cloud.setpoints import SetpointModeError, SetpointRules
 
 RULES = SetpointRules()
 
@@ -42,7 +42,7 @@ def test_brightness_adjusts_both_fields_and_exposes_same_effects_as_payload():
         brightness_pair(float("nan"), active=False)
 
 
-def test_auto_command_is_atomic_and_requires_both_targets():
+def test_auto_command_is_atomic_and_needs_heat_cool_mode():
     low, high = RULES.heat_cool(19, 23)
     command = climate_command(
         ModelFamily.CENTRAL_HVAC, Mode.HEAT, mode=Mode.AUTO, low=low, high=high
@@ -54,8 +54,12 @@ def test_auto_command_is_atomic_and_requires_both_targets():
     }
     assert "targetAuto" in command.payload
     assert "targetHeat" not in command.payload
-    with pytest.raises(ValueError, match="both low and high"):
-        climate_command(ModelFamily.CENTRAL_HVAC, Mode.AUTO, low=low)
+    # One side alone is written alone (0.4.0); outside auto it is refused.
+    assert climate_command(ModelFamily.CENTRAL_HVAC, Mode.AUTO, low=low).payload == {
+        "targetAuto": {"heatSetpoint": 19.0}
+    }
+    with pytest.raises(SetpointModeError, match="heat/cool mode"):
+        climate_command(ModelFamily.CENTRAL_HVAC, Mode.HEAT, low=low)
 
 
 def test_fan_circulation_is_distinct_from_auto():

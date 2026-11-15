@@ -353,7 +353,6 @@ def test_temperature_changes_refuse_modes_without_a_setpoint(mode: Mode) -> None
     [
         (None, "targetHeat"),
         (Mode.OFF, "targetHeat"),
-        (Mode.AUTO, "targetHeat"),
         (Mode.HEAT, "targetHeat"),
         (Mode.EMERGENCY_HEAT, "targetHeat"),
         (Mode.COOL, "targetCool"),

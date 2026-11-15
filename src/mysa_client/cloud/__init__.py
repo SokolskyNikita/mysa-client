@@ -53,6 +53,7 @@ from .models import (
     UsageDay,
     value_range,
 )
+from .modes import UnknownModeError, parse_mode
 from .reconciliation import PendingCommand, PendingCommandTracker, reconcile
 from .setpoints import (
     Setpoint,
@@ -60,6 +61,7 @@ from .setpoints import (
     SetpointConfigError,
     SetpointError,
     SetpointGapTooSmallError,
+    SetpointGapUnknownError,
     SetpointKind,
     SetpointLimit,
     SetpointLimitOrderError,
@@ -114,6 +116,7 @@ __all__ = [
     "SetpointConfigError",
     "SetpointError",
     "SetpointGapTooSmallError",
+    "SetpointGapUnknownError",
     "SetpointKind",
     "SetpointLimit",
     "SetpointLimitOrderError",
@@ -127,6 +130,7 @@ __all__ = [
     "Swing",
     "TemperatureOffset",
     "Tokens",
+    "UnknownModeError",
     "UsageBucket",
     "UsageDay",
     "encode_schedule_events",
@@ -137,6 +141,7 @@ __all__ = [
     "jwt_claims",
     "make_state",
     "model_family",
+    "parse_mode",
     "reconcile",
     "settings_command",
     "state_command",
