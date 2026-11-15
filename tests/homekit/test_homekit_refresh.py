@@ -8,6 +8,7 @@ from aiohomekit.model.characteristics import CharacteristicsTypes
 from aiohomekit.testing import PairingTester
 import pytest
 
+from mysa_client.cloud import SetpointRules
 from mysa_client.homekit import (
     Field,
     HomeKitCharacteristicReadError,
@@ -72,7 +73,13 @@ async def test_refresh_replaces_addresses_values_limits_and_subscriptions(trigge
         assert len(pairing.subscriptions) == 4
         assert events[-1].capabilities_changed
         assert len(pairing.listeners) == len(pairing.config_changed_listeners) == 1
-        await device.async_write({Field.TARGET_TEMPERATURE: 23})
+        await device.async_write(
+            {
+                Field.TARGET_TEMPERATURE: SetpointRules(
+                    homekit_range=device.temperature_range
+                ).setpoint(None, 23)
+            }
+        )
         assert (await device.async_read((Field.TARGET_TEMPERATURE,)))[
             Field.TARGET_TEMPERATURE
         ] == 23

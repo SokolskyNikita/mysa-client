@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from mysa_client.cloud import Setpoint, SetpointRules
 from mysa_client.mqtt import (
     AwsCredentials,
     CommandFailure,
@@ -20,6 +21,14 @@ from mysa_client.mqtt import (
 )
 
 DEVICE = "device-one"
+RULES = SetpointRules(homekit_range=(5, 30, 0.5))
+
+
+def ruled(celsius: float) -> Setpoint:
+    """A setpoint normalised by the rules, as every caller must supply."""
+    return RULES.setpoint(None, celsius)
+
+
 OTHER_DEVICE = "device-two"
 MODEL = "BB-V2-0-L"
 ID_TOKEN = (
@@ -346,7 +355,7 @@ async def test_setpoint_requires_correlated_device_ack_and_reports_puback() -> N
     """A command is confirmed only by the matching device-origin state report."""
     client, clients = _make_client()
     await client.connect()
-    result = await client.set_setpoint(DEVICE, 22.5)
+    result = await client.set_setpoint(DEVICE, ruled(22.5))
     assert result.broker_accepted is True
     assert result.device_confirmed
     assert result.failure is None
@@ -359,6 +368,36 @@ async def test_setpoint_requires_correlated_device_ack_and_reports_puback() -> N
     assert request["dest"] == {"type": 1, "ref": DEVICE}
     assert isinstance(request["body"]["cmd"], list)
     assert request["body"]["cmd"] == [{"tm": -1, "sp": 22.5}]
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_setpoint_sends_the_ruled_celsius() -> None:
+    """An off-grid request (HA's 73 °F) is sent as the rules' rounded value."""
+    client, clients = _make_client()
+    await client.connect()
+    result = await client.set_setpoint(DEVICE, RULES.setpoint(None, 73, unit="F"))
+    assert result.device_confirmed
+    assert clients[0].publications[0][1]["body"]["cmd"] == [{"tm": -1, "sp": 23.0}]
+    result = await client.set_mode(DEVICE, "heat", setpoint=ruled(21))
+    assert result.device_confirmed
+    assert clients[0].publications[1][1]["body"]["cmd"] == [
+        {"tm": -1, "sp": 21.0, "md": 3}
+    ]
+    await client.close()
+
+
+@pytest.mark.parametrize("value", [22.5, 22, True, float("nan"), "22.5"])
+@pytest.mark.asyncio
+async def test_plain_setpoints_are_rejected_before_publication(value: Any) -> None:
+    """set_setpoint and set_mode refuse anything that skipped SetpointRules."""
+    client, clients = _make_client()
+    await client.connect()
+    with pytest.raises(TypeError, match="setpoint must be a Setpoint from"):
+        await client.set_setpoint(DEVICE, value)
+    with pytest.raises(TypeError, match="setpoint must be a Setpoint from"):
+        await client.set_mode(DEVICE, "heat", setpoint=value)
+    assert clients[0].publications == []
     await client.close()
 
 
@@ -385,7 +424,7 @@ async def test_invalid_or_missing_ack_never_confirms(
         command_timeout=0.02,
     )
     await client.connect()
-    result = await client.set_setpoint(DEVICE, 22.5)
+    result = await client.set_setpoint(DEVICE, ruled(22.5))
     assert result.broker_accepted is True
     assert result.device_confirmed is False
     assert result.failure is failure
@@ -398,7 +437,7 @@ async def test_command_requires_lite_model_and_allowlisted_device() -> None:
     client, _clients = _make_client(devices={DEVICE: "BB-V2-0", OTHER_DEVICE: MODEL})
     await client.connect()
     with pytest.raises(MqttProtocolError):
-        await client.set_setpoint(DEVICE, 22)
+        await client.set_setpoint(DEVICE, ruled(22))
     with pytest.raises(ValueError, match="allowlist"):
         await client.request_live_status("not-owned")
     await client.close()
@@ -467,7 +506,7 @@ async def test_command_timeout_does_not_replay_after_reconnect() -> None:
     """A timed-out command is not replayed when the transport reconnects."""
     client, clients = _make_client(publish_mode="no_ack", command_timeout=0.02)
     await client.connect()
-    result = await client.set_setpoint(DEVICE, 22.5)
+    result = await client.set_setpoint(DEVICE, ruled(22.5))
     assert result.broker_accepted is True
     assert result.device_confirmed is False
     assert result.failure is CommandFailure.TIMEOUT
@@ -483,7 +522,7 @@ async def test_disconnect_returns_unconfirmed_command_result() -> None:
     """A disconnect during publish cannot be reported as device confirmation."""
     client, clients = _make_client(publish_mode="disconnect", command_timeout=0.2)
     await client.connect()
-    result = await client.set_setpoint(DEVICE, 22.5)
+    result = await client.set_setpoint(DEVICE, ruled(22.5))
     assert result.broker_accepted is True
     assert result.device_confirmed is False
     assert result.failure is CommandFailure.DISCONNECTED
@@ -497,7 +536,7 @@ async def test_cancelling_command_cleans_pending_correlations() -> None:
     client, _clients = _make_client(publish_mode="no_ack", command_timeout=1)
     await client.connect()
     operation = asyncio.create_task(
-        client.set_setpoint(DEVICE, 22.5, timeout_seconds=1)
+        client.set_setpoint(DEVICE, ruled(22.5), timeout_seconds=1)
     )
     await _wait_until(lambda: bool(client._pending_commands))
     operation.cancel()

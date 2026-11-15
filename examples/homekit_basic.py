@@ -13,6 +13,7 @@ from typing import Any
 
 from zeroconf.asyncio import AsyncZeroconf
 
+from mysa_client.cloud import SetpointRules
 from mysa_client.homekit import Field, HomeKitEvent, HomeKitProtocol
 
 DISCOVERY_SECONDS = 8
@@ -156,18 +157,16 @@ async def run(args: argparse.Namespace) -> None:
             if args.set_target_c is not None:
                 if not math.isfinite(args.set_target_c):
                     raise ValueError("Setpoint must be a finite Celsius value")
-                low, high, step = device.temperature_range
-                if low is None or high is None or not low <= args.set_target_c <= high:
+                low, high, _step = device.temperature_range
+                if low is None or high is None:
                     raise ValueError(
-                        "Setpoint is outside the accessory's advertised range"
+                        "The accessory does not advertise a setpoint range"
                     )
-                if step is not None:
-                    step_count = (args.set_target_c - low) / step
-                    if not math.isclose(step_count, round(step_count), abs_tol=1e-6):
-                        raise ValueError(
-                            "Setpoint does not match the accessory's advertised step"
-                        )
-                await device.async_write({Field.TARGET_TEMPERATURE: args.set_target_c})
+                # Rounds to the advertised step and raises SetpointOutOfRangeError
+                # outside the accessory's range. Writes accept only this Setpoint.
+                rules = SetpointRules(homekit_range=device.temperature_range)
+                setpoint = rules.setpoint(None, args.set_target_c)
+                await device.async_write({Field.TARGET_TEMPERATURE: setpoint})
                 print("The HomeKit accessory accepted the target write.")
                 readback = await device.async_read([Field.TARGET_TEMPERATURE])
                 print(

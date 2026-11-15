@@ -45,8 +45,8 @@ instead:
 
 | Semantic field | HAP characteristic and interpretation |
 | --- | --- |
-| `CURRENT_TEMPERATURE` | Current Temperature; numeric Celsius |
-| `TARGET_TEMPERATURE` | Target Temperature; numeric Celsius |
+| `CURRENT_TEMPERATURE` | Current Temperature; read-only numeric Celsius |
+| `TARGET_TEMPERATURE` | Target Temperature; numeric Celsius when read, a `Setpoint` when written |
 | `CURRENT_ACTION` | Current Heating/Cooling State: 0 = idle, 1 = heating, 2 = cooling |
 | `TARGET_MODE` | Target Heating/Cooling State: 0 = off, 1 = heat, 2 = cool, 3 = auto |
 | `DISPLAY_UNIT` | Temperature Display Units: 0 = `"C"`, 1 = `"F"` |
@@ -103,11 +103,16 @@ optional display-unit reading can be omitted. `state` is a read-only view of
 the latest observed or accepted values, not a freshness guarantee.
 
 A command such as
-`await device.async_write({Field.TARGET_TEMPERATURE: 20.5})` changes the target.
+`await device.async_write({Field.TARGET_TEMPERATURE: rules.setpoint(None, 20.5)})`
+changes the target, where `rules = SetpointRules(homekit_range=device.temperature_range)`
+(see [Setpoint rules](cloud.md#setpoint-rules)). `TARGET_TEMPERATURE` accepts
+only a `Setpoint` and writes its `.celsius`; a plain number raises `TypeError`
+before anything is sent, and the cache and events carry the float.
+`CURRENT_TEMPERATURE` and `AMBIENT_LIGHT` are read-only.
 Writes reject unsupported fields and invalid mode/unit encodings, inspect
 per-characteristic failure statuses, and update the cache and listeners when
-accepted. They do not perform an independent readback. Numeric range validation
-and command policy belong to the caller. Notifications become immutable
+accepted. They do not perform an independent readback. Rounding and range
+checks belong to `SetpointRules`; command policy belongs to the caller. Notifications become immutable
 `HomeKitEvent` objects with semantic values and failed fields; error text may
 retain a HAP status code, but callers do not need to interpret wire payloads.
 

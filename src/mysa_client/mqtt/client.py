@@ -14,6 +14,8 @@ import time
 from typing import Any, Self, TypeVar
 import uuid
 
+from mysa_client._temperature import Setpoint, require_setpoint
+
 from .auth import (
     AwsCredentials,
     get_identity_credentials,
@@ -378,16 +380,21 @@ class MysaMqttClient:
     async def set_setpoint(
         self,
         device_id: str,
-        celsius: float,
+        setpoint: Setpoint,
         *,
         mode: str | None = None,
         hold: bool | None = None,
         timeout_seconds: float | None = None,
     ) -> CommandResult:
-        """Set a Lite target and optionally include mode or hold state."""
+        """Set a Lite target and optionally include mode or hold state.
+
+        ``setpoint`` must come from ``SetpointRules``; a plain number raises
+        ``TypeError``.
+        """
+        require_setpoint(setpoint, "setpoint")
         return await self._command(
             device_id,
-            setpoint=celsius,
+            setpoint=setpoint,
             mode=mode,
             hold=hold,
             timeout_seconds=timeout_seconds,
@@ -398,11 +405,17 @@ class MysaMqttClient:
         device_id: str,
         mode: str,
         *,
-        setpoint: float | None = None,
+        setpoint: Setpoint | None = None,
         hold: bool | None = None,
         timeout_seconds: float | None = None,
     ) -> CommandResult:
-        """Set Lite mode to `off` or `heat`, optionally with a target or hold."""
+        """Set Lite mode to `off` or `heat`, optionally with a target or hold.
+
+        A ``setpoint`` must come from ``SetpointRules``; a plain number raises
+        ``TypeError``.
+        """
+        if setpoint is not None:
+            require_setpoint(setpoint, "setpoint")
         return await self._command(
             device_id,
             setpoint=setpoint,
@@ -415,7 +428,7 @@ class MysaMqttClient:
         self,
         device_id: str,
         *,
-        setpoint: float | None,
+        setpoint: Setpoint | None,
         mode: str | None,
         hold: bool | None,
         timeout_seconds: float | None,
