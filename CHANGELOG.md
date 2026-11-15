@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-15)
 
 - **Breaking:** a single temperature in heat/cool (auto) mode is no longer the
   heat target. Mysa's app 4.21.1 never writes `targetHeat` in auto, so
