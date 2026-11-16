@@ -261,6 +261,34 @@ def model_family(model: str | None) -> ModelFamily | None:
     return MODEL_FAMILIES.get(model.strip().upper()) if model else None
 
 
+# Metrics POST /telemetry/usage/{dev} accepts per day and per 30-minute bucket
+# (Mysa names them in its 400 for an unsupported one), with the processing
+# Mysa's app asks for: runtime counters, power and the sample count are summed,
+# the rest averaged. oH1/oH2 are heat stages one and two, oHE auxiliary or
+# emergency heat, oC1/oC2 the cool stages, k power, h humidity, t Mysa's
+# temperature value, i probe temperature, n the number of samples.
+USAGE_FIELDS: Final[dict[str, str]] = {
+    "oH1": "sum",
+    "oH2": "sum",
+    "oHE": "sum",
+    "oC1": "sum",
+    "oC2": "sum",
+    "k": "sum",
+    "h": "average",
+    "t": "average",
+    "i": "average",
+    "n": "sum",
+}
+# Raw reading fields the same route accepts: room temperature, humidity,
+# setpoint, time, sensor temperature, power, RSSI, probe temperature, heat
+# setpoint and cool setpoint.
+USAGE_RAW_FIELDS: Final = ("c", "h", "s", "t", "e", "k", "r", "i", "hs", "cs")
+
+# Mysa's stated limits for one weekly schedule. Its cloud route stores a
+# schedule that breaks them without an error, so they are checked here.
+MAX_SCHEDULE_EVENTS: Final = 56
+
+
 class ChangeSource(StrEnum):
     """Where a change in the state history came from."""
 

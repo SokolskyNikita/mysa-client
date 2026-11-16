@@ -18,6 +18,7 @@ from .auth import MysaAuth
 from .commands import (
     CloudCommand,
     button_lock_changes,
+    check_schedule_events,
     display_brightness_changes,
     display_unit_settings,
     fan_speed_changes,
@@ -34,6 +35,8 @@ from .const import (
     EXPERIMENTAL_CLOUD_FAMILIES,
     LEGACY_API_BASE,
     REQUEST_TIMEOUT,
+    USAGE_FIELDS,
+    USAGE_RAW_FIELDS,
     WIFI_ONLY_FAMILIES,
     WRITE_SOURCE,
     AcFan,
@@ -892,20 +895,44 @@ class MysaClient:
     # ---- history -------------------------------------------------------
 
     async def get_usage(
-        self, device_id: str, time_zone: str, start: datetime, end: datetime
+        self,
+        device_id: str,
+        time_zone: str,
+        start: datetime,
+        end: datetime,
+        *,
+        fields: Iterable[str] = ("oH1", "t"),
+        raw_fields: Iterable[str] = (),
     ) -> list[UsageDay]:
-        """Heating on-time per local day (30-minute buckets inside)."""
-        data = await self._request(
-            "POST",
-            f"/telemetry/usage/{device_id}",
-            body={
-                "timezone": time_zone,
-                "start": int(start.timestamp()),
-                "end": int(end.timestamp()),
-                "summary": {"oH1": "sum", "t": "average"},
-                "aggregatedReadings": ["oH1", "t"],
-            },
-        )
+        """Usage per local day, with 30-minute buckets inside.
+
+        By default this asks for heating on-time and Mysa's temperature value.
+        ``fields`` chooses the per-day and per-bucket metrics from
+        ``USAGE_FIELDS``; ``raw_fields`` adds raw readings (about 30 s apart)
+        from ``USAGE_RAW_FIELDS`` as ``UsageDay.raw``. Runtime counters, power
+        and the sample count are summed and the rest averaged, as Mysa's app
+        asks for them. Mysa leaves out what a thermostat has no data for, and
+        refuses a range over 32 days or an end at or before the start.
+        """
+        chosen = tuple(dict.fromkeys(fields))
+        raw = tuple(dict.fromkeys(raw_fields))
+        if unknown := [name for name in chosen if name not in USAGE_FIELDS]:
+            raise ValueError(f"Unsupported usage fields: {unknown}")
+        if unknown := [name for name in raw if name not in USAGE_RAW_FIELDS]:
+            raise ValueError(f"Unsupported raw usage fields: {unknown}")
+        if not chosen and not raw:
+            raise ValueError("Ask for at least one usage field")
+        body: dict[str, Any] = {
+            "timezone": time_zone,
+            "start": int(start.timestamp()),
+            "end": int(end.timestamp()),
+        }
+        if chosen:
+            body["summary"] = {name: USAGE_FIELDS[name] for name in chosen}
+            body["aggregatedReadings"] = list(chosen)
+        if raw:
+            body["rawReadings"] = list(raw)
+        data = await self._request("POST", f"/telemetry/usage/{device_id}", body=body)
         if not isinstance(data, list):
             return []
         days = [UsageDay.from_api(day) for day in data if isinstance(day, dict)]
@@ -1197,6 +1224,42 @@ class MysaClient:
             schedule_id = data.get("scheduleId") or data.get("id")
             return str(schedule_id) if schedule_id is not None else None
         return None
+
+    async def update_schedule(
+        self,
+        schedule_id: str,
+        *,
+        home_id: str,
+        device_type: str,
+        device_ids: list[str],
+        events: list[dict[str, Any]],
+        name: str,
+        reusable: bool = False,
+    ) -> None:
+        """Replace a weekly schedule's name and events in place.
+
+        Mysa requires the whole record: pass the schedule's own ``home_id``,
+        ``device_type``, ``device_ids`` and ``reusable`` as ``get_schedules()``
+        returned them, with the new ``name`` and ``events``. A body with only
+        the name and events is refused. A thermostat that keeps its schedule
+        in Mysa's older store (a Baseboard Lite does) does not keep the name;
+        it reads back as ``Schedule``.
+        """
+        if not device_ids:
+            raise ValueError("A schedule needs at least one thermostat")
+        check_schedule_events(events)
+        await self._request(
+            "PUT",
+            f"/schedule/{schedule_id}",
+            body={
+                "name": name,
+                "deviceType": device_type,
+                "homeId": home_id,
+                "reusable": reusable,
+                "deviceIds": list(device_ids),
+                "events": events,
+            },
+        )
 
     async def delete_schedule(self, schedule_id: str, device_id: str) -> None:
         """Detach a schedule from its thermostat and delete it."""

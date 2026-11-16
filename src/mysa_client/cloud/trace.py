@@ -20,6 +20,7 @@ _ROUTES = (
     "/schedule/hold",
     "/schedule/hold/{id}",
     "/schedule/{id}/attach/{id}",
+    "/schedule/{id}",
     "/schedule",
     "/schedules",
     "/schedules/v2",

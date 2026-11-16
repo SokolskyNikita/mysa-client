@@ -563,6 +563,24 @@ class Capabilities:
             if (low is None or seconds >= low) and (high is None or seconds <= high)
         )
 
+    @property
+    def single_auto_setpoint(self) -> bool | None:
+        """Whether auto mode takes one target instead of a heat/cool pair.
+
+        True when the auto capability has a minimum gap of 0 and the same heat
+        and cool range, False when it describes a pair that must stay apart,
+        None when it describes no auto targets. From Mysa's description of the
+        capability data; not verified on a device. A Mini-Split AC whose range
+        is only in its remote record gives None here, so keep the model family
+        as the main test.
+        """
+        if self.auto_heat_range is None or self.auto_cool_range is None:
+            return None
+        return (
+            self.min_setpoint_delta == 0
+            and self.auto_heat_range == self.auto_cool_range
+        )
+
     def basic_modes(self, family: ModelFamily | None) -> list[Mode]:
         """Only expose implemented controls with usable capability limits."""
         if family == ModelFamily.CLIMATE_SENSOR:
@@ -807,15 +825,84 @@ class FirmwareInfo:
 class UsageBucket:
     """30-minute usage bucket.
 
-    ``temperature`` is Mysa's ``t`` for the bucket. On a Baseboard Lite it is
-    not the mean room temperature of those 30 minutes: it moves by a few
-    hundredths of a degree per bucket while the room swings by more, like a
-    long trailing average. Don't use it as a per-bucket room reading.
+    ``temperature`` is Mysa's ``t`` for the bucket, and what it holds depends
+    on the range asked for. On a Baseboard Lite, a 2-hour request returned the
+    mean room temperature of each bucket, while 6- and 24-hour requests
+    returned a value smoothed across buckets for the same 30 minutes (up to
+    0.5 °C away from that mean). Ask for a short range, or for raw readings,
+    when the per-bucket room temperature matters. The other metrics are None
+    unless they were requested and the thermostat has data for them.
     """
 
     start: datetime
     heat_seconds: float | None
     temperature: float | None
+    heat_stage2_seconds: float | None = None
+    emergency_heat_seconds: float | None = None
+    cool_seconds: float | None = None
+    cool_stage2_seconds: float | None = None
+    power: float | None = None
+    humidity: float | None = None
+    probe_temperature: float | None = None
+    samples: float | None = None
+
+
+_USAGE_METRICS = {
+    "heat_seconds": "oH1",
+    "heat_stage2_seconds": "oH2",
+    "emergency_heat_seconds": "oHE",
+    "cool_seconds": "oC1",
+    "cool_stage2_seconds": "oC2",
+    "power": "k",
+    "humidity": "h",
+    "probe_temperature": "i",
+    "samples": "n",
+}
+
+
+def _usage_metrics(values: Mapping[str, Any]) -> dict[str, float | None]:
+    return {name: _float(values.get(key)) for name, key in _USAGE_METRICS.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class UsageSample:
+    """One raw reading of POST /telemetry/usage/{dev}, about 30 s apart.
+
+    Mysa leaves out the fields a thermostat has no data for. ``power`` is
+    Mysa's ``k``: on a Baseboard Lite, which doesn't measure its load, it read
+    29-36 and followed the internal ``coreTemperature``, so it is not power
+    there. ``sensor_temperature`` is the uncompensated sensor reading.
+    """
+
+    time: datetime
+    room_temperature: float | None = None
+    sensor_temperature: float | None = None
+    humidity: float | None = None
+    setpoint: float | None = None
+    heat_setpoint: float | None = None
+    cool_setpoint: float | None = None
+    power: float | None = None
+    rssi: float | None = None
+    probe_temperature: float | None = None
+
+    @classmethod
+    def from_api(cls, data: Mapping[str, Any]) -> UsageSample | None:
+        """Parse one raw reading; None if it has no time."""
+        time = _time(data.get("t"))
+        if time is None:
+            return None
+        return cls(
+            time=time,
+            room_temperature=_float(data.get("c")),
+            sensor_temperature=_float(data.get("e")),
+            humidity=_float(data.get("h")),
+            setpoint=_float(data.get("s")),
+            heat_setpoint=_float(data.get("hs")),
+            cool_setpoint=_float(data.get("cs")),
+            power=_float(data.get("k")),
+            rssi=_float(data.get("r")),
+            probe_temperature=_float(data.get("i")),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -823,13 +910,23 @@ class UsageDay:
     """One local day of POST /telemetry/usage/{dev}.
 
     ``average_temperature`` is Mysa's summary ``t`` for the day. See
-    :class:`UsageBucket` for how the per-bucket value behaves.
+    :class:`UsageBucket` for how the per-bucket value behaves. ``raw`` holds
+    the raw readings when ``get_usage(raw_fields=...)`` asked for them.
     """
 
     start: datetime
     heat_seconds: float | None
     average_temperature: float | None
     buckets: tuple[UsageBucket, ...]
+    heat_stage2_seconds: float | None = None
+    emergency_heat_seconds: float | None = None
+    cool_seconds: float | None = None
+    cool_stage2_seconds: float | None = None
+    power: float | None = None
+    humidity: float | None = None
+    probe_temperature: float | None = None
+    samples: float | None = None
+    raw: tuple[UsageSample, ...] = ()
 
     @classmethod
     def from_api(cls, data: Mapping[str, Any]) -> UsageDay | None:
@@ -848,15 +945,19 @@ class UsageDay:
             buckets.append(
                 UsageBucket(
                     start=bucket_start,
-                    heat_seconds=_float(values.get("oH1")),
                     temperature=_float(values.get("t")),
+                    **_usage_metrics(values),
                 )
             )
+        samples = (
+            UsageSample.from_api(_dict(item)) for item in data.get("rawReadings") or []
+        )
         return cls(
             start=start,
-            heat_seconds=_float(summary.get("oH1")),
             average_temperature=_float(summary.get("t")),
             buckets=tuple(buckets),
+            raw=tuple(sample for sample in samples if sample is not None),
+            **_usage_metrics(summary),
         )
 
 

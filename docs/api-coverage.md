@@ -9,18 +9,18 @@ standalone client. HA orchestration and user-facing management behavior have a
 separate map in the [Mysa Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md).
 
 <!-- api-coverage:start -->
-![Cloud & account APIs: 62 of 89 implemented (69.7 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
+![Cloud & account APIs: 64 of 89 implemented (71.9 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
 
-**01 Cloud & account APIs:** 62 of 89 known rows fully implemented (69.7%). Partial: 1; missing: 26.
+**01 Cloud & account APIs:** 64 of 89 known rows fully implemented (71.9%). Partial: 1; missing: 24.
 
 **02 Local & provisioning APIs:** 12 of 22 known rows fully implemented (54.5%). Partial: 0; missing: 10.
 
 | Layer | Category | Implemented | Partial | Missing | Total |
 | --- | --- | ---: | ---: | ---: | ---: |
 | Cloud & account APIs | Authentication | 2 | 0 | 0 | 2 |
-| Cloud & account APIs | State & history | 22 | 0 | 7 | 29 |
+| Cloud & account APIs | State & history | 23 | 0 | 6 | 29 |
 | Cloud & account APIs | Device controls | 18 | 0 | 12 | 30 |
-| Cloud & account APIs | Schedules & templates | 12 | 1 | 4 | 17 |
+| Cloud & account APIs | Schedules & templates | 13 | 1 | 3 | 17 |
 | Cloud & account APIs | Device services | 8 | 0 | 3 | 11 |
 | Local & provisioning APIs | HomeKit | 12 | 0 | 1 | 13 |
 | Local & provisioning APIs | Provisioning | 0 | 0 | 9 | 9 |
@@ -118,7 +118,7 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-read-24"></a>API-READ-24 | Read telemetry-alert rules and maintenance reminders | Missing | Known device-alert and home-reminder methods are listed in [Consumer workflow reference](reference/protocol/cloud-workflows.md#retained-app-only-workflow-mechanics); no resource reader or typed parser exists. User/account and push-delivery administration are excluded. |
 | <a id="api-read-25"></a>API-READ-25 | Subscribe to and decode MQTT command acknowledgements and device-event notifications | Implemented | Optional [MysaMqttClient](../src/mysa_client/mqtt/client.py) subscribes only to caller-allowlisted `/out` topics and exposes bounded async events for normalized MCM `msg: 40` telemetry, correlated `msg: 44` acknowledgements, echo replies, and other decoded messages. It uses the legacy Identity Pool by default. See the [MQTT reference](reference/protocol/mqtt.md) for hardware evidence and limits; a broker PUBACK is distinct from device confirmation. |
 | <a id="api-read-26"></a>API-READ-26 | Read legacy device, zone, and home energy summaries | Missing | The known device/zone/home energy summary routes are catalogued in [Consumer workflow reference](reference/protocol/cloud-workflows.md#retained-app-only-workflow-mechanics); the package has no request wrapper or typed response parser. |
-| <a id="api-read-27"></a>API-READ-27 | Request expanded usage attributes and raw telemetry samples | Missing | [Usage query and response](reference/protocol/cloud-state.md#usage) and [API-READ-27](#api-read-27) distinguish optional attributes/rawReadings from current summary-only get_usage(); no expanded query or named raw-result parser is implemented. |
+| <a id="api-read-27"></a>API-READ-27 | Request expanded usage attributes and raw telemetry samples | Implemented | [client.py](../src/mysa_client/cloud/client.py) get_usage() takes `fields=` (the ten metrics the route supports) and `raw_fields=`; [models.py](../src/mysa_client/cloud/models.py) UsageDay, UsageBucket and UsageSample name the results. Heating on-time, the temperature value, the sample count and raw readings are confirmed on a Baseboard Lite; staged runtime, power, humidity and probe temperature are not verified on a device. See [usage history](reference/python/cloud.md#usage-history). |
 | <a id="api-read-28"></a>API-READ-28 | Read current-service whole-home energy | Missing | The [additional endpoint](reference/protocol/cloud-workflows.md#additional-endpoints) POST /energy/v3/{home}/home has no wrapper. it returned 404 on the tested Lite account. |
 | <a id="api-read-29"></a>API-READ-29 | Read sensor links for a thermostat | Implemented | [client.py](../src/mysa_client/cloud/client.py) get_sensor_links() reads `GET /linking?targetId={id}` into `SensorLink` entries with the app's `participating` rule. The empty list is confirmed on the Lite; entry fields are app-derived. Writes are [API-WRITE-17](#api-write-17). |
 
@@ -166,7 +166,7 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-sched-03"></a>API-SCHED-03 | Read legacy V2 schedule by device ID | Implemented | [client.py](../src/mysa_client/cloud/client.py) get_all_schedules() reads GET /schedules/v2/{deviceId}; device IDs and schedule IDs remain distinct. |
 | <a id="api-sched-04"></a>API-SCHED-04 | Encode semantic schedule events and weekday/time fields | Partial | [commands.py](../src/mysa_client/cloud/commands.py) encode_schedule_events() maps named days, local time, client key, mode and temperature to the modern wire representation. Richer fan/tracking/paired-target schedule variants described in the [schedule reference](reference/protocol/cloud-workflows.md#schedules-holds-and-shortcuts) lack named semantic encoders. |
 | <a id="api-sched-05"></a>API-SCHED-05 | Create and attach a modern schedule | Implemented | [client.py](../src/mysa_client/cloud/client.py) create_schedule() sends the known metadata and event body to POST /schedule. |
-| <a id="api-sched-06"></a>API-SCHED-06 | Edit an existing modern schedule in place | Missing | The required full-body PUT /schedule/{id} fields are documented in [cloud-workflows.md](reference/protocol/cloud-workflows.md); the standalone package has no matching request wrapper. |
+| <a id="api-sched-06"></a>API-SCHED-06 | Edit an existing modern schedule in place | Implemented | [client.py](../src/mysa_client/cloud/client.py) update_schedule() sends the required full-body PUT /schedule/{id}, after check_schedule_events(); the update and its read-back are confirmed on a Baseboard Lite. See [cloud-workflows.md](reference/protocol/cloud-workflows.md). |
 | <a id="api-sched-07"></a>API-SCHED-07 | Detach/delete a modern schedule from a device | Implemented | [client.py](../src/mysa_client/cloud/client.py) delete_schedule() sends DELETE /schedule/{id}/attach/{deviceId}. |
 | <a id="api-sched-08"></a>API-SCHED-08 | Clear legacy V1 schedule for one device | Implemented | [client.py](../src/mysa_client/cloud/client.py) remove_schedule() writes seven empty weekday arrays with required device/model fields. |
 | <a id="api-sched-09"></a>API-SCHED-09 | Restore a native V1 schedule snapshot | Implemented | [client.py](../src/mysa_client/cloud/client.py) restore_native_schedule() replays validated native V1 schedule data through the known legacy route. |

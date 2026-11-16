@@ -200,16 +200,30 @@ On a Baseboard Lite, over 24 hours:
 
 - A request for all ten summary fields returned only `oH1`, `t` and `n`.
   Fields the thermostat has no data for are left out.
-- A bucket's `t` is not the mean room temperature of that bucket. The mean of
-  the raw `c` samples per bucket ran from 21.50 to 22.67 °C while `t` stayed
-  between 21.78 and 22.16 and moved by a few hundredths per bucket, like a
-  long trailing average.
+- A bucket's `t` depends on the range requested. Over a 2-hour range it was
+  the mean of that bucket's raw `c` samples (22.02 against 22.02, 22.38
+  against 22.39, 22.42 against 22.43). Over 6- and 24-hour ranges the same
+  buckets came back smoothed across neighbouring buckets (22.16, 22.16 and
+  22.12): across 24 hours the per-bucket mean of `c` ran from 21.50 to
+  22.67 °C while `t` stayed between 21.78 and 22.16. The time zone and the
+  processing type made no difference. Ask for a short range or for raw
+  readings when the per-bucket room temperature matters.
+- `n` is the number of samples in the bucket, 59 or 60 for a full one.
+- The newest raw reading was 22 minutes old in one request and about an
+  hour old in another, so usage data trails the live state.
 - Raw `k` is not power. It read 29.3–36.2 and rose while the heater ran, the
   range and behavior of the state's `coreTemperature`. Summary `k` was absent.
 - Raw readings carried `c`, `e`, `hs`, `k`, `r`, `s` and `t`; no `h`, although
   the state has humidity.
 
-The examined mobile app requests raw readings only for a one-day range. The Python `get_usage()` wrapper currently asks only for `oH1` and `t` summaries and buckets; it does not request raw history. It exposes daily runtime and the summary `t` through `UsageDay`, and each bucket's `t` as `UsageBucket.temperature`, with the caveat above.
+The examined mobile app requests raw readings only for a one-day range. The Python `get_usage()` wrapper currently asks only for `oH1` and `t` summaries and buckets; it does not request raw history. It exposes daily runtime and the summary `t` through `UsageDay`, and each bucket's `t` as `UsageBucket.temperature`, with the caveat below. Pass `fields=` to request any of the supported metrics and `raw_fields=` for raw readings ([Python reference](../python/cloud.md#usage-history)).
+
+For a Central HVAC, Mysa describes the runtime fields this way (not verified
+on hardware): heat-stage-two seconds are included in the heating total and
+cool-stage-two seconds in the cooling total; auxiliary or emergency heat is
+counted separately from the heating total; and power appears only for a model
+that measures it. Slots the thermostat never reported are left out, so read
+each bucket's own start time.
 
 ### Legacy batch history
 
@@ -388,6 +402,13 @@ The newer sensor-linking flow uses `GET/POST /linking` with `{sourceId,targetId,
 [Remote-tracking request](../../../examples/cloud/state-update.remote-tracking.json)
 
 Tracking modes are 0 ambient, 1 probe and 2 remote; 480 seconds is the reference TTL. The request does not submit a replacement temperature. The cloud supplies the linked sensor's readings.
+
+For an In-Floor thermostat, Mysa states that the setpoint range follows the
+tracked sensor: a heat setpoint above 30 °C needs the floor probe selected,
+and the range reaches 40 °C only then. Mysa's app caps the floor at 40 °C for
+tile and 28 °C for hardwood, laminate, vinyl and carpet (`MAX_FLOOR_TEMPS`).
+Neither is verified on hardware. This package takes the range from the
+thermostat's capabilities and adds no cap of its own.
 
 The Lite advertises `sensing.temperature.sensors.remote: false`, `trackingSensor.validValues: ["internal"]` and no external temperature probe connector. `GET /linking?targetId={dev}` returned an empty list ([example](../../../examples/cloud/linking.empty.json), again on 2026-11-15). In Mysa's app 4.21.1 each entry has `linkId`, `sourceId`, `targetId`, `weight` and `enabled`; a link takes part when `enabled` is not false and `weight > 0`, and a link whose source is its target is the thermostat's own sensor. The app offers only Climate Sensors as sources and Central HVAC as targets. Python reads links with [`get_sensor_links()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads) and does not create, change or remove them. A direct remote-tracking write reached `desired`, but no `tracking` value appeared in `reported`, in either normal or live mode.
 
