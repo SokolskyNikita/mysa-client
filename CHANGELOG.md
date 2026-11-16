@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Docs: new page on Mysa's official Consumer API (`docs/guides/official-api.md`):
+  what it is, how to connect, and why this library doesn't use it yet.
 - In-Floor floor sensor: `DeviceState.from_legacy()` reads `Infloor` into
   `probe_temperature` and `TrackedSensor` into the new
   `DeviceState.tracked_sensor`; `DeviceRecord.tracked_sensor` reads `Tracking`.
