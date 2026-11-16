@@ -94,6 +94,7 @@ def valid_value(field: str, value: Any) -> bool:
         "setpoint_min",
         "setpoint_max",
         "temperature_offset",
+        "probe_temperature",
     ):
         return number(value) is not None and -100 <= value <= 100
     if field == "hvac_state":

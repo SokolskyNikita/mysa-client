@@ -7,6 +7,7 @@ import pytest
 
 from mysa_client.cloud import (
     DemandResponseState,
+    DeviceRecord,
     DeviceState,
     FleetFirmwareAvailability,
     FleetFirmwareStatus,
@@ -17,6 +18,7 @@ from mysa_client.cloud import (
     MysaConnectionError,
     MysaNotFoundError,
     SensorLink,
+    TrackedSensor,
     firmware_versions_match,
     normalize_firmware_version,
 )
@@ -595,3 +597,55 @@ def test_demand_response_state_text(section, expected):
     state = DeviceState.from_api("dev", {"drState": section})
     assert state.demand_response_state == expected
     assert state.in_demand_response is section["inEvent"]
+
+
+def test_legacy_in_floor_probe_and_tracked_sensor() -> None:
+    """`Infloor` and `TrackedSensor`, as in bourquep/mysa2mqtt issue 323."""
+    now = datetime.now(UTC).timestamp()
+    state = DeviceState.from_legacy(
+        DEVICE_ID,
+        {
+            "CorrectedTemp": {"v": 21.4, "t": now},
+            "Infloor": {"v": 26.7, "t": now},
+            "TrackedSensor": {"v": 3, "t": now},
+        },
+        model="INF-V1-0",
+    )
+    assert state.probe_temperature == 26.7
+    assert state.tracked_sensor is TrackedSensor.FLOOR
+    assert state.observations["probe_temperature"].value == 26.7
+
+
+@pytest.mark.parametrize(
+    ("wire", "sensor"),
+    [(5, TrackedSensor.AMBIENT), (0, None), (4, None), ("floor", None), (None, None)],
+)
+def test_legacy_tracked_sensor_maps_only_known_values(
+    wire: object, sensor: TrackedSensor | None
+) -> None:
+    now = datetime.now(UTC).timestamp()
+    state = DeviceState.from_legacy(DEVICE_ID, {"TrackedSensor": {"v": wire, "t": now}})
+    assert state.tracked_sensor is sensor
+
+
+def test_legacy_state_without_in_floor_fields_has_none() -> None:
+    state = DeviceState.from_legacy(DEVICE_ID, {"Rssi": {"v": -50, "t": 1}})
+    assert state.probe_temperature is None
+    assert state.tracked_sensor is None
+
+
+def test_legacy_probe_temperature_out_of_range_is_dropped() -> None:
+    now = datetime.now(UTC).timestamp()
+    state = DeviceState.from_legacy(DEVICE_ID, {"Infloor": {"v": 999, "t": now}})
+    assert state.probe_temperature is None
+
+
+@pytest.mark.parametrize(
+    ("wire", "sensor"),
+    [(3, TrackedSensor.FLOOR), (5, TrackedSensor.AMBIENT), (1, None), (None, None)],
+)
+def test_device_record_tracked_sensor(
+    wire: object, sensor: TrackedSensor | None
+) -> None:
+    data = {"Model": "INF-V1-0"} | ({} if wire is None else {"Tracking": wire})
+    assert DeviceRecord.from_api(DEVICE_ID, data).tracked_sensor is sensor

@@ -120,6 +120,12 @@ class MysaMqttClient:
     Pass a token provider such as `auth.async_get_id_token`, and an account
     device-ID-to-model mapping. Only those IDs are subscribed to or published
     to. The optional Paho, boto3, and botocore dependencies load on connect.
+
+    Commands go only to a Baseboard Lite unless ``experimental_commands`` is
+    true, which also allows Baseboard V1, Baseboard V2 and In-Floor. Their
+    command type comes from third-party projects and is not verified here.
+    Mysa's broker drops the connection on a publish for some accounts, so
+    keep another write path.
     """
 
     def __init__(
@@ -138,6 +144,7 @@ class MysaMqttClient:
         shutdown_timeout: float = 7,
         reconnect_min_delay: float = 1,
         reconnect_max_delay: float = 20,
+        experimental_commands: bool = False,
         _client_factory: Callable[[], Any] | None = None,
         _identity_credentials_provider: Callable[[str], AwsCredentials] | None = None,
         _sign_path: Callable[[AwsCredentials], str] | None = None,
@@ -185,6 +192,7 @@ class MysaMqttClient:
         self._shutdown_timeout = shutdown_timeout
         self._reconnect_min_delay = reconnect_min_delay
         self._reconnect_max_delay = reconnect_max_delay
+        self._experimental_commands = bool(experimental_commands)
         self._client_factory = _client_factory
         self._identity_credentials_provider = _identity_credentials_provider
         self._sign_path = _sign_path
@@ -386,7 +394,7 @@ class MysaMqttClient:
         hold: bool | None = None,
         timeout_seconds: float | None = None,
     ) -> CommandResult:
-        """Set a Lite target and optionally include mode or hold state.
+        """Set a target and optionally include mode or hold state.
 
         ``setpoint`` must come from ``SetpointRules``; a plain number raises
         ``TypeError``.
@@ -409,7 +417,7 @@ class MysaMqttClient:
         hold: bool | None = None,
         timeout_seconds: float | None = None,
     ) -> CommandResult:
-        """Set Lite mode to `off` or `heat`, optionally with a target or hold.
+        """Set mode to `off` or `heat`, optionally with a target or hold.
 
         A ``setpoint`` must come from ``SetpointRules``; a plain number raises
         ``TypeError``.
@@ -434,9 +442,11 @@ class MysaMqttClient:
         timeout_seconds: float | None,
     ) -> CommandResult:
         self._require_device(device_id)
-        if not supports_commands(self._devices[device_id]):
+        model = self._devices[device_id]
+        if not supports_commands(model, experimental=self._experimental_commands):
             raise MqttProtocolError(
-                "Commands are currently supported only for Baseboard Lite"
+                "Commands are supported only for Baseboard Lite, or with "
+                "experimental_commands for Baseboard V1, V2 and In-Floor"
             )
         self._require_connected()
         duration = self._command_timeout if timeout_seconds is None else timeout_seconds
@@ -469,6 +479,7 @@ class MysaMqttClient:
             setpoint=setpoint,
             mode=mode,
             hold=hold,
+            model=model,
         )
         pending = _PendingCommand(
             device_id=device_id,

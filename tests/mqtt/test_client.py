@@ -243,6 +243,7 @@ def _make_client(
     token_provider: Any = None,
     token_calls: list[int] | None = None,
     credentials_calls: list[str] | None = None,
+    experimental_commands: bool = False,
 ) -> tuple[MysaMqttClient, list[FakeClient]]:
     clients: list[FakeClient] = []
 
@@ -279,6 +280,7 @@ def _make_client(
         shutdown_timeout=0.2,
         reconnect_min_delay=0.005,
         reconnect_max_delay=0.01,
+        experimental_commands=experimental_commands,
         _client_factory=make_fake,
         _identity_credentials_provider=get_credentials,
         _sign_path=lambda _credentials: "/mqtt?signature=redacted",
@@ -440,6 +442,38 @@ async def test_command_requires_lite_model_and_allowlisted_device() -> None:
         await client.set_setpoint(DEVICE, ruled(22))
     with pytest.raises(ValueError, match="allowlist"):
         await client.request_live_status("not-owned")
+    await client.close()
+
+
+@pytest.mark.parametrize(
+    ("model", "wire"), [("BB-V1-1", 1), ("INF-V1-0", 3), ("BB-V2-0", 4)]
+)
+@pytest.mark.asyncio
+async def test_experimental_commands_send_the_models_type(
+    model: str, wire: int
+) -> None:
+    """With the opt-in, a non-Lite heating model gets its own command type."""
+    client, clients = _make_client(
+        devices={DEVICE: model}, experimental_commands=True, publish_mode="echo"
+    )
+    await client.connect()
+    await client.set_setpoint(DEVICE, ruled(22))
+    assert clients[0].publications[0][1]["body"] == {
+        "ver": 1,
+        "type": wire,
+        "cmd": [{"tm": -1, "sp": 22.0}],
+    }
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_experimental_commands_still_refuse_an_ac() -> None:
+    client, _clients = _make_client(
+        devices={DEVICE: "AC-V1-0"}, experimental_commands=True
+    )
+    await client.connect()
+    with pytest.raises(MqttProtocolError):
+        await client.set_setpoint(DEVICE, ruled(22))
     await client.close()
 
 

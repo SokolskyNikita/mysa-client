@@ -204,6 +204,23 @@ class DutyCycleOpt(IntEnum):
     BB2_BASEBOARD = 9
 
 
+class TrackedSensor(StrEnum):
+    """The sensor an In-Floor thermostat regulates against."""
+
+    AMBIENT = "ambient"
+    FLOOR = "floor"
+
+
+# `TrackedSensor.v` in legacy state, `Tracking` in the device record and
+# `trackedSnsr` over MQTT share this numbering. From bourquep/mysa2mqtt (three
+# In-Floor units); other values are left unmapped. The structured API numbers
+# its tracking modes differently (0 ambient, 1 probe, 2 remote).
+LEGACY_TRACKED_SENSOR: Final[dict[int, TrackedSensor]] = {
+    3: TrackedSensor.FLOOR,
+    5: TrackedSensor.AMBIENT,
+}
+
+
 class ModelFamily(StrEnum):
     """Mysa's device families (the app's DEVICES)."""
 
