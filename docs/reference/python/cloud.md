@@ -80,8 +80,10 @@ of `get_usage()`.
 
 ## Setpoint rules
 
-Mysa accepts setpoints only on its step grid, usually 0.5 °C. Every temperature
-written through this package goes through `SetpointRules` in
+Mysa lists setpoints on a step grid, usually 0.5 °C, and this package writes
+only values on it. Mysa's cloud itself doesn't enforce the grid (see
+[what Mysa checks on a write](../protocol/cloud-state.md#what-mysa-checks-on-a-write)).
+Every temperature written through this package goes through `SetpointRules` in
 [`setpoints.py`](../../../src/mysa_client/cloud/setpoints.py), which is the only
 code that can create `Setpoint` and `TemperatureOffset` values. The builders
 `temperature_changes`, `auto_temperature_changes`, `make_state`,

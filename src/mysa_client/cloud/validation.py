@@ -24,8 +24,8 @@ def validate_cloud_command(
 
     Experimental cloud-only models require complete capability data and use a
     conservative allowlist. Established models retain permissive operation
-    support, while advertised choices, observed setpoint bounds, and paired
-    setting invariants are still enforced when their data is available.
+    support, while advertised modes and choices, observed setpoint bounds, and
+    paired setting invariants are still enforced when their data is available.
     """
     if command_kind == "settings" and family in EXPERIMENTAL_CLOUD_FAMILIES:
         raise ValueError("Legacy device settings are not implemented for this model")
@@ -36,6 +36,18 @@ def validate_cloud_command(
     _validate_target_bounds(state, expected)
     if caps is None:
         return
+
+    # Mysa answers 200 to a mode the thermostat doesn't list and then drops
+    # it (seen on a Baseboard Lite sent cool), so refuse it here. A Mini-Split
+    # AC's modes come from its remote record, not from this list.
+    if (
+        "mode" in expected
+        and family not in EXPERIMENTAL_CLOUD_FAMILIES
+        and family != ModelFamily.AC
+        and caps.modes
+        and expected["mode"] not in caps.modes
+    ):
+        raise ValueError("Operating mode is not supported by this device")
 
     choices = {
         "button_lock": caps.lockout_values,

@@ -119,7 +119,10 @@ Most differences reflect lag or representation, not three stores to repair.
 | Time zone | R, only for an explicit Mysa schedule configuration request | Verify REC; changing an application's time zone must not silently rewrite the thermostat |
 
 Validate capabilities and ranges, serialize changes per device, and send the
-smallest semantic change. Send both brightness values together; preserve a
+smallest semantic change. Mysa answers 200 to values a thermostat can't use and
+then drops or ignores them
+([what Mysa checks on a write](../reference/protocol/cloud-state.md#what-mysa-checks-on-a-write)),
+so the validation has to happen before sending. Send both brightness values together; preserve a
 valid minimum/maximum pair. A setpoint change and a mode change are distinct
 commands unless deliberately combined in one S body. Use the mode-specific
 AC fan conversion in `commands.py`; raw enum values are not interchangeable.

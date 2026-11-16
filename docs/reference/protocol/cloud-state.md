@@ -131,6 +131,37 @@ The [state and command guide](../../guides/state-and-commands.md) describes the
 caller workflow; [runtime contracts](../python/runtime.md#state-and-command-evidence)
 define reconciliation and pending-command tracking.
 
+### What Mysa checks on a write
+
+`POST /state/{dev}/update` checks the shape of the request and a few fixed
+bounds. It does not check a value against the thermostat's capabilities.
+Tested on a Baseboard Lite (`BB-V2-0-L`, firmware 3.17.5.13) on 2026-11-15:
+
+| Request | Answer | Result |
+| --- | --- | --- |
+| No `source` | 400 `FST_ERR_VALIDATION`, "body must have required property 'source'" | Nothing written |
+| `targetHeat.setpoint` 4.5 | 400, "must be >= 5" | Nothing written |
+| `physicalInterface.activeIntensity` 101 | 400, "must be <= 100" | Nothing written |
+| `targetHeat.setpoint` 22.25 (between 0.5 steps) | 200 | Stored and reported as 22.2; 22.37 became 22.4 |
+| `targetHeat.setpoint` 30.5 (above the Lite's 30) | 200 | Dropped: `desired` kept the old value |
+| `modes.mode` 3 (cool, not listed for a Lite) | 200 | Dropped |
+| An unknown section, or an unknown field in `targetHeat` | 200 | Dropped |
+| `physicalInterface.lockout` 1 (the Lite lists 0 and 3) | 200 | Stored in `desired`, never reported |
+| `modes.fan_mode` 0 (the Lite has no fan) | 200 | Stored in `desired`, never reported |
+| `targetHeat.setpoint` as the string `"22"` | 200 | Applied |
+| Idle brightness above wake brightness (70 wake, 100 idle) | 200 | Applied and reported |
+| One brightness field alone | 200 | Applied |
+
+So a 200 means the request was well formed, not that the value was usable.
+An unusable value is dropped, kept as `desired` without ever being applied, or
+applied rounded. Validate against capabilities before sending
+(`validate_cloud_command()`), and confirm from `reported`.
+
+The `0 ≤ idle ≤ wake` brightness order that `set_display_brightness()` and
+`validate_cloud_command()` require is this package's rule; Mysa accepts either
+order. A setpoint write does not change the mode: a heat setpoint written while
+the thermostat was off left it off.
+
 ## Telemetry and history
 
 ### Usage
@@ -144,13 +175,41 @@ The response is a list of local-day objects. Each has a day timestamp `T`, a `su
 | Location | Meaning |
 | --- | --- |
 | `summary.a.oH1` | Heating on-time in seconds |
-| `summary.a.t` / `h` / `n` | Average temperature / average humidity / sample count |
+| `summary.a.t` / `h` / `n` | Temperature (see below) / average humidity / sample count |
 | `aggregatedReadings[].T` | Start of a 30-minute bucket |
 | `aggregatedReadings[].a` | Bucket metrics, using the summary field names |
 | `rawReadings[].t` | Sample time; raw readings were about 30 seconds apart |
 | Raw `c`, `h`, `s` / `hs` | Room temperature, humidity and setpoint |
+| Raw `e`, `r` | Uncompensated sensor temperature (state `rawTemperature`) and RSSI |
 
-The examined mobile app requests raw readings only for a one-day range. The Python `get_usage()` wrapper currently asks only for `oH1` and `t` summaries and buckets; it does not request raw history. It exposes daily runtime and average temperature through `UsageDay`.
+Mysa names the fields it supports when a request uses another one (400,
+2026-11-15):
+
+| Part of the request | Supported fields |
+| --- | --- |
+| `summary` and `aggregatedReadings` | `oH1`, `oH2`, `oHE`, `oC1`, `oC2`, `k`, `h`, `t`, `i`, `n`; processing is `sum` or `average` |
+| `rawReadings` | `c`, `h`, `s`, `t`, `e`, `k`, `r`, `i`, `hs`, `cs` |
+
+Mysa's app 4.21.1 names them: `oH1` and `oH2` heat stages one and two, `oHE`
+auxiliary or emergency heat, `oC1` and `oC2` cool stages, `k` power, `i` probe
+temperature, `cs` cool setpoint. A request needs at least one of `summary`,
+`rawReadings` or `aggregatedReadings`, a valid IANA `timezone`, an end after
+its start, and a range of at most 32 days.
+
+On a Baseboard Lite, over 24 hours:
+
+- A request for all ten summary fields returned only `oH1`, `t` and `n`.
+  Fields the thermostat has no data for are left out.
+- A bucket's `t` is not the mean room temperature of that bucket. The mean of
+  the raw `c` samples per bucket ran from 21.50 to 22.67 °C while `t` stayed
+  between 21.78 and 22.16 and moved by a few hundredths per bucket, like a
+  long trailing average.
+- Raw `k` is not power. It read 29.3–36.2 and rose while the heater ran, the
+  range and behavior of the state's `coreTemperature`. Summary `k` was absent.
+- Raw readings carried `c`, `e`, `hs`, `k`, `r`, `s` and `t`; no `h`, although
+  the state has humidity.
+
+The examined mobile app requests raw readings only for a one-day range. The Python `get_usage()` wrapper currently asks only for `oH1` and `t` summaries and buckets; it does not request raw history. It exposes daily runtime and the summary `t` through `UsageDay`, and each bucket's `t` as `UsageBucket.temperature`, with the caveat above.
 
 ### Legacy batch history
 
@@ -219,8 +278,9 @@ protocol payload and normalized expected effects. Run it through
 `validation.validate_cloud_command()` before sending. The direct
 `MysaClient.set_temperature()` method remains available for simple callers.
 Both take `Setpoint` values from the
-[setpoint rules](../python/cloud.md#setpoint-rules), since Mysa rejects
-values off its step grid;
+[setpoint rules](../python/cloud.md#setpoint-rules), which keep writes on the
+advertised step grid (Mysa's cloud accepts off-grid values and rounds them;
+see [what Mysa checks on a write](#what-mysa-checks-on-a-write));
 applications needing paired AUTO targets can build the command with
 `climate_command(low=..., high=...)` and send it with `execute_command()`.
 

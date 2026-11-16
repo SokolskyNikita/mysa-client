@@ -1,8 +1,12 @@
 """The single source of truth for Mysa setpoint rounding and validation.
 
-Mysa thermostats accept setpoints only on their advertised step grid (usually
-0.5 °C). Callers that convert from Fahrenheit, such as Home Assistant, hand
-over values like 22.78 °C that the device rejects. ``SetpointRules`` rounds and
+Mysa thermostats advertise their setpoints on a step grid (usually 0.5 °C).
+Callers that convert from Fahrenheit, such as Home Assistant, hand over values
+like 22.78 °C that are off it. Mysa's cloud doesn't refuse such a value: on a
+Baseboard Lite it answered 200 and stored it rounded to 0.1 °C, and it answered
+200 to a value above the range and then dropped it. This package keeps every
+write on the advertised grid and inside the range, so what is sent is what the
+thermostat lists. ``SetpointRules`` rounds and
 range-checks every temperature an application wants to write, and it is the
 only code that can create :class:`Setpoint` and :class:`TemperatureOffset`
 values. The command builders accept nothing else, so a type checker reports
