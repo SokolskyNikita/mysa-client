@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import runpy
+import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -54,6 +55,22 @@ def test_normalized_repository_link_cannot_escape(checker, tmp_path):
         is None
     )
     assert "escapes the repository" in checker.ERRORS[0]
+
+
+def test_git_ignored_pages_are_skipped(checker, tmp_path):
+    """A local, git-ignored Markdown file is not a maintained page."""
+    local = tmp_path / "CLAUDE.local.md"
+    kept = tmp_path / "README.md"
+    local.write_text("# Local notes\n")
+    kept.write_text("# Start\n")
+    assert checker.git_ignored([local, kept]) == set()  # Not a repository.
+    subprocess.run(  # noqa: S603 - fixed git command in a temporary directory
+        ["git", "-C", str(tmp_path), "init", "-q"],  # noqa: S607
+        check=True,
+    )
+    (tmp_path / ".gitignore").write_text("CLAUDE.local.md\n")
+    assert checker.git_ignored([local, kept]) == {local}
+    assert checker.git_ignored([]) == set()
 
 
 def test_navigation_rejects_orphans_but_allows_compatibility_pages(checker, tmp_path):

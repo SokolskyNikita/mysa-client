@@ -7,6 +7,7 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+import subprocess
 import tomllib
 from urllib.parse import unquote
 
@@ -348,6 +349,26 @@ def check_mqtt_example(path: Path, seen: set[str]) -> None:
     check_sanitization(path)
 
 
+def git_ignored(paths: list[Path]) -> set[Path]:
+    """Paths that git ignores, such as a local notes file; none outside a checkout."""
+    if not paths:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(ROOT), "check-ignore", "--stdin", "-z"],
+            input="\0".join(str(path) for path in paths),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return set()
+    # 0: some are ignored; 1: none are. Anything else (not a repository) is no answer.
+    if result.returncode != 0:
+        return set()
+    return {Path(name) for name in result.stdout.split("\0") if name}
+
+
 def main() -> int:
     """Run all local checks without importing or executing protocol code."""
     ERRORS.clear()
@@ -356,6 +377,9 @@ def main() -> int:
         for path in ROOT.rglob("*.md")
         if ".git" not in path.parts and "dist" not in path.parts
     )
+    # A file git ignores is local, not a maintained page.
+    ignored = git_ignored(markdown)
+    markdown = [path for path in markdown if path not in ignored]
     targets: set[Path] = set()
     graph: dict[Path, set[Path]] = {}
     for path in markdown:
