@@ -10,7 +10,7 @@ device compatibility. Live validation currently covers two Baseboard Lite
 and mode writes the same way (see
 [state and settings confirmation](../reference/protocol/cloud-state.md#state-and-settings-confirmation)). Other model profiles, full schedule execution, notification
 delivery, and installation of a new firmware release remain unverified. The
-[Home Assistant cloud tracker](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/cloud.md)
+[Home Assistant management inventory](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md)
 separately records integration policy, gaps, and validation work.
 
 ## Validation references
