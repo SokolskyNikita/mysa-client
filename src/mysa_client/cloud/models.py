@@ -599,7 +599,7 @@ class Capabilities:
 
     def basic_modes(self, family: ModelFamily | None) -> list[Mode]:
         """Only expose implemented controls with usable capability limits."""
-        if family == ModelFamily.CLIMATE_SENSOR:
+        if family in (ModelFamily.CLIMATE_SENSOR, ModelFamily.WATER_HEATER):
             return []
         allowed = {Mode.OFF}
         if self.heat_setpoint_range:

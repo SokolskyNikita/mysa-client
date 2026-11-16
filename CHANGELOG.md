@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Water Heater Controller: `model_family()` recognises `WHC-V1-0` and `WHC-V1`
+  (any case) as the new `ModelFamily.WATER_HEATER`, and `MODEL_NAMES` names
+  it. On this product `targetHeat.setpoint` is the thermal safety limit, not a
+  room target, so `temperature_changes()` and `setpoint_limit_changes()` now
+  raise `SetpointModeError` for that family and `validate_cloud_command()`
+  refuses a setpoint or setpoint limit for it. Other commands, and
+  `add_device()` (which already refused the model as unknown), behave as
+  before. From Mysa's app 4.21.1, which refuses the same write; not verified
+  on a device.
 - Docs: what Mysa's app 4.21.1 does, for the parts this library may implement,
   each marked as app-derived and untested unless a Baseboard Lite result is
   given: the state writes behind the app's settings, how it confirms a write,

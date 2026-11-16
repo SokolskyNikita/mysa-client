@@ -308,7 +308,9 @@ family=None)` writes `targetHeat.lockoutMin` / `lockoutMax`, or `targetCool` for
 value under both sections in one body, whatever `kind`, as Mysa's app does.
 A cooling limit for a heat-only family raises `SetpointModeError`; any kind
 other than heat or cool raises `ValueError` (the app has no auto-section
-limit). `MysaClient.set_setpoint_limit(device_id, value, *, minimum,
+limit). Any limit, and any `temperature_changes` setpoint, for
+`family=ModelFamily.WATER_HEATER` raises `SetpointModeError`: on a Water
+Heater Controller the heat setpoint is the thermal safety limit. `MysaClient.set_setpoint_limit(device_id, value, *, minimum,
 kind=SetpointKind.HEAT, family=None, route="S")` sends it; cooling limits
 have no settings-record field, so a `route` other than `"S"` raises
 `ValueError` for them. The read-back is `DeviceState.cool_min` / `cool_max`.

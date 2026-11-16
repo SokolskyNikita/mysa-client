@@ -301,8 +301,9 @@ class SetpointModeError(SetpointError):
     Mini-Split AC (a Central HVAC needs ``low`` and/or ``high``), for a heat/cool
     side outside heat/cool mode, for a mode with no setpoint section (fan-only,
     dry, sleep, pre-cool), for a hold or schedule event in heat/cool mode, and
-    for a cooling limit on a model that doesn't advertise cooling. ``mode`` is
-    the mode refused (``None`` when no mode was selected).
+    for a cooling limit on a model that doesn't advertise cooling, and for any
+    setpoint or setpoint limit on a Water Heater Controller. ``mode`` is the
+    mode refused (``None`` when no mode was selected).
     """
 
     def __init__(self, mode: Mode | None, message: str) -> None:

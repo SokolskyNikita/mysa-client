@@ -473,7 +473,9 @@ async def test_add_device_defaults_per_model(
     assert {k: v for k, v in body.items() if k not in base} == expected
 
 
-@pytest.mark.parametrize("model", ["BB-V3-0", "ST-V1-0", "LV", "CS-V1-0", "XX-V9"])
+@pytest.mark.parametrize(
+    "model", ["BB-V3-0", "ST-V1-0", "LV", "CS-V1-0", "WHC-V1-0", "XX-V9"]
+)
 async def test_add_device_refuses_bluetooth_models(
     session, aioclient_mock: StandaloneAiohttpMocker, model: str
 ) -> None:
