@@ -24,6 +24,15 @@ and [Central HVAC controls](https://help.getmysa.com/articles/9079106768-Pairing
 These are vendor claims, not observations from this repository. Do not extend
 them to the tested Baseboard Lite or other older models.
 
+Mysa's app 4.21.1 offers a Matter setup code for four families: Baseboard V3,
+Central HVAC, Climate Sensor and Water Heater Controller. It lists a device
+when its cloud state has `matter.reported.provisioned` equal to `"OK"`; a
+Water Heater Controller also needs the capability
+`features.connectivity.matter` to be true. The app compares no firmware
+version here. `GET /matter/qr/{dev}` returns `qrCode`, the QR payload, and
+`manualCode`, the code to type in. This is app-derived and not verified on a
+device.
+
 ## Expected local control path
 
 1. Complete setup in the Mysa app, then obtain the Matter setup code from

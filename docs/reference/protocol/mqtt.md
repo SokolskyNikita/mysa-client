@@ -60,7 +60,9 @@ and [resource mapping](https://docs.aws.amazon.com/iot/latest/developerguide/iot
 ## Wire protocol
 
 The original Android clients use MQTT in versions 3.26.0 and 3.54.1; the
-examined 4.20.1 client uses HTTPS for its Mysa API operations. The device's own
+examined 4.20.1 client uses HTTPS for its Mysa API operations. App 3.65.1 also
+uses MQTT; its HTTPS requests all go to `app-prod.mysa.cloud`, except
+`GET /iot-token`, which goes to `mysa-backend.mysa.cloud`. The device's own
 TLS MQTT connection on port 8883 is a separate path with separate
 authentication. No thermostat-authenticated MQTT client has been established.
 
@@ -140,10 +142,12 @@ ignored; this does not establish behavior for all firmware.
 | Field | Meaning |
 | --- | --- |
 | `sp` | Celsius setpoint |
-| `md` | Legacy mode: `1` off, `3` heat |
+| `md` | Legacy mode: `1` off, `3` heat. The full list in Mysa's app 3.65.1 is 1 off, 2 auto, 3 heat, 4 cool, 5 fan, 6 dry |
 | `ho` | `1` follow schedule, `2` hold |
 | `tm` | Execution time in Unix seconds; `-1` means now |
 | `br` | Brightness object |
+
+Mysa's app 3.65.1 also defines a lock key, `lk`, but never sends it.
 
 The message envelope's `time` is Unix seconds and `id` is a request ID. The
 user-pool subject is included in `src.ref`; the account device ID is in
@@ -155,7 +159,8 @@ reported matching state, not that the heater physically operated.
 ### Commands for other models
 
 A thermostat ignores a command whose `body.type` belongs to another model.
-The types, from dlenski/mysotherm and bourquep/mysa2mqtt:
+The types are those Mysa's app 3.65.1 sends, and dlenski/mysotherm and
+bourquep/mysa2mqtt give the same numbers:
 
 | Model | `body.type` |
 | --- | --- |
@@ -180,9 +185,15 @@ a Baseboard V1), or refuses the connection outright
 ([issue 323](https://github.com/bourquep/mysa2mqtt/issues/323), three
 In-Floors). Keep an HTTP write path next to MQTT.
 
-Newer app versions send the command without `resp: 2` and at QoS 0
-(dlenski/mysotherm, 2026-11-03). The client omits `resp` and publishes at
-QoS 1.
+Mysa's app 3.65.1 always sends `resp: 2` and publishes at QoS 1. It builds
+the envelope keys in the order `ver`, `src`, `dest`, `time`, `msg`, `id`,
+`resp`, `body`. It publishes each command twice to `/v1/dev/{deviceId}/in`,
+about 350 ms apart and with the same `id` and `time`: first with `cmd` as an
+array, then with `cmd` as a JSON string. Its newer MQTT client also appends a
+top-level `Timestamp` (Unix seconds) when it publishes; its older client sends
+none. A third-party report that newer app versions send the command without
+`resp: 2` and at QoS 0 (dlenski/mysotherm, 2026-11-03) does not describe app
+3.65.1. The client omits `resp` and publishes at QoS 1.
 
 <a id="validation-and-limitations"></a>
 <a id="sources-and-unresolved-questions"></a>

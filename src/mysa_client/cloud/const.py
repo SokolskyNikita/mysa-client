@@ -16,8 +16,10 @@ COGNITO_URL: Final = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/"
 
 API_BASE: Final = "https://mysa-backend.mysa.cloud"
 # The older host, used here only for purgeadd (only Mysa's older app had it,
-# and it sent it here). Mysa's current app sends even its legacy routes to
-# API_BASE while the MONOLITH_API_ACCESS feature flag is on.
+# and it sent it here). Mysa's server still returns the MONOLITH_API_ACCESS
+# and DISABLE_LEGACY_FALLBACK feature flags (both true for app version
+# 4.21.1, 2026-11-15), but app 4.21.1 doesn't read them: it sends every route,
+# its legacy ones included, to API_BASE.
 LEGACY_API_BASE: Final = "https://app-prod.mysa.cloud"
 
 # Every write through /state/{dev}/update carries a source. 3 is what Mysa's
@@ -280,10 +282,11 @@ def model_family(model: str | None) -> ModelFamily | None:
 
 # Metrics POST /telemetry/usage/{dev} accepts per day and per 30-minute bucket
 # (Mysa names them in its 400 for an unsupported one), with the processing
-# Mysa's app asks for: runtime counters, power and the sample count are summed,
-# the rest averaged. oH1/oH2 are heat stages one and two, oHE auxiliary or
-# emergency heat, oC1/oC2 the cool stages, k power, h humidity, t Mysa's
-# temperature value, i probe temperature, n the number of samples.
+# Mysa's app asks for: runtime counters, energy and the sample count are
+# summed, the rest averaged. oH1/oH2 are heat stages one and two, oHE auxiliary
+# or emergency heat, oC1/oC2 the cool stages, k energy in kWh (as Mysa's app
+# uses it), h humidity, t Mysa's temperature value, i probe temperature, n the
+# number of samples.
 USAGE_FIELDS: Final[dict[str, str]] = {
     "oH1": "sum",
     "oH2": "sum",
@@ -297,8 +300,8 @@ USAGE_FIELDS: Final[dict[str, str]] = {
     "n": "sum",
 }
 # Raw reading fields the same route accepts: room temperature, humidity,
-# setpoint, time, sensor temperature, power, RSSI, probe temperature, heat
-# setpoint and cool setpoint.
+# setpoint, time, sensor temperature, heat-sink temperature (k; not power),
+# RSSI, probe temperature, heat setpoint and cool setpoint.
 USAGE_RAW_FIELDS: Final = ("c", "h", "s", "t", "e", "k", "r", "i", "hs", "cs")
 
 # The most events one weekly schedule can hold. Mysa's app 4.21.1 allows 70

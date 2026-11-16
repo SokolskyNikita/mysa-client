@@ -76,7 +76,7 @@ The [state fixture](../../../tests/fixtures/state_batch.json) shows the full res
 | `physicalInterface` | `lockout`, `activeIntensity`, `idleIntensity`, `format`, `intensityMode` |
 | `identity.reported` | `family` (`"BB"` on the Lite), `model`, `fw` |
 | `tracking.reported` | `ambientOffset`; other models can have tracking controls |
-| `bbConfig.reported` | `controlType`: 8 fan forced, 9 baseboard |
+| `bbConfig.reported` | `controlType`, with two value sets by model. Baseboard V2 and Lite: 8 fan forced, 9 baseboard (the `DutyCycleOpt` values). Baseboard V3: 0 baseboard, 1 fan forced, 2 radiant (Mysa's app 4.21.1, not observed on a device) |
 | `power.reported` | `voltage`, `current`, `wattage`, `dutyCycle`; all were zero on the Lite |
 | `diagnostics.reported` | `freeHeap`; demand-response `drState` was also recorded here |
 | `drState` | `inEvent`, `state`; a top-level object in the fixture, used by the Python parser. The separate [demand-response state](#demand-response-state) endpoint is another read |
@@ -191,7 +191,7 @@ Mysa names the fields it supports when a request uses another one (400,
 | `rawReadings` | `c`, `h`, `s`, `t`, `e`, `k`, `r`, `i`, `hs`, `cs` |
 
 Mysa's app 4.21.1 names them: `oH1` and `oH2` heat stages one and two, `oHE`
-auxiliary or emergency heat, `oC1` and `oC2` cool stages, `k` power, `i` probe
+auxiliary or emergency heat, `oC1` and `oC2` cool stages, `k` energy in kWh, `i` probe
 temperature, `cs` cool setpoint. A request needs at least one of `summary`,
 `rawReadings` or `aggregatedReadings`, a valid IANA `timezone`, an end after
 its start, and a range of at most 32 days.
@@ -231,6 +231,14 @@ each bucket's own start time.
 `attributesProcesses`. Fields include `h`, `c`, `s`, `a.oC`, `a.oH`, `ms`,
 `fs`, `tm`, and `t`. Use `sum` for runtime counters and `none` for raw values;
 normalize timestamp-keyed buckets before use. This client has no wrapper.
+
+Mysa's app 3.65.1 names these batch-reading keys for baseboard and In-Floor
+models: `c` corrected temperature, `e` sensor temperature, `i` / `a.i` floor
+temperature, `k` heat-sink temperature, `n` on-time, `f` off-time, `u`
+current, `v` voltage, `y` duty cycle, `x` effective setpoint, `r` RSSI, `p`
+free heap, `m` mode, `z` flag byte, and `a.k` aggregate kWh. The app calls
+this route for a Mini-Split AC only, so the names are not checked against a
+baseboard's response.
 
 ### Humidity and Lite energy data
 

@@ -30,7 +30,10 @@ bodies. R and L do not require a separate login or AWS request signature.
 
 Routing depends on feature flags: `MONOLITH_API_ACCESS` moves legacy routes to
 `mysa-backend`, and `DISABLE_LEGACY_FALLBACK` disables retrying them on `app-prod`.
-Both were enabled for the tested account. A host name alone therefore does not
+Both were enabled for the tested account, and Mysa's feature-flag route still
+returned both as true for app version 4.21.1 on 2026-11-15. Mysa's app 4.21.1
+itself no longer reads them: it sends every route to
+`mysa-backend.mysa.cloud`. A host name alone therefore does not
 identify the protocol family. Service aliases are defined in the [cloud overview](cloud.md#context-and-conventions);
 client fallback is part of the [HTTP contract](../python/cloud.md#errors-timeouts-retries-and-caller-responsibilities).
 

@@ -95,7 +95,7 @@ both `UsageDay` and `UsageBucket`:
 | `oHE` | `emergency_heat_seconds` | Auxiliary or emergency heat (Central HVAC) |
 | `oC1` | `cool_seconds` | Cooling on-time |
 | `oC2` | `cool_stage2_seconds` | Second cooling stage |
-| `k` | `power` | Power, summed, on a model that measures it |
+| `k` | `power` | Energy in kWh as Mysa's app uses it (summed), on a model that measures it; not power, despite the attribute name |
 | `h` | `humidity` | Average humidity |
 | `t` | `average_temperature` / `temperature` | Mysa's temperature value |
 | `i` | `probe_temperature` | Average probe temperature (In-Floor) |
@@ -104,7 +104,7 @@ both `UsageDay` and `UsageBucket`:
 `raw_fields` takes any of `USAGE_RAW_FIELDS` and fills `UsageDay.raw` with
 `UsageSample` readings about 30 seconds apart: room temperature (`c`),
 sensor temperature (`e`), humidity (`h`), setpoint (`s`), heat and cool
-setpoints (`hs`, `cs`), power (`k`), RSSI (`r`) and probe temperature (`i`);
+setpoints (`hs`, `cs`), heat-sink temperature (`k`; not power), RSSI (`r`) and probe temperature (`i`);
 the time is always included.
 
 ```python
@@ -121,7 +121,7 @@ days = await client.get_usage(
 An attribute is `None` when the field wasn't requested or Mysa left it out,
 which it does for anything the thermostat has no data for: a Baseboard Lite
 returned only `oH1`, `t` and `n`. Only those three and the raw readings are
-verified, on a Lite; the staged, power, humidity and probe fields come from
+verified, on a Lite; the staged, energy, humidity and probe fields come from
 Mysa's field list and its app. A field outside the two lists raises
 `ValueError` before any request. Mysa refuses a range over 32 days. See the
 [protocol notes](../protocol/cloud-state.md#usage) for what a bucket's

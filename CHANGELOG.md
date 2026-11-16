@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Docs: protocol reference corrected against Mysa's apps 3.65.1 and 4.21.1 and
+  a Baseboard Lite. Setup order after Wi-Fi (claim, identity check, finalize,
+  fleet registration), claim defaults per model, the `40` status grace period,
+  Matter code fields, MQTT message 44 as the app sends it, reminder and zone
+  verbs, where the electricity rate lives, and the two value sets of
+  `bbConfig.controlType`. Usage field `k` is energy in kWh in summaries and
+  buckets, and the heat-sink temperature in raw samples (comments and docs
+  only; no behaviour change).
 - Docs: new page on Mysa's official Consumer API (`docs/guides/official-api.md`):
   what it is, how to connect, and why this library doesn't use it yet.
 - In-Floor floor sensor: `DeviceState.from_legacy()` reads `Infloor` into
