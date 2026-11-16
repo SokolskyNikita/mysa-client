@@ -218,6 +218,20 @@ class ScheduleEventSpec:
             require_setpoint(self.temperature)
 
 
+def _refuse_water_heater(family: ModelFamily | None, mode: Mode | None) -> None:
+    """Refuse a setpoint or setpoint-limit write to a Water Heater Controller.
+
+    Its ``targetHeat`` setpoint is the thermal safety limit, not a room
+    target. Mysa's app 4.21.1 refuses the write for every mode.
+    """
+    if family == ModelFamily.WATER_HEATER:
+        raise SetpointModeError(
+            mode,
+            "A Water Heater Controller takes no setpoint: its heat setpoint is "
+            "the thermal safety limit",
+        )
+
+
 def temperature_changes(
     mode: Mode | None,
     temperature: Setpoint,
@@ -236,10 +250,17 @@ def temperature_changes(
     Mysa's app 4.21.1 differs in two of them: it writes ``targetCool`` in dry
     and both ``targetHeat`` and ``targetCool`` in fan-only.
 
+    A Water Heater Controller (``family`` is ``ModelFamily.WATER_HEATER``)
+    raises ``SetpointModeError`` in every mode: its ``targetHeat`` setpoint is
+    the thermal safety limit, not a room target, and Mysa's app 4.21.1 refuses
+    the same write. The check needs ``family``; without it the model is
+    unknown and nothing is refused.
+
     The emergency-heat and AC auto encodings are derived from Mysa's app
     4.21.1; not verified on a device.
     """
     value = require_setpoint(temperature)
+    _refuse_water_heater(family, mode)
     if mode in NO_SETPOINT_MODES:
         raise SetpointModeError(
             mode, f"Mode {mode.name.lower()} has no setpoint to write"
@@ -419,6 +440,9 @@ def setpoint_limit_changes(
     Mysa's app does. Pass a ``SetpointLimit`` from ``SetpointRules.limit``
     with the same ``kind``.
 
+    A Water Heater Controller raises ``SetpointModeError``, as in
+    ``temperature_changes``.
+
     The cooling and AC encodings are derived from Mysa's app 4.21.1; not
     verified on a device.
     """
@@ -426,6 +450,7 @@ def setpoint_limit_changes(
         raise ValueError(
             f"Setpoint limits are heating or cooling limits, not {kind.value}"
         )
+    _refuse_water_heater(family, None)
     if kind == SetpointKind.COOL and family in _HEAT_ONLY_FAMILIES:
         raise SetpointModeError(
             Mode.COOL, f"A {family.value} thermostat has no cooling limits"

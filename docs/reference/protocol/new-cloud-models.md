@@ -116,6 +116,15 @@ heater whose own thermostat stays in charge, and has a tank temperature probe
 and a leak probe. It has a capability document, and no heat setpoint: the app
 refuses to send it an ordinary setpoint write.
 
+This library recognises the four model strings as `ModelFamily.WATER_HEATER`
+and has no other support for the product. Because `targetHeat.setpoint` is
+the thermal safety limit below, `temperature_changes` and
+`setpoint_limit_changes` raise `SetpointModeError` when given that family,
+and `validate_cloud_command` refuses a setpoint or setpoint limit for it.
+These checks need the family; a caller that passes none is not protected.
+Whether Mysa's server or the controller would apply such a write was not
+tested.
+
 | State or capability path | Meaning |
 | --- | --- |
 | `modes.reported.mode` | 4 on, 1 idle, 0 off |

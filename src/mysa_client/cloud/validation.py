@@ -10,6 +10,19 @@ from .models import Capabilities, DeviceState
 from .observations import number
 from .setpoints import limits_ordered
 
+_WATER_HEATER_REFUSED = frozenset(
+    {
+        "heat_setpoint",
+        "cool_setpoint",
+        "auto_heat_setpoint",
+        "auto_cool_setpoint",
+        "setpoint_min",
+        "setpoint_max",
+        "cool_min",
+        "cool_max",
+    }
+)
+
 
 def validate_cloud_command(
     family: ModelFamily | None,
@@ -26,7 +39,15 @@ def validate_cloud_command(
     conservative allowlist. Established models retain permissive operation
     support, while advertised modes and choices, observed setpoint bounds, and
     paired setting invariants are still enforced when their data is available.
+    A setpoint or setpoint limit for a Water Heater Controller is refused.
     """
+    # Its heat setpoint is the thermal safety limit, not a room target. Other
+    # commands are left as for any model this library does not know.
+    if family == ModelFamily.WATER_HEATER and _WATER_HEATER_REFUSED & set(expected):
+        raise ValueError(
+            "A Water Heater Controller takes no setpoint or setpoint limit"
+        )
+
     if command_kind == "settings" and family in EXPERIMENTAL_CLOUD_FAMILIES:
         raise ValueError("Legacy device settings are not implemented for this model")
 

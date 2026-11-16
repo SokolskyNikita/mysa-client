@@ -240,10 +240,11 @@ class ModelFamily(StrEnum):
     AC = "ac"
     CENTRAL_HVAC = "hvac"
     CLIMATE_SENSOR = "cs"
+    WATER_HEATER = "whc"
 
 
 # Every model string Mysa's app 4.20.1 accepts (the app also lists lowercase
-# copies; compare uppercased).
+# copies; compare uppercased). The Water Heater Controller is from app 4.21.1.
 MODEL_FAMILIES: Final[dict[str, ModelFamily]] = {
     **dict.fromkeys(
         ("BB-V1-0", "V1-0", "BB-V1-1", "V1-1", "V1"), ModelFamily.BASEBOARD_V1
@@ -258,10 +259,12 @@ MODEL_FAMILIES: Final[dict[str, ModelFamily]] = {
     **dict.fromkeys(("AC-V1-0", "AC-V1"), ModelFamily.AC),
     **dict.fromkeys(("ST-V1-0", "ST-V1", "LV"), ModelFamily.CENTRAL_HVAC),
     **dict.fromkeys(("CS-V1-0", "CS-V1"), ModelFamily.CLIMATE_SENSOR),
+    **dict.fromkeys(("WHC-V1-0", "WHC-V1"), ModelFamily.WATER_HEATER),
 }
 
 # Families that join with Wi-Fi details alone, so add_device can put them on an
-# account. Baseboard V3, Central HVAC and the Climate Sensor also need a
+# account. Baseboard V3, Central HVAC, the Climate Sensor and the Water Heater
+# Controller also need a
 # credential file over Bluetooth, an update-fleet registration and a finalize
 # step; this client deliberately doesn't add those.
 WIFI_ONLY_FAMILIES: Final = frozenset(
@@ -276,6 +279,8 @@ WIFI_ONLY_FAMILIES: Final = frozenset(
 
 
 # Cloud import/control is independent of Bluetooth enrollment and HomeKit.
+# The Water Heater Controller is recognised but in neither set, and its
+# setpoint writes are refused (see temperature_changes).
 EXPERIMENTAL_CLOUD_FAMILIES: Final = frozenset(
     {ModelFamily.BASEBOARD_V3, ModelFamily.CENTRAL_HVAC, ModelFamily.CLIMATE_SENSOR}
 )
@@ -353,5 +358,6 @@ MODEL_NAMES: Final[dict[str, str]] = {
     "ST-V1-0": "Mysa for Central HVAC",
     "LV": "Mysa for Central HVAC",
     "CS-V1-0": "Mysa Climate Sensor",
+    "WHC-V1-0": "Mysa Water Heater Controller",
 }
 TESTED_MODELS: Final = frozenset({"BB-V2-0-L"})
