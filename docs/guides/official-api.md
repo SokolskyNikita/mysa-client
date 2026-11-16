@@ -47,6 +47,10 @@ against that list before accepting it.
 The same operations are also offered as tools for AI assistants through a
 Model Context Protocol endpoint.
 
+The only open-source project we know of that builds on the API, as of
+2026-11-15, is [homeCore](https://github.com/homeCore-io/homeCore), through
+its `hc-mysa` plugin.
+
 ## How to connect
 
 Mysa's [getting-started guide](https://github.com/empoweredhomes/mysa-api-examples)
