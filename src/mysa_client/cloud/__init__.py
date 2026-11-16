@@ -16,6 +16,7 @@ from .commands import (
     state_command,
 )
 from .const import (
+    BASE_SCHEDULE_EVENTS,
     MAX_SCHEDULE_EVENTS,
     MODEL_FAMILIES,
     MODEL_NAMES,
@@ -35,6 +36,7 @@ from .const import (
     Swing,
     TrackedSensor,
     model_family,
+    schedule_event_limit,
 )
 from .exceptions import (
     MysaApiError,
@@ -92,6 +94,7 @@ from .setpoints import (
 from .usage import UsageToday, local_day_start
 
 __all__ = [
+    "BASE_SCHEDULE_EVENTS",
     "MAX_SCHEDULE_EVENTS",
     "MODEL_FAMILIES",
     "MODEL_NAMES",
@@ -172,6 +175,7 @@ __all__ = [
     "normalize_firmware_version",
     "parse_mode",
     "reconcile",
+    "schedule_event_limit",
     "settings_command",
     "state_command",
     "value_range",

@@ -34,8 +34,11 @@ other models use the older store is not established. Compare event behavior
 rather than requiring the submitted and returned JSON to match exactly.
 
 Mysa states these limits for one schedule: at most 56 events, at most one
-event per day and time, and at most 50 thermostats. This route does not
-enforce them. Tested on a Baseboard Lite on 2026-11-15, each of these was
+event per day and time, and at most 50 thermostats. Mysa's app 4.21.1 uses a
+higher event limit for some models: 70 for a Baseboard Lite, a Mini-Split AC,
+and other models from a certain firmware version on, and 56 for a Baseboard
+V1 and the rest (derived from the app; the firmware versions are not
+verified). This route does not enforce any of them. Tested on a Baseboard Lite on 2026-11-15, each of these was
 answered 201 and stored:
 
 | Request | Answer |
@@ -48,11 +51,14 @@ answered 201 and stored:
 | `dayOfWeek` as an integer instead of a string | 201 |
 | No `reusable` field | 201 |
 
-Whether the thermostat runs such a schedule was not tested (each was deleted
-at once). `encode_schedule_events()` and `MysaClient.update_schedule()`
-refuse more than 56 events and a repeated day and time
-(`check_schedule_events()`); setpoints and modes are checked when the events
-are built.
+A Baseboard Lite stored a 70-event schedule and ran an event from it on time
+(2026-11-15); its legacy V2 view held the same 70 events. The other cases
+above were deleted at once, so whether a thermostat runs them is not known.
+`encode_schedule_events()` and `MysaClient.update_schedule()` refuse a
+repeated day and time and more than `max_events` events
+(`check_schedule_events()`): 70 by default, and `schedule_event_limit(family)`
+gives a model's own limit (70 for a Baseboard Lite and an AC, 56 otherwise).
+Setpoints and modes are checked when the events are built.
 
 `DELETE /schedule/{scheduleId}/attach/{dev}` detaches the device. For an unshared
 schedule, the response was "Schedule unattached from device and deleted".
@@ -69,9 +75,16 @@ For supported replacement and recovery, follow the [schedule guide](../../guides
 Read v1 with `GET /schedules`. To clear one device, POST
 `/schedules/device/update/{dev}` with seven empty weekday arrays in
 `ScheduledActions`; R also requires `Device` and `Model`. Preserve other devices.
-Read v2 with `GET /schedules/v2/{dev}` using the device ID. Creation/update uses
-`POST /schedules/v2/`: `Schedule` carries `Version`, `Owner`, `Events` (and `Id`
-for update), with sibling `Devices` and `Model`. Preserve the native metadata;
+Read v2 with `GET /schedules/v2/{dev}` using the device ID. Create with
+`POST /schedules/v2/` and update with `PUT /schedules/v2/`: `Schedule` carries
+`Version`, `Owner`, `Events` (and `Id` for update), with sibling `Devices` and
+`Model`. On a Baseboard Lite (2026-11-15) a PUT with the existing `Id` kept the
+schedule's id, and a POST with the same body gave it a new id. A PUT for an
+`Id` whose schedule had been deleted answered 200 but attached nothing: the
+thermostat still had no schedule. `restore_native_schedule()` therefore uses
+PUT only while every listed thermostat still follows that schedule, and POST
+otherwise. A schedule made through the modern `/schedule` route read back
+here with `Version` `"3.0.0"` and its events keyed `BB`. Preserve the native metadata;
 do not derive `Model` or `Owner` from an event key. See the
 [v2 update body](../../../examples/cloud/schedule-v2-update.full-body.json),
 [v2 delete body](../../../examples/cloud/schedule-v2-delete.with-body.json), and
@@ -105,7 +118,7 @@ With a schedule active, a plain setpoint write held the new value until the next
 
 For a timed hold, use `"holdType":"temporary"` and add `"endTime":"<ISO UTC timestamp>"`. Both returned 201 with a `holdId`. Changing the hold kept the same ID.
 
-The server rejects a start time that has already passed with "Start time must be greater than current time". The Python client starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix.
+The server rejects a start time that has already passed with "Start time must be greater than current time". The Python client starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix. `startTime` is optional: a hold sent without one was answered 201 and read back with the time of the request as its start (Baseboard Lite, 2026-11-15), which is how Mysa's app 4.21.1 sends it. An `endTime` that has passed is refused with "End time must be greater than current time".
 
 A hold body needs `holdType`: one with only `deviceId` is answered 400. The observed hold workflow requires an active schedule. Treat a creation-time 404 as inconclusive unless the response confirms that no schedule is active.
 

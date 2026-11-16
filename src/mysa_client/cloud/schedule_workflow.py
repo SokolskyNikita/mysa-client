@@ -18,7 +18,7 @@ from typing import Any, NoReturn, Protocol
 
 from .client import MysaClient
 from .commands import ScheduleEventSpec, encode_schedule_events
-from .const import NO_SETPOINT_MODES, Mode
+from .const import MAX_SCHEDULE_EVENTS, NO_SETPOINT_MODES, Mode
 from .modes import parse_mode
 from .setpoints import (
     Setpoint,
@@ -121,8 +121,12 @@ def build_schedule_events(
     client_key: str = "mysa-client",
     rules: SetpointRules | None = None,
     unit: Unit = "C",
+    max_events: int = MAX_SCHEDULE_EVENTS,
 ) -> list[dict[str, Any]]:
     """Encode semantic weekday events in the cloud schedule representation.
+
+    ``max_events`` is the most events allowed; pass
+    ``schedule_event_limit(family)`` for the thermostat's model.
 
     Each event has ``days``, ``time``, an optional ``hvac_mode`` and an
     optional ``temperature``. ``hvac_mode`` (``default_mode`` when missing or
@@ -172,7 +176,7 @@ def build_schedule_events(
                 client_key=client_key,
             )
         )
-    return encode_schedule_events(specs)
+    return encode_schedule_events(specs, max_events=max_events)
 
 
 def schedule_content_matches(

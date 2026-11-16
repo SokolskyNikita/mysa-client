@@ -310,8 +310,14 @@ def make_state(mode: Mode, temperature: Setpoint | None) -> StateChanges:
 
 def encode_schedule_events(
     events: Iterable[ScheduleEventSpec],
+    *,
+    max_events: int = MAX_SCHEDULE_EVENTS,
 ) -> list[dict[str, Any]]:
-    """Encode schedule events using Mysa's weekday and state representation."""
+    """Encode schedule events using Mysa's weekday and state representation.
+
+    ``max_events`` is the most events allowed; pass
+    ``schedule_event_limit(family)`` for the thermostat's model.
+    """
     encoded: list[dict[str, Any]] = []
     for event in events:
         for day in event.days:
@@ -327,15 +333,19 @@ def encode_schedule_events(
             }
             encoded.append(dict(wire_event))
     encoded.sort(key=lambda event: (int(event["dayOfWeek"]), event["executionTime"]))
-    check_schedule_events(encoded)
+    check_schedule_events(encoded, max_events=max_events)
     return encoded
 
 
-def check_schedule_events(events: Iterable[Mapping[str, Any]]) -> None:
-    """Refuse a weekly schedule that breaks Mysa's stated limits.
+def check_schedule_events(
+    events: Iterable[Mapping[str, Any]], *, max_events: int = MAX_SCHEDULE_EVENTS
+) -> None:
+    """Refuse a weekly schedule that breaks the limits Mysa's app applies.
 
-    A schedule has at most ``MAX_SCHEDULE_EVENTS`` events and at most one per
-    day and time. Mysa's cloud stores a schedule that breaks either rule
+    A schedule has at most ``max_events`` events and at most one per day and
+    time. The default is the most any model takes (70); pass
+    ``schedule_event_limit(family)`` to apply the thermostat's own limit (56
+    for most models). Mysa's cloud stores a schedule that breaks either rule
     without an error (seen on a Baseboard Lite), so check before sending.
     Raises ``ValueError``.
     """
@@ -350,9 +360,9 @@ def check_schedule_events(events: Iterable[Mapping[str, Any]]) -> None:
                 f"(day {slot[0]}, {slot[1]})"
             )
         seen.add(slot)
-    if count > MAX_SCHEDULE_EVENTS:
+    if count > max_events:
         raise ValueError(
-            f"A schedule can have at most {MAX_SCHEDULE_EVENTS} events, not {count}"
+            f"A schedule can have at most {max_events} events, not {count}"
         )
 
 

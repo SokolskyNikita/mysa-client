@@ -34,6 +34,7 @@ from .const import (
     APP_VERSION,
     EXPERIMENTAL_CLOUD_FAMILIES,
     LEGACY_API_BASE,
+    MAX_SCHEDULE_EVENTS,
     REQUEST_TIMEOUT,
     USAGE_FIELDS,
     USAGE_RAW_FIELDS,
@@ -1165,7 +1166,12 @@ class MysaClient:
             await self.delete_schedule(str(schedule["id"]), device_id)
 
     async def restore_native_schedule(self, schedule: Mapping[str, Any]) -> None:
-        """Restore a journal snapshot after failed cleanup; no user-facing editor."""
+        """Restore a journal snapshot after failed cleanup; no user-facing editor.
+
+        A V2 schedule that every listed thermostat still follows is updated in
+        place and keeps its id. Otherwise it is created again and gets a new
+        id.
+        """
         raw = dict(schedule["native"])
         devices = list(schedule["deviceIds"])
         if schedule["origin"] == "v1":
@@ -1181,9 +1187,26 @@ class MysaClient:
                     },
                 )
         else:
+            # PUT updates a schedule in place and keeps its id; POST makes a new
+            # one. A PUT for an id no thermostat follows any more answers 200
+            # and attaches nothing (both seen on a Baseboard Lite), so PUT is
+            # used only while every thermostat still follows this schedule.
+            method = "POST"
+            if raw.get("Id") and devices:
+                method = "PUT"
+                for dev in devices:
+                    try:
+                        current = await self._legacy_request(
+                            "schedules_v2", "GET", f"/schedules/v2/{dev}"
+                        )
+                    except MysaNotFoundError:
+                        current = None
+                    if not isinstance(current, dict) or current.get("Id") != raw["Id"]:
+                        method = "POST"
+                        break
             await self._legacy_request(
                 "schedules_v2",
-                "POST",
+                method,
                 "/schedules/v2/",
                 body={
                     "Schedule": raw,
@@ -1235,6 +1258,7 @@ class MysaClient:
         events: list[dict[str, Any]],
         name: str,
         reusable: bool = False,
+        max_events: int = MAX_SCHEDULE_EVENTS,
     ) -> None:
         """Replace a weekly schedule's name and events in place.
 
@@ -1247,7 +1271,7 @@ class MysaClient:
         """
         if not device_ids:
             raise ValueError("A schedule needs at least one thermostat")
-        check_schedule_events(events)
+        check_schedule_events(events, max_events=max_events)
         await self._request(
             "PUT",
             f"/schedule/{schedule_id}",

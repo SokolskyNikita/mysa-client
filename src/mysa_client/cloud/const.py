@@ -301,9 +301,25 @@ USAGE_FIELDS: Final[dict[str, str]] = {
 # setpoint and cool setpoint.
 USAGE_RAW_FIELDS: Final = ("c", "h", "s", "t", "e", "k", "r", "i", "hs", "cs")
 
-# Mysa's stated limits for one weekly schedule. Its cloud route stores a
-# schedule that breaks them without an error, so they are checked here.
-MAX_SCHEDULE_EVENTS: Final = 56
+# The most events one weekly schedule can hold. Mysa's app 4.21.1 allows 70
+# for a Baseboard Lite and a Mini-Split AC and 56 for a Baseboard V1; a
+# Baseboard Lite stored and ran a 70-event schedule (2026-11-15). Mysa's cloud
+# stores a longer schedule without an error, so the limit is checked here.
+MAX_SCHEDULE_EVENTS: Final = 70
+BASE_SCHEDULE_EVENTS: Final = 56
+_LONG_SCHEDULE_FAMILIES: Final = frozenset({ModelFamily.BASEBOARD_LITE, ModelFamily.AC})
+
+
+def schedule_event_limit(family: ModelFamily | None) -> int:
+    """How many events one weekly schedule may hold for a model family.
+
+    70 for a Baseboard Lite and a Mini-Split AC, 56 for everything else. Mysa's
+    app also allows 70 on other models from a certain firmware version on;
+    that version table is not verified, so those models get 56 here.
+    """
+    if family in _LONG_SCHEDULE_FAMILIES:
+        return MAX_SCHEDULE_EVENTS
+    return BASE_SCHEDULE_EVENTS
 
 
 class ChangeSource(StrEnum):

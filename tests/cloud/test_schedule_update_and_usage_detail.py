@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, time
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from mysa_client.cloud import (
+    BASE_SCHEDULE_EVENTS,
     MAX_SCHEDULE_EVENTS,
     USAGE_FIELDS,
     USAGE_RAW_FIELDS,
     Capabilities,
     Mode,
+    ModelFamily,
     MysaAuth,
     MysaClient,
     ScheduleEventSpec,
@@ -19,8 +22,10 @@ from mysa_client.cloud import (
     UsageDay,
     check_schedule_events,
     encode_schedule_events,
+    schedule_event_limit,
 )
 from mysa_client.cloud.exceptions import MysaNotFoundError
+from mysa_client.cloud.schedule_workflow import build_schedule_events
 from tests.cloud_helpers import DEVICE_ID, REFRESH_TOKEN, FakeCloud, load_json
 
 
@@ -88,15 +93,130 @@ async def test_update_schedule_refusals(session, cloud: FakeCloud):
 
 
 def test_schedule_limits():
-    full = [_event(day, f"{hour:02d}:00:00") for day in range(7) for hour in range(8)]
-    assert len(full) == MAX_SCHEDULE_EVENTS
+    base = [_event(day, f"{hour:02d}:00:00") for day in range(7) for hour in range(8)]
+    full = [_event(day, f"{hour:02d}:00:00") for day in range(7) for hour in range(10)]
+    assert (len(base), len(full)) == (BASE_SCHEDULE_EVENTS, MAX_SCHEDULE_EVENTS)
+    assert (BASE_SCHEDULE_EVENTS, MAX_SCHEDULE_EVENTS) == (56, 70)
+    # With no model given, only more than any model takes is refused.
     check_schedule_events(full)
-    with pytest.raises(ValueError, match="at most 56 events, not 57"):
+    with pytest.raises(ValueError, match="at most 70 events, not 71"):
         check_schedule_events([*full, _event(0, "23:30:00")])
+    # A model's own limit.
+    check_schedule_events(base, max_events=56)
+    with pytest.raises(ValueError, match="at most 56 events, not 57"):
+        check_schedule_events([*base, _event(0, "23:30:00")], max_events=56)
     # The same time on another day is a different slot.
     check_schedule_events([_event(0, "07:00:00"), _event(1, "07:00:00")])
     with pytest.raises(ValueError, match=r"day 3, 07:00:00"):
         check_schedule_events([_event(3, "07:00:00"), _event(3, "07:00:00")])
+
+
+def test_schedule_event_limit_by_family():
+    # A Baseboard Lite stored and ran 70 events; the app allows the AC 70 too.
+    assert schedule_event_limit(ModelFamily.BASEBOARD_LITE) == 70
+    assert schedule_event_limit(ModelFamily.AC) == 70
+    for family in (
+        ModelFamily.BASEBOARD_V1,
+        ModelFamily.BASEBOARD_V2,
+        ModelFamily.BASEBOARD_V3,
+        ModelFamily.INFLOOR,
+        ModelFamily.CENTRAL_HVAC,
+        ModelFamily.CLIMATE_SENSOR,
+        None,
+    ):
+        assert schedule_event_limit(family) == 56
+
+
+def test_encode_and_build_apply_the_given_limit():
+    setpoint = SetpointRules().setpoint(Mode.HEAT, 20)
+    days = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+    specs = [
+        ScheduleEventSpec(days, time(hour, 0), Mode.HEAT, setpoint, "test")
+        for hour in range(9)
+    ]
+    assert len(encode_schedule_events(specs)) == 63
+    with pytest.raises(ValueError, match="at most 56 events, not 63"):
+        encode_schedule_events(specs, max_events=56)
+    events = [
+        {"days": days, "time": time(hour, 0), "temperature": 20} for hour in range(9)
+    ]
+    assert len(build_schedule_events(events, rules=SetpointRules())) == 63
+    with pytest.raises(ValueError, match="at most 56 events, not 63"):
+        build_schedule_events(events, rules=SetpointRules(), max_events=56)
+
+
+async def test_update_schedule_takes_a_model_limit(session, cloud: FakeCloud):
+    client = _client(session)
+    await client.create_schedule(
+        home_id="home", device_id=DEVICE_ID, device_type="BB", events=[]
+    )
+    events = [_event(day, f"{hour:02d}:00:00") for day in range(7) for hour in range(9)]
+    common = {
+        "home_id": "home",
+        "device_type": "BB",
+        "device_ids": [DEVICE_ID],
+        "name": "x",
+    }
+    with pytest.raises(ValueError, match="at most 56 events, not 63"):
+        await client.update_schedule("s1", events=events, max_events=56, **common)
+    assert cloud.calls("PUT", "/schedule/s1") == []
+    await client.update_schedule("s1", events=events, **common)
+    assert len(cloud.calls("PUT", "/schedule/s1")[0]["events"]) == 63
+
+
+def _v2_snapshot() -> dict:
+    return {
+        "origin": "v2",
+        "deviceIds": [DEVICE_ID],
+        "deviceType": "BB-V2-0-L",
+        "native": {
+            "Id": "v2-id",
+            "Version": "3.0.0",
+            "Events": {"0": {"10": {"BB": "3|22|%|%|%|%|%"}}},
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("current", "method"),
+    [
+        ({"Id": "v2-id"}, "PUT"),  # still followed: update in place, id kept
+        ({"Id": "another"}, "POST"),  # follows another schedule now
+        (None, "POST"),  # no schedule any more: a PUT would attach nothing
+    ],
+)
+async def test_restore_v2_schedule_picks_put_or_post(session, current, method):
+    client = _client(session)
+    calls = []
+
+    async def legacy(operation, verb, path, **kwargs):
+        calls.append((verb, path, kwargs.get("body")))
+        if verb == "GET":
+            if current is None:
+                raise MysaNotFoundError("no schedule")
+            return current
+        return {}
+
+    with patch.object(client, "_legacy_request", legacy):
+        await client.restore_native_schedule(_v2_snapshot())
+    assert calls[0][:2] == ("GET", f"/schedules/v2/{DEVICE_ID}")
+    verb, path, body = calls[-1]
+    assert (verb, path) == (method, "/schedules/v2/")
+    assert body == {
+        "Schedule": _v2_snapshot()["native"],
+        "Devices": [DEVICE_ID],
+        "Model": "BB-V2-0-L",
+    }
+
+
+async def test_restore_v2_schedule_without_an_id_is_created(session):
+    client = _client(session)
+    snapshot = _v2_snapshot()
+    del snapshot["native"]["Id"]
+    with patch.object(client, "_legacy_request", AsyncMock(return_value={})) as request:
+        await client.restore_native_schedule(snapshot)
+    assert request.await_count == 1
+    assert request.call_args.args[:3] == ("schedules_v2", "POST", "/schedules/v2/")
 
 
 def test_encode_schedule_events_refuses_a_repeated_slot():
