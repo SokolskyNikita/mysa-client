@@ -146,8 +146,10 @@ For Wi-Fi provisioning and its relationship to local pairing and account enrollm
 ### Claiming an older model
 
 This flow applies to Baseboard V1/V2/Lite, In-floor and AC. Account claims use
-`POST /devices`; the device need not already be verified online. The examined mobile app
-setup flow then allows up to four minutes for the Lite's legacy-echo check.
+`POST /devices`; the device need not already be verified online. Mysa's app
+3.65.1 then allows up to four minutes for an MQTT echo check (Bluetooth setup
+only). App 4.21.1 has no echo check: on every setup path it waits up to five
+minutes for a newer `identity` timestamp in the device's cloud state.
 
 All claims contain `Id`, `Model`, `Name`, `Home`, `TimeZone` and `LastPaired`.
 `Home` is a home ID, or `"PROPERTY_HOME"` in the legacy property-manager flow.
@@ -156,12 +158,16 @@ The supplied name, home and time zone are written to the account record.
 | Claim style | Additional fields and behavior |
 | --- | --- |
 | Minimal legacy claim | AC adds `SetupRequired: true`; Lite adds `schedGlobalOffset: 0` |
-| Current legacy-device setup | Adds settings defaults such as `Animation: "off"`, `ecoMode: 1`, and `Format`; Lite also sets `DutyCycleOpt: 9` |
-| Newer credential-based setup | Uses base identity/home fields after credential transfer; see the [registration sequence](#baseboard-v3-central-hvac-and-climate-sensor) |
+| Current legacy-device setup (app 4.21.1) | Adds `Animation: "off"`, `ecoMode: 1`, and `Format` for every model; Baseboard V2 and Lite also set `DutyCycleOpt: 9` |
+| Newer credential-based setup | Sends the six fields above plus `Animation`, `ecoMode` and `Format`, and nothing else, after credential transfer; see the [registration sequence](#baseboard-v3-central-hvac-and-climate-sensor) |
 
-For the current legacy-device defaults, AC adds `SetupRequired: true`; BB1 uses
+For the current legacy-device defaults, AC adds only `SetupRequired: true`; BB1 uses
 `DutyCycleOpt: 0`; In-floor uses `DutyCycleOpt: 0`, `FloorOhms: 10`, `FloorType: 1`,
 `IsMysaFloorSensor: true`, `MaxFloorTemp: 28`, `MaxSetpoint: 28` and `Tracking: 3`.
+Baseboard V1, V2 and In-floor also send `schedGlobalOffset: 1` unless the
+app's stored record for the device already has 0, 1 or 30; the Lite always
+sends `schedGlobalOffset: 0`. A claim with no model gets the same body as a
+newer model.
 `ecoMode: 1` means off. These defaults can overwrite settings on re-addition.
 
 A successful re-add returned 201. A 409 means the device is already on the
@@ -171,7 +177,11 @@ worked in validation. A 409 recovery flow may write settings separately; that
 is a distinct request and should be verified against the resulting record.
 
 An ownership conflict can produce "User is not allowed to access the specified
-home". Its HTTP status and another-account behavior remain unverified. The
+home". Its HTTP status and another-account behavior remain unverified. Mysa's
+app 4.21.1 treats a claim error whose message contains that text as a
+thermostat that belongs to another account. It retries a failed claim only
+when the error message contains "No Internet Connection": up to three
+retries, waiting 3, 6 and 9 seconds. The
 legacy-device claim body contains no possession proof beyond the device ID;
 validation covered re-adding a previously owned Lite, not claiming a device
 never associated with the account.
@@ -221,13 +231,18 @@ the [newer-model API reference](new-cloud-models.md) for model and state shapes.
 
 | Stage | Request or condition |
 | --- | --- |
-| Register in OTA fleet | `POST /ota/fleet/devices` with `{"deviceIds":["{dev}"],"fleetName":"<fleet>"}`; fleets are `bb3-prod`, `lv-prod` and `cs-prod` |
 | Claim on account | `POST /devices` with base identity/home fields, without legacy heater defaults |
 | Verify cloud connection | Wait up to five minutes for a newer `identity` timestamp from `GET /state/{dev}` |
 | Finalize pairing | `POST /pairing/finalize` with `{"deviceId":"{dev}"}` |
-| Obtain Matter setup code | `GET /matter/qr/{dev}` returns `{qrCode,pairingCode}` |
+| Register in OTA fleet | `POST /ota/fleet/devices` with `{"deviceIds":["{dev}"],"fleetName":"<fleet>"}`; fleets are `bb3-prod`, `lv-prod`, `cs-prod` and `whc-prod` (Water Heater Controller) |
+| Write display format | The app writes the account's Celsius or Fahrenheit setting to the device |
+| Obtain Matter setup code | `GET /matter/qr/{dev}` returns `{qrCode,manualCode}`; requested later from the app's Home Assistants page, not during setup |
 
-Registration follows credential transfer at the "register device" setup stage. Subsequent
+The stages are in the order Mysa's app 4.21.1 runs them once Wi-Fi is up,
+after credential transfer; fleet registration is its "register device" setup
+stage. The app ignores a `/pairing/finalize` error and continues. A failed
+fleet registration is shown as a setup failure, but the format write still
+runs. Subsequent
 firmware management uses the [newer OTA service](firmware-and-connectivity.md#newer-ota-service).
 
 ## Additional endpoints
@@ -239,7 +254,8 @@ These additional routes have no dedicated `mysa-client` methods unless described
 | `GET /homes` | Tested home had `Zones: []` |
 | `GET /devices/{dev}/telemetry_alerts` | Lite returned `{"Items":[]}` |
 | `GET /smart-early-on/{dev}/availability` | Lite returned `available:false` with `model-not-eligible:BB-V2-0-L`; the server enforces this restriction |
-| `POST /energy/v3/{home}/home` | Whole-home energy returned 404 on the Lite account |
+| `POST /energy/v3/{home}/home` | Whole-home energy returned 404 on the Lite account. Neither Mysa's app 3.65.1 nor 4.21.1 has an `/energy/v3` route |
+| `POST /telemetry/usage/zone/{id}`, `POST /telemetry/usage/home/{id}` | Where Mysa's app 4.21.1 reads zone and home energy, with `{start,end,timezone,resolution}` (`resolution` is `halfHour` or `day`); it reads `total`, `bucketStarts` and per-device `devices[].total` / `energy` as kWh. On the Lite account both routes answered 200 with `{start,end,timezone,resolution,bucketStarts,devices,total}` (2026-11-15); `devices` was empty and `total` 0, since a Lite reports no energy. A home ID on the zone route returned 404 |
 | `GET /homes/{home}/savedSchedule` | Returned `{"SavedSchedules":[]}` |
 | `GET /schedule/compatibility/{dev}` | Returned `[]` |
 | `GET app-prod /devices/state` | Legacy state: timestamped `CorrectedTemp`, `SensorTemp`, `HeatSink`, `Humidity`, `SetPoint`, `Duty`, `OnTime`, `OffTime`, `Lock`, `Brightness`, `Mode`, `TstatMode`, `ScheduleMode`, `HoldTime`, `Rssi`, `Connected`, `Current`, `Voltage`, `FreeHeap`. An In-Floor also has `Infloor` (floor probe, °C) and `TrackedSensor` (3 floor, 5 ambient), per a third-party capture ([bourquep/mysa2mqtt issue 323](https://github.com/bourquep/mysa2mqtt/issues/323)); the device record's `Tracking` uses the same numbering |
@@ -266,15 +282,19 @@ uses `GET /nfc/auth-key`; it has no identified role in current provisioning.
 These are recovered legacy app request shapes, preserved for interpreting existing
 account data. Use the primary reference for live R/L availability. The table
 does not claim delivery of alerts, notifications, geofence effects, or invitations.
+Mysa's app 3.65.1 uses the verbs given on this page for `/schedules/v2/`,
+saved schedules, `/scene`, zones, geofences, reminders and telemetry alerts.
+It sends them all to `app-prod.mysa.cloud`, and its DELETE requests carry
+their parameters as a JSON body.
 
 | Workflow | App request mechanics |
 | --- | --- |
 | Telemetry alerts | `GET/PUT/DELETE /devices/{dev}/telemetry_alerts`; PUT sends an alert object, DELETE identifies `ThresholdCondition` and `ThresholdMetric` |
-| Zones | `POST /zones/` carries `devices` and `zone`; `POST /zones/{id}` changes `Name`; DELETE removes the zone |
-| Geofences | `POST/PATCH/GET/DELETE /geofence/` with optional ID; crossings carry `Users`, `Phone`, `CrossDirection`; the app also has an unsecured background crossing path, not a generic control credential |
-| Reminders | `GET/POST/PUT/DELETE /homes/reminders/` with the relevant ID; writes wrap the reminder in `payload` |
-| Home records | `POST /homes`, `PUT /homes/{id}` for fields such as `Name` or `Address.PostalCode`, and `DELETE /homes/{id}` |
-| User profile/preferences | `PATCH /users/{user}` for fields such as `LanguagePreference`, `PrimaryHome`, or `ERate`; notification settings use `GET/PUT /preferences/User_{user}_Home_{home}/Notifications` |
+| Zones | `POST /zones/` carries `devices` and `zone`; `POST /zones/{id}` changes `Name`; DELETE removes the zone. App 3.65.1 reads zones with `GET /zones`; app 4.21.1 has no zone read. On a Lite account, creating a zone set the device record's `Zone` and deleting it (204) cleared it; `GET /zones/{id}` takes a zone ID, and a home ID there returned 403 (2026-11-15) |
+| Geofences | `POST/PATCH/GET/DELETE /geofence/` with optional ID; crossings carry `Users`, `Phone`, `CrossDirection`; app 3.65.1 also has an unauthenticated ("unsecured") background crossing path, not a generic control credential; app 4.21.1 does not have it |
+| Reminders | `GET/POST/PUT/DELETE /homes/reminders/` with the relevant ID; PUT creates a reminder and POST with its ID updates (resets) it, in both app 3.65.1 and 4.21.1; writes wrap the reminder in `payload` |
+| Home records | `POST /homes`, `PUT /homes/{id}` for fields such as `Name` or `Address.PostalCode`, and `DELETE /homes/{id}`. The electricity rate `ERate` is a field of the home record: Mysa's app 4.21.1 reads it there and computes cost itself as kWh × `ERate`; the server sends no cost |
+| User profile/preferences | `PATCH /users/{user}` for fields such as `LanguagePreference` or `PrimaryHome`; notification settings use `GET/PUT /preferences/User_{user}_Home_{home}/Notifications` |
 | Home access | `GET /homes/{home}/users`; `POST /homes/revokeUserHomeAccess/{user}` carries `Home`; `/users/{user}/updateUserDeviceAccess` carries `DeviceToRevoke`, `DeviceToGrantAccess`, `Home` |
 | Invitations | `POST /invite/` carries `Owner`, `Home`, `Invitee`, `Devices`; lists use `/invite/users/{user}` and `/invite/homes/{home}`; `PUT /invite/{id}/` carries `Action` or `Devices` |
 | Account deletion/migration | `POST /users/{user}/deleteUser` carries `userSub`, `reason`, `email`, `forgotten`; legacy `POST /homes/migrate` carries `From`, `To`, `Devices` |

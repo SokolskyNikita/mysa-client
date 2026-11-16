@@ -53,6 +53,8 @@ Both control generations use the same availability endpoint and
 | Current HTTPS | `POST /devices/{dev}/firmware-update` with JSON `{}` (live-verified); poll availability until `update` is false |
 | Legacy MQTT | `MsgType: 6, EventType: 2`; poll the same availability endpoint, with boot messages `MsgType: 10` or MCM `msg: 61` as additional completion signals |
 
+Mysa's app 3.65.1 has no `/devices/{dev}/firmware-update` route.
+
 The phone requests an update; it does not transfer the firmware image. Reference
 clients poll every 10–20 seconds and may repeat the trigger while an update is
 available, with a six-minute limit in the current pairing flow. BLE credential
@@ -79,7 +81,7 @@ establish successful installation of an offered release.
 
 The newer fleet-based OTA protocol for V3, Central HVAC and Climate Sensor uses `GET /ota/update/available/{dev}`, `POST /ota/update` with `{deviceIds,versionId,requestSource:"USER",...}`, `GET /ota/update/{requestId}` and `PUT /ota/update/{requestId}/cancel`. Fleet registration happens during pairing.
 
-Mysa's app 4.21.1 chooses this service by model alone: `BB-V3-0`; `ST-V1-0`, `ST-V1` and `LV`; `CS-V1-0` and `CS-V1`; and the water-heater controller `WHC-V1-0`. Other models use the legacy routes above.
+Mysa's app 4.21.1 chooses this service by model alone: `BB-V3-0`; `ST-V1-0`, `ST-V1` and `LV`; `CS-V1-0` and `CS-V1`; and the water-heater controller `WHC-V1-0` and `WHC-V1`, also in their lower-case spellings `whc-v1-0` and `whc-v1`. Other models use the legacy routes above.
 
 Availability takes an optional `currentVersion` query. The app reads `updateAvailable` (default false), `message` and `firmwareVersion.{id, version, description, releaseNotes}`; `id` is opaque. The Lite returned 404, "No fleet found containing device", from this endpoint, again on 2026-11-15 ([example](../../../examples/cloud/ota-availability.not-in-fleet.json)).
 

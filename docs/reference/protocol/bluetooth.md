@@ -35,7 +35,7 @@ the older 3.26.0 app also contains the provisioning services.
 | --- | --- | --- |
 | Baseboard Lite | BLE Wi-Fi provisioning, then optional HomeKit pairing and cloud account enrollment | Tested on hardware |
 | Other legacy models: Baseboard V1/V2, In-floor, AC | App contains legacy provisioning paths, including BLE and temporary Wi-Fi access point setup | BLE availability must be checked on the particular model; not all models are established to expose these services |
-| Baseboard V3, Central HVAC, Climate Sensor | BLE Wi-Fi provisioning plus cloud-issued credential transfer and registration | App-derived; not tested on hardware here or implemented by the setup page |
+| Baseboard V3, Central HVAC, Climate Sensor, Water Heater Controller | BLE Wi-Fi provisioning plus cloud-issued credential transfer and registration | App-derived; not tested on hardware here or implemented by the setup page |
 
 Bluetooth bonding, joining Wi-Fi, enrolling in a Mysa account, and pairing with
 HomeKit or Matter are separate operations. Success at one step does not establish
@@ -79,8 +79,10 @@ tested Lite. Short UUIDs use the Bluetooth base UUID
 | `2a28` | Software revision | `3.17.5.13` |
 | `2a29` | Manufacturer | `Empowered Homes Inc.` |
 
-Do not assume the Lite's `2a25` interpretation applies to newer models. Their
-cloud provisioning request distinguishes `deviceId` from `serialNumber`.
+The Lite's `2a25` interpretation is not verified on newer models. Mysa's app
+4.21.1 reads `2a25` both as the device ID and as the serial number, so its
+cloud provisioning request sends the same string as `deviceId` and
+`serialNumber`.
 Browser access to Device Information characteristics can also be restricted;
 clients should tolerate optional information reads failing.
 
@@ -152,6 +154,16 @@ tracking them before writing. A disconnect or timeout without `41` is not a
 successful join. The browser implementation allows up to 90 seconds for joining;
 that is a client timeout, not a documented firmware guarantee.
 
+Mysa's app 4.21.1 makes one exception, for newer models that may never send
+`41`. After `40` it starts a 120-second timer and treats the join as
+successful if neither `41` nor a failure status arrives first. It does this
+for a Central HVAC always, for a Baseboard V3 with firmware below 5.1.4 and
+for a Climate Sensor with firmware below 6.1.1. Versions are compared as four
+numeric parts, a version equal to the minimum is not below it, and an empty,
+missing or `Unknown` firmware version counts as below. For every other device
+the app ignores `40` and waits for `41`. This is app-derived and not verified
+on hardware.
+
 | Status | Meaning |
 | --- | --- |
 | `20` | Start configuration ready |
@@ -194,9 +206,10 @@ Mysa-certified operating thresholds or a connectivity test.
 
 ## Credential transfer on newer models
 
-Baseboard V3, Central HVAC, and Climate Sensor add a credential-file transfer
-to provisioning. The format below is recovered from app 4.20.1 and remains
-**unverified on hardware**. This service was absent from the tested Lite.
+Baseboard V3, Central HVAC, Climate Sensor, and Water Heater Controller add a
+credential-file transfer to provisioning. The format below is from Mysa's
+apps 4.20.1 and 4.21.1 and remains **unverified on hardware**. This service
+was absent from the tested Lite.
 
 | Role | UUID |
 | --- | --- |
@@ -205,8 +218,14 @@ to provisioning. The format below is recovered from app 4.20.1 and remains
 | Data characteristic | `81838135-4ca1-96b1-1b47-6e96772fef72` |
 
 The app obtains a Base64 `credentials` field from `POST /pairing/credentials`
-using `{deviceId, model, serialNumber}`. It decodes that field into file bytes;
-the data characteristic receives those bytes, not the Base64 text.
+using `{deviceId, model, serialNumber}`; `deviceId` and `serialNumber` are the
+same `2a25` string. It decodes that field into file bytes; the data
+characteristic receives those bytes, not the Base64 text.
+
+App 4.21.1 sends the credential file before any Wi-Fi configuration byte: the
+[Wi-Fi transaction](#wi-fi-provisioning-transaction) starts only after the
+transfer has succeeded. It requests and sends the file on every pairing of
+these models.
 
 ### Transfer format
 
@@ -233,7 +252,9 @@ Reading the control characteristic yields:
 | 6 | `u32LE` | Received byte count |
 | 10 | `u32LE` | CRC-32 |
 
-The app cancels an existing Downloading transfer before starting another. After
+The app cancels an existing Downloading transfer before starting another; app
+4.21.1 first stops a transfer of its own that is still running, and limits the
+whole transfer, from the first status read to the readback, to 120 seconds. After
 writing all chunks, it reads the status back and requires Idle, both byte counts
 equal to the submitted file length, and a matching CRC-32. The checksum uses the
 reflected polynomial `0xedb88320`, initial value `0xffffffff`, and final XOR
@@ -242,8 +263,10 @@ end-of-file command.
 
 ### Cloud registration and completion
 
-The broader setup flow also registers the device in its OTA fleet, claims it on
-the Mysa account, verifies fresh cloud state, and calls `/pairing/finalize`.
+After Wi-Fi is up, the broader setup flow in Mysa's app 4.21.1 claims the
+device on the Mysa account, verifies fresh cloud state, calls
+`/pairing/finalize`, registers the device in its OTA fleet, and then writes
+the display format, in that order.
 See the [newer-model cloud setup sequence](cloud-workflows.md#baseboard-v3-central-hvac-and-climate-sensor)
 for the endpoints and fleet names. The app's `REGISTER_DEVICE` and
 `UPDATING_FIRMWARE` names are setup-state enum values, not additional bytes in
@@ -289,6 +312,16 @@ The earlier client encoding JSON-quotes the ciphertext header and also calls
 `/identify`. The later encoding removes line breaks and sends the ciphertext
 unquoted. These are client-format variants; their firmware compatibility has
 not been established here.
+
+Mysa's app 4.21.1 on Android starts the access-point steps only for a legacy
+model (Baseboard V1/V2/Lite, In-floor or AC) that is already in the account.
+It derives a device ID from the access point's name and address and takes the
+model from the account record with that ID; a typed ID, or a device that is
+not in the account, has no model. For a missing or newer model the app
+requests a credential file first and stops there, so nothing is sent to
+`192.168.4.1`. On the legacy path, `GET /hwid` and `GET /model` replace the
+derived values before the account claim. Not established: the iOS app, and
+pairing state left over from an earlier Bluetooth attempt in the same session.
 
 On two Lite units in normal Wi-Fi mode, port 57961 refused connections. The only open TCP port found was HomeKit on 57959. An unauthenticated HomeKit HTTP request returned 470. These observations do not establish a usable local REST control API.
 
