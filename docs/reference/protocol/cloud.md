@@ -60,10 +60,18 @@ Commands use section changes with `source: 3`:
 
 [Setpoint request and accepted reply](../../../examples/cloud/state-update.setpoint.json)
 
-This requests a setpoint change; it does not select heat mode. Source 3 appears
-as `app` in change history. Current capability, usage, schedule, hold, and
+This requests a setpoint change; it does not select heat mode. `source` is
+required. Mysa checks the request's shape, not whether the thermostat can use
+the value, so a 200 is not acceptance; see
+[what Mysa checks on a write](cloud-state.md#what-mysa-checks-on-a-write).
+Source 3 appears as `app` in change history. Current capability, usage, schedule, hold, and
 live-mode routes are listed in the comparison tables. S's state routes return
 403 on L; changing the hostname does not provide a second structured API.
+
+Every S response carries `x-ratelimit-limit: 1000`, `x-ratelimit-remaining`
+and `x-ratelimit-reset` (seconds left in a 60-second window), seen on
+2026-11-15. `remaining` did not fall steadily across requests, so it is
+probably counted per route or per server. No 429 has been observed.
 
 ### R — legacy REST on the modern host
 

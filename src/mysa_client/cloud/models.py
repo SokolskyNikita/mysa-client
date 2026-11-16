@@ -805,7 +805,13 @@ class FirmwareInfo:
 
 @dataclass(frozen=True, slots=True)
 class UsageBucket:
-    """30-minute usage bucket."""
+    """30-minute usage bucket.
+
+    ``temperature`` is Mysa's ``t`` for the bucket. On a Baseboard Lite it is
+    not the mean room temperature of those 30 minutes: it moves by a few
+    hundredths of a degree per bucket while the room swings by more, like a
+    long trailing average. Don't use it as a per-bucket room reading.
+    """
 
     start: datetime
     heat_seconds: float | None
@@ -814,7 +820,11 @@ class UsageBucket:
 
 @dataclass(frozen=True, slots=True)
 class UsageDay:
-    """One local day of POST /telemetry/usage/{dev}."""
+    """One local day of POST /telemetry/usage/{dev}.
+
+    ``average_temperature`` is Mysa's summary ``t`` for the day. See
+    :class:`UsageBucket` for how the per-bucket value behaves.
+    """
 
     start: datetime
     heat_seconds: float | None

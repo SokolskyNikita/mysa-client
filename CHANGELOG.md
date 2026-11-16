@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `validate_cloud_command` refuses an operating mode that the thermostat's
+  capabilities don't list, for every model except a Mini-Split AC (whose modes
+  come from its remote record). It was checked only for Baseboard V3, Central
+  HVAC and Climate Sensor before. Mysa answers 200 to such a mode and drops it.
+- Docs: Mysa's cloud doesn't reject setpoints off the step grid (it rounds them
+  to 0.1 °C) and doesn't check a write against the thermostat's capabilities;
+  the tested outcomes are in the cloud state reference. Also documented: the
+  usage fields Mysa supports, that a usage bucket's `t` is not that bucket's
+  mean room temperature, the required `source`, and the rate-limit headers.
+
 ## 0.4.0 (2026-11-15)
 
 - **Breaking:** a single temperature in heat/cool (auto) mode is no longer the

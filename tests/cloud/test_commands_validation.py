@@ -164,6 +164,45 @@ def test_common_validation_checks_choices_pairs_and_brightness_order() -> None:
         )
 
 
+def test_established_models_refuse_a_mode_the_capabilities_do_not_list() -> None:
+    # Mysa answers 200 to cool on a heat-only Lite and then drops it.
+    capabilities = Capabilities.from_api(load_json("capabilities_bb_v2_0_l.json"))
+    assert set(capabilities.modes) == {Mode.OFF, Mode.HEAT}
+    for mode in (Mode.COOL, Mode.AUTO, Mode.FAN_ONLY):
+        with pytest.raises(ValueError, match="Operating mode is not supported"):
+            validate_cloud_command(
+                ModelFamily.BASEBOARD_LITE,
+                capabilities,
+                _state(),
+                {"mode": int(mode)},
+                _command_value,
+            )
+    for mode in (Mode.OFF, Mode.HEAT):
+        validate_cloud_command(
+            ModelFamily.BASEBOARD_LITE,
+            capabilities,
+            _state(),
+            {"mode": int(mode)},
+            _command_value,
+        )
+    # Without capabilities, or for an AC (whose modes come from its remote
+    # record), the mode is left to the caller.
+    validate_cloud_command(
+        ModelFamily.BASEBOARD_LITE,
+        None,
+        _state(),
+        {"mode": int(Mode.COOL)},
+        _command_value,
+    )
+    validate_cloud_command(
+        ModelFamily.AC,
+        capabilities,
+        _state(),
+        {"mode": int(Mode.COOL)},
+        _command_value,
+    )
+
+
 def test_experimental_validation_requires_capabilities_and_restricts_sensor() -> None:
     with pytest.raises(ValueError, match="capabilities are unavailable"):
         validate_cloud_command(
