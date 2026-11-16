@@ -33,6 +33,7 @@ from .const import (
     Mode,
     ModelFamily,
     Swing,
+    TrackedSensor,
     model_family,
 )
 from .exceptions import (
@@ -151,6 +152,7 @@ __all__ = [
     "Swing",
     "TemperatureOffset",
     "Tokens",
+    "TrackedSensor",
     "UnknownModeError",
     "UsageBucket",
     "UsageDay",

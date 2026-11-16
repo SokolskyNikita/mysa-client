@@ -79,6 +79,7 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 - `Swing`
 - `TemperatureOffset`
 - `Tokens`
+- `TrackedSensor`
 - `UnknownModeError`
 - `UsageBucket`
 - `UsageDay`
@@ -232,19 +233,19 @@ submodule helpers are listed in the [cloud contract](cloud.md#public-api-and-int
 
 | Callable | Declared signature and return type | Purpose |
 | --- | --- | --- |
-| [MysaMqttClient.__init__](../../../src/mysa_client/mqtt/client.py#L125) | `(self, token_provider: Callable[[], Awaitable[str]], devices: Mapping[str, str], *, region: str=REGION, endpoint: str=ENDPOINT, identity_pool_id: str=IDENTITY_POOL_ID, user_pool_id: str=USER_POOL_ID, event_queue_size: int=100, connect_timeout: float=20, publish_timeout: float=5, command_timeout: float=15, shutdown_timeout: float=7, reconnect_min_delay: float=1, reconnect_max_delay: float=20, _client_factory: Callable[[], Any] \| None=None, _identity_credentials_provider: Callable[[str], AwsCredentials] \| None=None, _sign_path: Callable[[AwsCredentials], str] \| None=None) -> None` | Configure an allowlisted MQTT connection without opening it. |
-| [MysaMqttClient.connected](../../../src/mysa_client/mqtt/client.py#L215) | `(self) -> bool` | Whether CONNECT and all allowlisted SUBACKs have succeeded. |
-| [MysaMqttClient.connection_generation](../../../src/mysa_client/mqtt/client.py#L220) | `(self) -> int` | Count of MQTT sessions that completed CONNECT and all SUBACKs. |
-| [MysaMqttClient.dropped_events](../../../src/mysa_client/mqtt/client.py#L231) | `(self) -> int` | Number of events dropped because the bounded queue was full. |
-| [MysaMqttClient.connect](../../../src/mysa_client/mqtt/client.py#L235) | `async (self) -> None` | Connect and wait for broker acceptance of all device subscriptions. |
-| [MysaMqttClient.close](../../../src/mysa_client/mqtt/client.py#L263) | `async (self) -> None` | Stop reconnecting and bound cleanup of the Paho network worker. |
-| [MysaMqttClient.__aenter__](../../../src/mysa_client/mqtt/client.py#L294) | `async (self) -> Self` | Connect and return this client for an async context. |
-| [MysaMqttClient.__aexit__](../../../src/mysa_client/mqtt/client.py#L299) | `async (self, *_: object) -> None` | Close the connection when leaving an async context. |
-| [MysaMqttClient.events](../../../src/mysa_client/mqtt/client.py#L303) | `async (self) -> AsyncIterator[MqttMessage]` | Yield parsed events from the bounded queue; one consumer owns it. |
-| [MysaMqttClient.request_live_status](../../../src/mysa_client/mqtt/client.py#L311) | `async (self, device_id: str, *, timeout_seconds: int=180) -> PublishResult` | Ask an allowlisted device to publish live telemetry for 180 seconds. |
-| [MysaMqttClient.echo](../../../src/mysa_client/mqtt/client.py#L334) | `async (self, device_id: str, *, timeout_seconds: float \| None=None) -> EchoResult` | Send the legacy echo probe and wait for the matching device reply. |
-| [MysaMqttClient.set_setpoint](../../../src/mysa_client/mqtt/client.py#L380) | `async (self, device_id: str, setpoint: Setpoint, *, mode: str \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set a Lite target and optionally include mode or hold state. |
-| [MysaMqttClient.set_mode](../../../src/mysa_client/mqtt/client.py#L403) | `async (self, device_id: str, mode: str, *, setpoint: Setpoint \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set Lite mode to off or heat, optionally with a target or hold. |
+| [MysaMqttClient.__init__](../../../src/mysa_client/mqtt/client.py#L131) | `(self, token_provider: Callable[[], Awaitable[str]], devices: Mapping[str, str], *, region: str=REGION, endpoint: str=ENDPOINT, identity_pool_id: str=IDENTITY_POOL_ID, user_pool_id: str=USER_POOL_ID, event_queue_size: int=100, connect_timeout: float=20, publish_timeout: float=5, command_timeout: float=15, shutdown_timeout: float=7, reconnect_min_delay: float=1, reconnect_max_delay: float=20, experimental_commands: bool=False, _client_factory: Callable[[], Any] \| None=None, _identity_credentials_provider: Callable[[str], AwsCredentials] \| None=None, _sign_path: Callable[[AwsCredentials], str] \| None=None) -> None` | Configure an allowlisted MQTT connection without opening it. |
+| [MysaMqttClient.connected](../../../src/mysa_client/mqtt/client.py#L223) | `(self) -> bool` | Whether CONNECT and all allowlisted SUBACKs have succeeded. |
+| [MysaMqttClient.connection_generation](../../../src/mysa_client/mqtt/client.py#L228) | `(self) -> int` | Count of MQTT sessions that completed CONNECT and all SUBACKs. |
+| [MysaMqttClient.dropped_events](../../../src/mysa_client/mqtt/client.py#L239) | `(self) -> int` | Number of events dropped because the bounded queue was full. |
+| [MysaMqttClient.connect](../../../src/mysa_client/mqtt/client.py#L243) | `async (self) -> None` | Connect and wait for broker acceptance of all device subscriptions. |
+| [MysaMqttClient.close](../../../src/mysa_client/mqtt/client.py#L271) | `async (self) -> None` | Stop reconnecting and bound cleanup of the Paho network worker. |
+| [MysaMqttClient.__aenter__](../../../src/mysa_client/mqtt/client.py#L302) | `async (self) -> Self` | Connect and return this client for an async context. |
+| [MysaMqttClient.__aexit__](../../../src/mysa_client/mqtt/client.py#L307) | `async (self, *_: object) -> None` | Close the connection when leaving an async context. |
+| [MysaMqttClient.events](../../../src/mysa_client/mqtt/client.py#L311) | `async (self) -> AsyncIterator[MqttMessage]` | Yield parsed events from the bounded queue; one consumer owns it. |
+| [MysaMqttClient.request_live_status](../../../src/mysa_client/mqtt/client.py#L319) | `async (self, device_id: str, *, timeout_seconds: int=180) -> PublishResult` | Ask an allowlisted device to publish live telemetry for 180 seconds. |
+| [MysaMqttClient.echo](../../../src/mysa_client/mqtt/client.py#L342) | `async (self, device_id: str, *, timeout_seconds: float \| None=None) -> EchoResult` | Send the legacy echo probe and wait for the matching device reply. |
+| [MysaMqttClient.set_setpoint](../../../src/mysa_client/mqtt/client.py#L388) | `async (self, device_id: str, setpoint: Setpoint, *, mode: str \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set a target and optionally include mode or hold state. |
+| [MysaMqttClient.set_mode](../../../src/mysa_client/mqtt/client.py#L411) | `async (self, device_id: str, mode: str, *, setpoint: Setpoint \| None=None, hold: bool \| None=None, timeout_seconds: float \| None=None) -> CommandResult` | Set mode to off or heat, optionally with a target or hold. |
 
 
 ## Runtime and domain helpers

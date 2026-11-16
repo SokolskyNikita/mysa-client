@@ -4,6 +4,22 @@
 
 - Docs: new page on Mysa's official Consumer API (`docs/guides/official-api.md`):
   what it is, how to connect, and why this library doesn't use it yet.
+- In-Floor floor sensor: `DeviceState.from_legacy()` reads `Infloor` into
+  `probe_temperature` and `TrackedSensor` into the new
+  `DeviceState.tracked_sensor`; `DeviceRecord.tracked_sensor` reads `Tracking`.
+  New `TrackedSensor` enum (`ambient`, `floor`). From third-party In-Floor
+  captures; not verified on a device.
+- MQTT telemetry is decoded for more models: Baseboard V1 (`MsgType: 0`),
+  In-Floor (`msg: 17`) and Mini-Split AC (`msg: 30`). They were reported as
+  `MessageKind.OTHER` before. `MqttTelemetry` gains `floor_temperature`,
+  `tracked_sensor`, `line_voltage` and `current`. An In-Floor's `duty_cycle` is
+  its relay state (`heatStat`), since its own `dutyCycle` field doesn't follow
+  the relay. From third-party captures; not verified on a device.
+- New `MysaMqttClient(experimental_commands=True)`: also send setpoint, mode and
+  hold commands to Baseboard V1, Baseboard V2 and In-Floor, each with its own
+  command type (new `command_type()`), and up to 40 °C on an In-Floor. Off by
+  default and not verified on a device. `supports_commands()` takes
+  `experimental=`, and `encode_thermostat_command()` takes `model=`.
 - `validate_cloud_command` refuses an operating mode that the thermostat's
   capabilities don't list, for every model except a Mini-Split AC (whose modes
   come from its remote record). It was checked only for Baseboard V3, Central

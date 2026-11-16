@@ -11,6 +11,7 @@ from mysa_client.cloud import Setpoint, SetpointRules
 from mysa_client.mqtt import (
     MessageKind,
     MqttProtocolError,
+    command_type,
     encode_thermostat_command,
     parse_message,
     supports_commands,
@@ -211,3 +212,159 @@ def test_unvalidated_models_do_not_get_lite_commands(model: str) -> None:
 
 def test_lite_commands_are_opted_in_by_model() -> None:
     assert supports_commands("BB-V2-0-L")
+
+
+def test_baseboard_v1_status_is_telemetry() -> None:
+    """The flat MsgType 0 payload quoted in kgelinas/Mysa_HA issue 43."""
+    event = parse(
+        {
+            "Device": DEVICE,
+            "Timestamp": 1794273775,
+            "MsgType": 0,
+            "MainTemp": 19.35,
+            "ThermistorTemp": 0.0,
+            "ComboTemp": 21.96,
+            "Humidity": 43.0,
+            "Current": 16.5,
+            "SetPoint": 14.0,
+            "Stream": 1,
+        }
+    )
+    assert event.kind is MessageKind.TELEMETRY
+    assert event.telemetry is not None
+    assert event.telemetry.room_temperature == 19.35
+    assert event.telemetry.humidity == 43.0
+    assert event.telemetry.setpoint == 14.0
+    assert event.telemetry.current == 16.5
+    assert event.telemetry.duty_cycle is None
+
+
+def test_baseboard_v1_status_must_name_the_subscribed_device() -> None:
+    event = parse({"Device": "000000000000", "MsgType": 0, "MainTemp": 19.35})
+    assert event.kind is MessageKind.OTHER
+    assert event.telemetry is None
+
+
+def in_floor_status(msg: int = 17, **body: object) -> dict:
+    return {
+        "ver": "1.0",
+        "src": {"type": 1, "ref": DEVICE},
+        "time": 1794273775,
+        "msg": msg,
+        "id": 42,
+        "body": {
+            "ambTemp": 16.2,
+            "flrSnsrTemp": 22.2,
+            "hum": 58,
+            "trackedSnsr": 3,
+            "stpt": 22,
+            "heatStat": 1,
+            "dutyCycle": 0.43,
+            "lineVtg": 240,
+            **body,
+        },
+    }
+
+
+@pytest.mark.parametrize("msg", [17, 40])
+def test_in_floor_status_uses_the_relay_state_not_duty_cycle(msg: int) -> None:
+    event = parse(in_floor_status(msg))
+    assert event.kind is MessageKind.TELEMETRY
+    telemetry = event.telemetry
+    assert telemetry is not None
+    assert telemetry.room_temperature == 16.2
+    assert telemetry.floor_temperature == 22.2
+    assert telemetry.humidity == 58
+    assert telemetry.setpoint == 22
+    assert telemetry.duty_cycle == 1
+    assert telemetry.tracked_sensor == "floor"
+    assert telemetry.line_voltage == 240
+
+
+def test_in_floor_fields_beside_the_body_are_read() -> None:
+    payload = in_floor_status()
+    payload["heatStat"] = payload["body"].pop("heatStat")
+    payload["lineVtg"] = payload["body"].pop("lineVtg")
+    telemetry = parse(payload).telemetry
+    assert telemetry is not None
+    assert telemetry.duty_cycle == 1
+    assert telemetry.line_voltage == 240
+
+
+@pytest.mark.parametrize(("wire", "sensor"), [(5, "ambient"), (4, None), ("x", None)])
+def test_tracked_sensor_maps_only_known_values(
+    wire: object, sensor: str | None
+) -> None:
+    telemetry = parse(in_floor_status(trackedSnsr=wire)).telemetry
+    assert telemetry is not None
+    assert telemetry.tracked_sensor == sensor
+
+
+def test_ac_status_is_telemetry() -> None:
+    event = parse(
+        {
+            "ver": "1.0",
+            "src": {"type": 1, "ref": DEVICE},
+            "msg": 30,
+            "id": 43,
+            "body": {"ambTemp": 24.5, "hum": 51, "stpt": 21, "dtyCycle": 0},
+        }
+    )
+    assert event.kind is MessageKind.TELEMETRY
+    assert event.telemetry is not None
+    assert event.telemetry.room_temperature == 24.5
+    assert event.telemetry.duty_cycle == 0
+    assert event.telemetry.floor_temperature is None
+
+
+@pytest.mark.parametrize("msg", [17, 30])
+def test_status_from_another_source_is_not_telemetry(msg: int) -> None:
+    payload = in_floor_status(msg)
+    payload["src"] = {"type": 100, "ref": "user"}
+    assert parse(payload).kind is MessageKind.OTHER
+
+
+@pytest.mark.parametrize(
+    ("model", "wire"),
+    [
+        ("BB-V1-1", 1),
+        ("bb-v1-0", 1),
+        ("INF-V1-0", 3),
+        ("BB-V2-0", 4),
+        ("BB-V2-0-L", 5),
+        ("V2-L", 5),
+        ("AC-V1-0", None),
+        ("ST-V1-0", None),
+        ("BB-V3-0", None),
+    ],
+)
+def test_command_type_by_model(model: str, wire: int | None) -> None:
+    assert command_type(model) == wire
+
+
+@pytest.mark.parametrize("model", ["BB-V1-1", "BB-V2-0", "INF-V1-0"])
+def test_experimental_commands_are_opt_in(model: str) -> None:
+    assert not supports_commands(model)
+    assert supports_commands(model, experimental=True)
+
+
+@pytest.mark.parametrize("model", ["AC-V1-0", "ST-V1-0", "unknown"])
+def test_experimental_commands_exclude_models_without_a_type(model: str) -> None:
+    assert not supports_commands(model, experimental=True)
+    with pytest.raises(MqttProtocolError):
+        command(setpoint=ruled(20.0), model=model)
+
+
+def test_command_carries_the_models_type() -> None:
+    payload, _ = command(setpoint=ruled(20.0), model="BB-V1-1")
+    assert payload["body"]["type"] == 1
+    payload, _ = command(setpoint=ruled(20.0))
+    assert payload["body"]["type"] == 5
+
+
+def test_in_floor_command_allows_up_to_40() -> None:
+    payload, expected = command(setpoint=ruled(40.0), model="INF-V1-0")
+    assert payload["body"] == {"ver": 1, "type": 3, "cmd": [{"tm": -1, "sp": 40.0}]}
+    assert expected == {"sp": 40.0}
+    with pytest.raises(MqttProtocolError):
+        command(setpoint=ruled(40.0), model="BB-V2-0")

@@ -497,7 +497,8 @@ share `power_time`. Only `reported` power values count, as for other sections.
 | `raw_temperature` | `reading.rawTemperature` | °C | Confirmed on Baseboard Lite firmware 3.17.5.13 (above room temperature, as an uncorrected sensor would be) |
 | `core_temperature` | `reading.coreTemperature` | °C | Confirmed on Baseboard Lite firmware 3.17.5.13 (above room temperature) |
 | `voltage` | `power.reported.voltage`, else `reading.voltage` | V | Confirmed on Baseboard Lite firmware 3.17.5.13 (240) |
-| `probe_temperature` | `reading.probeTemperature` | °C | Derived from Mysa's app 4.21.1; not verified on a device |
+| `probe_temperature` | `reading.probeTemperature`; legacy state `Infloor` | °C | Derived from Mysa's app 4.21.1 and a third-party In-Floor capture; not verified on a device |
+| `tracked_sensor` | Legacy state `TrackedSensor` only (3 floor, 5 ambient) | `TrackedSensor` | In-Floor's regulating sensor. From third-party In-Floor reports; not verified on a device |
 | `power_wattage` | `power.reported.wattage` | W, rated load | Derived from Mysa's app 4.21.1; not verified on a device (0 observed) |
 | `power_duty_cycle` | `power.reported.dutyCycle` | percent, 0–100 | Derived from Mysa's app 4.21.1; not verified on a device (0 observed). `duty_cycle` stays the 0–1 telemetry fraction |
 | `power_current` | `power.reported.current` | mA | Only 0 observed here. A third-party Baseboard V3 capture ([axelrtgs/mysa](https://github.com/axelrtgs/mysa)) shows 240 V, 12458 and 2989 W together, and the app names it `currentMa` |

@@ -88,6 +88,28 @@ normalizes room temperature, humidity, setpoint, and numeric duty cycle from
 local receipt time; it does not treat a device timestamp as a freshness
 guarantee.
 
+Other models answer the same live-telemetry request with different messages.
+The client decodes these from third-party captures
+([dlenski/mysotherm](https://github.com/dlenski/mysotherm),
+[bourquep/mysa2mqtt](https://github.com/bourquep/mysa2mqtt) and
+[kgelinas/Mysa_HA issue 43](https://github.com/kgelinas/Mysa_HA/issues/43));
+none is verified on a device here.
+
+| Model | Message | Fields read |
+| --- | --- | --- |
+| Baseboard V1 | Flat `MsgType: 0`, no envelope or `body`, device in `Device` | `MainTemp`, `Humidity`, `SetPoint`, and `Current` in amps (0 while idle). No duty cycle |
+| In-Floor | `msg: 17`, or `msg: 40` with the same body | `ambTemp`, `hum`, `stpt`, `flrSnsrTemp`, `trackedSnsr` (3 floor, 5 ambient), `lineVtg`, and `heatStat` (1 or 0) as the duty cycle |
+| Mini-Split AC | `msg: 30` | `ambTemp`, `hum`, `stpt`, `dtyCycle` |
+
+On an In-Floor, the body's own `dutyCycle` is not the heating state: three
+units reported about 0.43 around the clock, idle or heating. The client reads
+`heatStat` and ignores it. One capture shows `heatStat` and `lineVtg` beside
+`body`, so both places are read.
+
+For these models the legacy HTTP state can be far behind. One account with ten
+Baseboard V1 and In-Floor units had every field about 26 hours old while MQTT
+was current.
+
 The legacy event envelope uses `MsgType`, a different namespace from MCM
 `msg`:
 
@@ -107,8 +129,8 @@ for device schedule; these values are distinct from the MCM `src.type` field.
 
 ### Lite commands
 
-The experimental command path currently supports Baseboard Lite model strings
-only. It publishes MCM `msg: 44`, `body.type: 5`, with `cmd` as an array. The
+By default the command path supports Baseboard Lite model strings only. It
+publishes MCM `msg: 44`, `body.type: 5`, with `cmd` as an array. The
 application-derived examples show the observed array and JSON-string forms:
 [array command](../../../examples/mqtt/thermostat-command.array.json) and
 [JSON-string command](../../../examples/mqtt/thermostat-command.string.json). The
@@ -129,6 +151,38 @@ user-pool subject is included in `src.ref`; the account device ID is in
 and reported state in `body.state`. A QoS 1 PUBACK only confirms broker
 acceptance. A correlated successful acknowledgement confirms the device
 reported matching state, not that the heater physically operated.
+
+### Commands for other models
+
+A thermostat ignores a command whose `body.type` belongs to another model.
+The types, from dlenski/mysotherm and bourquep/mysa2mqtt:
+
+| Model | `body.type` |
+| --- | --- |
+| Baseboard V1 | 1 |
+| Mini-Split AC | 2 |
+| In-Floor | 3 |
+| Baseboard V2 | 4 |
+| Baseboard Lite | 5 |
+
+`MysaMqttClient(experimental_commands=True)` sends setpoint, mode and hold
+commands to Baseboard V1, Baseboard V2 and In-Floor with their own type, and
+allows an In-Floor setpoint up to 40 °C. None of this is verified on a device
+here. A Mini-Split AC stays excluded: owners report that a setpoint or fan
+command sent without the current mode turns the unit off, and that a setpoint
+must be a whole number
+([kgelinas/Mysa_HA issue 40](https://github.com/kgelinas/Mysa_HA/issues/40)).
+
+Mysa's broker refuses publishes for some accounts. It closes the connection
+about 100 ms after a publish to `/in` while subscriptions keep working
+([bourquep/mysa2mqtt issue 299](https://github.com/bourquep/mysa2mqtt/issues/299),
+a Baseboard V1), or refuses the connection outright
+([issue 323](https://github.com/bourquep/mysa2mqtt/issues/323), three
+In-Floors). Keep an HTTP write path next to MQTT.
+
+Newer app versions send the command without `resp: 2` and at QoS 0
+(dlenski/mysotherm, 2026-11-03). The client omits `resp` and publishes at
+QoS 1.
 
 <a id="validation-and-limitations"></a>
 <a id="sources-and-unresolved-questions"></a>

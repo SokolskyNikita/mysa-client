@@ -229,7 +229,7 @@ These additional routes have no dedicated `mysa-client` methods unless described
 | `POST /energy/v3/{home}/home` | Whole-home energy returned 404 on the Lite account |
 | `GET /homes/{home}/savedSchedule` | Returned `{"SavedSchedules":[]}` |
 | `GET /schedule/compatibility/{dev}` | Returned `[]` |
-| `GET app-prod /devices/state` | Legacy state: timestamped `CorrectedTemp`, `SensorTemp`, `HeatSink`, `Humidity`, `SetPoint`, `Duty`, `OnTime`, `OffTime`, `Lock`, `Brightness`, `Mode`, `TstatMode`, `ScheduleMode`, `HoldTime`, `Rssi`, `Connected`, `Current`, `Voltage`, `FreeHeap` |
+| `GET app-prod /devices/state` | Legacy state: timestamped `CorrectedTemp`, `SensorTemp`, `HeatSink`, `Humidity`, `SetPoint`, `Duty`, `OnTime`, `OffTime`, `Lock`, `Brightness`, `Mode`, `TstatMode`, `ScheduleMode`, `HoldTime`, `Rssi`, `Connected`, `Current`, `Voltage`, `FreeHeap`. An In-Floor also has `Infloor` (floor probe, °C) and `TrackedSensor` (3 floor, 5 ambient), per a third-party capture ([bourquep/mysa2mqtt issue 323](https://github.com/bourquep/mysa2mqtt/issues/323)); the device record's `Tracking` uses the same numbering |
 | `GET /feature-flags/features/check?versionNumber={clientVersion}` | Returns `{"features":{"<NAME>":{"value":true}}}`; all returned flags in the test were true except `HIDE_MATTER_IN_APP` |
 | `POST /network-diagnostics/test` | Uploads the phone's `WifiConnection`, `SpeedTest` and `MysaConnectivity` results |
 | `GET /network-diagnostics/history` | Reads those uploads; neither diagnostics route probes the thermostat |

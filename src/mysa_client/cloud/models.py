@@ -19,6 +19,7 @@ from .const import (
     AC_FAN_TO_STATE,
     AC_MODE_KEYS,
     AC_SWING_KEYS,
+    LEGACY_TRACKED_SENSOR,
     MODE_BY_NAME,
     SETPOINT_SECTION_BY_MODE,
     STATE_TO_AC_FAN,
@@ -27,6 +28,7 @@ from .const import (
     Mode,
     ModelFamily,
     Swing,
+    TrackedSensor,
     model_family,
 )
 from .observations import (
@@ -277,6 +279,11 @@ class DeviceState:
     #: reading.effectiveSetpoint in °C as reported. Meaning unconfirmed: a Lite
     #: reported 23 while its setpoint was 10.
     effective_setpoint: float | None = None
+    #: Which sensor an In-Floor thermostat regulates against, from legacy
+    #: state (`TrackedSensor`). None from the structured API and for other
+    #: models. From third-party In-Floor reports (bourquep/mysa2mqtt); not
+    #: verified on a device here.
+    tracked_sensor: TrackedSensor | None = None
 
     @classmethod
     def from_api(cls, device_id: str, data: Mapping[str, Any]) -> DeviceState:
@@ -394,6 +401,11 @@ class DeviceState:
             "Connected": "connected",
             "Lock": "button_lock",
             "TstatMode": "mode",
+            # In-Floor only: the floor probe in °C and the regulating sensor.
+            # Seen in a third-party capture of three INF-V1-0 units
+            # (bourquep/mysa2mqtt issue 323); not verified on a device here.
+            "Infloor": "probe_temperature",
+            "TrackedSensor": "tracked_sensor",
         }
         for wire, name in mapping.items():
             item = _dict(data.get(wire))
@@ -411,6 +423,10 @@ class DeviceState:
                 elif family == ModelFamily.INFLOOR:
                     modes[5] = Mode.HEAT
                 value = modes.get(numeric if numeric is not None else -1)
+            elif name == "tracked_sensor":
+                value = LEGACY_TRACKED_SENSOR.get(
+                    numeric if numeric is not None else -1
+                )
             elif name == "button_lock":
                 value = {0: 0, 1: 3}.get(numeric if numeric is not None else -1)
             elif name == "connected":
@@ -688,6 +704,10 @@ class DeviceRecord:
     time_zone: str | None
     display_format: str | None
     duty_cycle_opt: int | None
+    #: `Tracking`: the sensor an In-Floor thermostat is set to regulate
+    #: against. A snapshot of the setting, not live state. None for other
+    #: models. From bourquep/mysa2mqtt; not verified on a device here.
+    tracked_sensor: TrackedSensor | None = None
 
     @classmethod
     def from_api(cls, device_id: str, data: Mapping[str, Any]) -> DeviceRecord:
@@ -703,6 +723,9 @@ class DeviceRecord:
             time_zone=_str(data.get("TimeZone")),
             display_format=_str(data.get("Format")),
             duty_cycle_opt=_int(data.get("DutyCycleOpt")),
+            tracked_sensor=LEGACY_TRACKED_SENSOR.get(
+                tracking if (tracking := _int(data.get("Tracking"))) is not None else -1
+            ),
         )
 
     @property

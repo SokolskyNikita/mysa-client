@@ -30,12 +30,31 @@ MAX_PAYLOAD_SIZE = 65_536
 
 @dataclass(frozen=True, slots=True)
 class MqttTelemetry:
-    """Common live values in legacy MCM msg 40 telemetry."""
+    """Live values from a thermostat's periodic status message.
+
+    Baseboard V2 and Lite send MCM ``msg: 40`` (verified on a Lite). The other
+    shapes are decoded from third-party captures and are not verified on a
+    device here: Baseboard V1 sends a flat ``MsgType: 0``, In-Floor ``msg: 17``
+    (or ``40`` with the same body) and Mini-Split AC ``msg: 30``.
+    """
 
     room_temperature: float | None = None
     humidity: float | None = None
     setpoint: float | None = None
+    #: 0-1. On an In-Floor this is the relay state ``heatStat`` (0 or 1): the
+    #: body's own ``dutyCycle`` stays near a constant whatever the relay does.
+    #: None on a Baseboard V1, which reports ``current`` instead.
     duty_cycle: float | None = None
+    #: In-Floor: the floor probe in °C (``flrSnsrTemp``).
+    floor_temperature: float | None = None
+    #: In-Floor: "floor" or "ambient", the sensor it regulates against
+    #: (``trackedSnsr`` 3 or 5). None for any other value.
+    tracked_sensor: str | None = None
+    #: In-Floor: line voltage in volts (``lineVtg``).
+    line_voltage: float | None = None
+    #: Baseboard V1: the load current right now in amps (``Current``), 0 while
+    #: idle.
+    current: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,9 +99,41 @@ _LITE_MODELS = frozenset(
 )
 
 
-def supports_commands(model: str) -> bool:
-    """Whether the model's MCM msg 44 command path is unconditional in the app."""
-    return model.strip().upper() in _LITE_MODELS
+_TRACKED_SENSORS = {3: "floor", 5: "ambient"}
+_STATUS_MESSAGES = frozenset({17, 30, 40})
+
+
+def command_type(model: str) -> int | None:
+    """The ``body.type`` a model expects in an MCM msg 44 command.
+
+    A thermostat ignores a command carrying another model's type. 5 (Lite) is
+    verified here. 1 (Baseboard V1), 3 (In-Floor) and 4 (Baseboard V2) come
+    from dlenski/mysotherm and bourquep/mysa2mqtt. None for every other
+    model, including a Mini-Split AC (type 2), whose commands need the
+    current mode and a whole-degree setpoint that this encoder doesn't build.
+    """
+    name = model.strip().upper()
+    if name in _LITE_MODELS:
+        return 5
+    if name.startswith("BB-V1"):
+        return 1
+    if name.startswith("INF-V1"):
+        return 3
+    if name.startswith("BB-V2"):
+        return 4
+    return None
+
+
+def supports_commands(model: str, *, experimental: bool = False) -> bool:
+    """Whether MCM msg 44 commands may be sent to this model.
+
+    True for a Baseboard Lite, the only model verified here. With
+    ``experimental=True`` it is also true for Baseboard V1, Baseboard V2 and
+    In-Floor, whose command type is known only from third-party projects.
+    """
+    if model.strip().upper() in _LITE_MODELS:
+        return True
+    return experimental and command_type(model) is not None
 
 
 def _integer(value: Any) -> int | None:
@@ -179,7 +230,33 @@ def parse_message(
     response_id = _integer(decoded.get("resp_id"))
     body = _mapping(decoded.get("body")) or {}
 
-    if message_type == 40:
+    if _integer(decoded.get("MsgType")) == 0 and message_type is None:
+        # Baseboard V1 status: flat, with no envelope or body.
+        if decoded.get("Device") != device_id:
+            return MqttMessage(
+                device_id=device_id,
+                kind=MessageKind.OTHER,
+                received_at=received_at,
+                payload=decoded,
+                raw_payload=raw_payload,
+                retained=retained,
+            )
+        return MqttMessage(
+            device_id=device_id,
+            kind=MessageKind.TELEMETRY,
+            received_at=received_at,
+            telemetry=MqttTelemetry(
+                room_temperature=_number(decoded.get("MainTemp")),
+                humidity=_number(decoded.get("Humidity")),
+                setpoint=_number(decoded.get("SetPoint")),
+                current=_number(decoded.get("Current")),
+            ),
+            payload=decoded,
+            raw_payload=raw_payload,
+            retained=retained,
+        )
+
+    if message_type in _STATUS_MESSAGES:
         if source_type != 1 or source.get("ref") != device_id:
             return MqttMessage(
                 device_id=device_id,
@@ -193,11 +270,25 @@ def parse_message(
                 retained=retained,
             )
         telemetry_body = _mapping(body.get("reading")) or body
+
+        def reading(name: str) -> float | None:
+            # One third-party In-Floor capture shows heatStat and lineVtg
+            # beside the body, not in it.
+            value = _number(telemetry_body.get(name))
+            return value if value is not None else _number(decoded.get(name))
+
+        duty_cycle = _number(telemetry_body.get("dtyCycle"))
+        if duty_cycle is None:
+            duty_cycle = reading("heatStat")
+        tracked = _integer(telemetry_body.get("trackedSnsr"))
         telemetry = MqttTelemetry(
             room_temperature=_number(telemetry_body.get("ambTemp")),
             humidity=_number(telemetry_body.get("hum")),
             setpoint=_number(telemetry_body.get("stpt")),
-            duty_cycle=_number(telemetry_body.get("dtyCycle")),
+            duty_cycle=duty_cycle,
+            floor_temperature=_number(telemetry_body.get("flrSnsrTemp")),
+            tracked_sensor=_TRACKED_SENSORS.get(tracked if tracked is not None else -1),
+            line_voltage=reading("lineVtg"),
         )
         return MqttMessage(
             device_id=device_id,
@@ -280,29 +371,39 @@ def encode_thermostat_command(
     setpoint: Setpoint | None = None,
     mode: str | None = None,
     hold: bool | None = None,
+    model: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, int | float]]:
-    """Build a Lite msg 44 request and the state fields required to confirm it.
+    """Build a msg 44 request and the state fields required to confirm it.
 
     ``setpoint`` must be a :class:`~mysa_client.cloud.setpoints.Setpoint` from
     ``SetpointRules``; a plain number raises ``TypeError``.
+
+    Without ``model`` the request is a Baseboard Lite's (type 5), the only one
+    verified here. With one, ``body.type`` comes from :func:`command_type`,
+    and an In-Floor may be set up to 40 °C; a model with no known type raises
+    ``MqttProtocolError``.
     """
     if setpoint is None and mode is None:
         raise MqttProtocolError("A setpoint or mode is required")
+    device_type = 5 if model is None else command_type(model)
+    if device_type is None:
+        raise MqttProtocolError(f"No MQTT command type is known for {model}")
+    maximum = 40 if device_type == 3 else 30
     command: dict[str, int | float] = {"tm": -1}
     expected: dict[str, int | float] = {}
     if setpoint is not None:
         celsius = require_setpoint(setpoint, "setpoint")
-        if not math.isfinite(celsius) or not 5 <= celsius <= 30:
-            raise MqttProtocolError("Setpoint must be finite and between 5 and 30 °C")
+        if not math.isfinite(celsius) or not 5 <= celsius <= maximum:
+            raise MqttProtocolError(
+                f"Setpoint must be finite and between 5 and {maximum} °C"
+            )
         value = round(celsius, 2)
         command["sp"] = value
         expected["sp"] = value
     if mode is not None:
         normalized = mode.strip().lower()
         if normalized not in {"off", "heat"}:
-            raise MqttProtocolError(
-                "Legacy Lite commands support only off and heat modes"
-            )
+            raise MqttProtocolError("MQTT commands support only off and heat modes")
         legacy_mode = 1 if normalized == "off" else 3
         command["md"] = legacy_mode
         expected["md"] = legacy_mode
@@ -319,6 +420,6 @@ def encode_thermostat_command(
         "time": command_time,
         "msg": 44,
         "id": request_id,
-        "body": {"ver": 1, "type": 5, "cmd": [command]},
+        "body": {"ver": 1, "type": device_type, "cmd": [command]},
     }
     return envelope, expected
