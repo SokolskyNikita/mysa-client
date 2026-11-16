@@ -19,6 +19,7 @@ entities and integration settings, use [Mysa Local](https://github.com/SokolskyN
 | Diagnose stale readings, a failed write, or missing discovery | [Troubleshooting](guides/troubleshooting.md) |
 | Diagnose MQTT credentials and publish/receive permissions | [MQTT diagnostic probe](guides/mqtt-diagnostics.md) |
 | Check whether an operation is implemented | [API inventory](api-coverage.md) |
+| Learn about Mysa's official Consumer API and why this library doesn't use it yet | [Mysa's official Consumer API](guides/official-api.md) |
 | Check which hardware and behavior were validated | [Evidence and compatibility](evidence/README.md) |
 | Run or inspect an example | [Runnable scripts and sanitized exchanges](../examples/README.md) |
 

@@ -1,6 +1,8 @@
 # Mysa Client
 
-> Unofficial and unaffiliated with Mysa. Use at your own risk.
+> Unofficial and unaffiliated with Mysa. Use at your own risk. Mysa also has an
+> [official Consumer API](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/guides/official-api.md),
+> which this library doesn't use yet.
 
 An asynchronous Python library for Mysa thermostats. It talks to Mysa's cloud,
 to a thermostat on your network over HomeKit, and optionally to Mysa's MQTT
