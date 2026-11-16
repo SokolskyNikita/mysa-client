@@ -137,6 +137,24 @@ The [state and command guide](../../guides/state-and-commands.md) describes the
 caller workflow; [runtime contracts](../python/runtime.md#state-and-command-evidence)
 define reconciliation and pending-command tracking.
 
+#### How Mysa's app polls and confirms
+
+How Mysa's app 4.21.1 confirms its own writes. None of these timings has been
+tried against a device.
+
+| After | The app |
+| --- | --- |
+| A state write | Reads that device's state at once, then every 1 s (2 s when the `HIDE_INCREASED_POLLING` feature flag is on) for up to 30 s, until `<section>.reported.<field>` equals the value it sent exactly, with no tolerance |
+| A setpoint write | The same check, started 500 ms after the last setpoint write, so quick changes share one run |
+| A hold being set | The same polling until `schedule.holding` is true |
+| A hold being cancelled | The same polling until `schedule.holding` is no longer true |
+| A schedule write | The same polling until `schedule.scheduleId` or `schedule.nextEvent` is present or `schedule.holding` is defined |
+| 30 s without a match | Logs it. Nothing is sent again and no error is shown |
+
+The app does not wait for confirmation after a swing or thermostatic-mode
+write, a Central HVAC stage-two delay write, or any of the
+[three settings that are not state writes](#state-writes-mysas-app-makes).
+
 ### What Mysa checks on a write
 
 `POST /state/{dev}/update` checks the shape of the request and a few fixed
@@ -177,6 +195,87 @@ differ by up to 0.3 °C for one setpoint; both round to the same whole °F.
 Mysa's app 4.21.1 sends such values for a Fahrenheit target (72 °F as 22.22,
 73 °F as 22.78); app 3.65.1 snapped to 0.5 °C. Which value the thermostat
 regulates to was not observed.
+
+### State writes Mysa's app makes
+
+These are the control writes of Mysa's app 4.21.1. Unless a row says
+otherwise, each is `POST /state/{dev}/update` with `"source": 3` and the
+fragment shown, one setting per request, and has not been tried on a device.
+The app's writers do not round, convert or range-check a value: the limits are
+in its screens and in the capability lists. An on/off setting is sent as the
+number 1 or 0. How the app confirms a write is described under
+[how Mysa's app polls and confirms](#how-mysas-app-polls-and-confirms).
+
+Climate, any model:
+
+| Setting | Body fragment | Values |
+| --- | --- | --- |
+| Setpoint | Depends on the mode | See [mode and heater enums](#mode-and-heater-enums) and [auto-mode targets](#auto-mode-targets). In cool mode it is `"targetCool": {"setpoint": v}`. The app sends no setpoint to a [Water Heater Controller](new-cloud-models.md#water-heater-controller) |
+| Mode | `"modes": {"mode": m}` | A `CONTROL_MODE_TYPE` number |
+| Setpoint limit | `"targetHeat": {"lockoutMin": v}` and the like | See [setpoint limits](#setpoint-limits) |
+| Temperature offset | `"tracking": {"ambientOffset": v}` | °C |
+
+Display and buttons:
+
+| Setting | Body fragment | Values |
+| --- | --- | --- |
+| Lock | `"physicalInterface": {"lockout": n}` | 0 none, 1 limit, 2 PIN, 3 full. The app sends 0, 1 or 3, never 2, and never a PIN |
+| Brightness | `"physicalInterface": {"activeIntensity": a, "idleIntensity": i}` | Both in one request. The app raises the active value to at least 10, and when idle is at or above active it swaps the two instead |
+| Adaptive brightness | `"physicalInterface": {"intensityMode": n}` | 0 fixed, 1 adaptive. Offered for a Baseboard V2, and for another model (not an In-Floor) whose capabilities list both values. Whether the app's switch sends this or the record key `AutoBrightness` was not established |
+| Display unit | `"physicalInterface": {"format": f}` | `"C"` or `"F"`. For a Baseboard V1, V2 or Lite the app writes the record key `Format` (`"celsius"` or `"fahrenheit"`) instead |
+| Tenant mode | `"physicalInterface": {"tenantMode": n}` | 1 on, 0 off. Shown to a home administrator when the capabilities have an `interface.tenantMode` entry |
+| Wake on approach | `"physicalInterface": {"wakeOnApproach": n}` | 1 on, 0 off. Baseboard V2 and V3 only |
+
+The lock button sends 3 to lock. To unlock it sends 1, unless the capability
+list `interface.lockout.validValues` is non-empty and lacks 1; then it sends
+0. A separate three-way choice of 0, 1 or 3, cut down to the capability list,
+is offered only when the capabilities mark the lockout as user controllable,
+that list is empty, missing or includes 1, and the thermostat reports its
+setpoint limits. On a Baseboard Lite (2026-11-15) the list is 0 and 3, so the
+app would lock with 3 and unlock with 0, which are the values a Lite reports;
+a `lockout` of 1 written to a Lite was stored in `desired` and never reported
+([what Mysa checks on a write](#what-mysa-checks-on-a-write)). A Lite's
+capabilities offer none of adaptive brightness, tenant mode and wake on
+approach ([capabilities](#account-discovery-and-capabilities)), so those
+three writes were not tried on it.
+
+When the app holds no capability document for a device, it writes the device
+record instead (`POST /devices/{dev}/`, one key per request):
+
+| Setting | Record requests |
+| --- | --- |
+| Lock | `{"ButtonState": "Locked"}` or `{"ButtonState": "Unlocked"}` |
+| Brightness | Three requests: `{"MinBrightness": i}`, `{"MaxBrightness": a}` and a `Brightness` object, with the same raise to 10 and swap |
+| Wake on approach | `{"ProximityMode": v}` |
+
+In-Floor and floor probe:
+
+| Setting | Request | Values |
+| --- | --- | --- |
+| Floor type | `"ifConfig": {"floorType": n}` | 0 tile, 1 hardwood or laminate, 2 vinyl, 3 carpet. Used in settings; setup writes [the record](#remote-temperature-tracking) |
+| Probe enabled | `"tracking": {"probeEnable": b}` | `true` or `false` |
+| Probe resistance | `"tracking": {"probeResistance": v}` | Sent as entered |
+| Probe offset | `"tracking": {"probeOffset": v}` | °C |
+| Tracked sensor | `"tracking": {"tracking": n}` | 0 ambient, 1 probe, 2 remote; see [remote temperature tracking](#remote-temperature-tracking) |
+| Probe sensor type | `PUT /capabilities/probeSensorType/{dev}` with `{"probeSensorType": t}`, no `source` | `"Floor"` or `"Ambient"` |
+
+Other models:
+
+| Model | Setting | Body fragment | Values |
+| --- | --- | --- | --- |
+| Baseboard V3 | Heater type | `"bbConfig": {"controlType": n}` | 0 baseboard, 1 fan forced, 2 radiant, or the capability's list when it has one; see the `DutyCycleOpt` paragraph under [setpoint limits](#setpoint-limits) |
+| Mini-Split AC | Fan speed | `"modes": {"fan_mode": n}`, with `mode` | See [AC fan speed](#ac-fan-speed) |
+| Mini-Split AC | Swing | `"modes": {"verticalSwingState": n}` and three more fields | One field per request; see [AC swing](#ac-swing-and-supported-remote-commands) |
+| Mini-Split AC | Thermostatic mode | `"modes": {"isThermostatic": n}` | 1 on, 0 off |
+| Central HVAC | Auto mode, deadband, `hvacConfig` settings, reversing valve | | See [Central HVAC configuration writes](new-cloud-models.md#central-hvac-configuration-writes) |
+| Water Heater Controller | Mode, tank setpoint, tank capacity, temperature correction | | See [Water Heater Controller](new-cloud-models.md#water-heater-controller) |
+
+Three settings are not state writes and carry no `source`: the probe sensor
+type above, the Central HVAC
+[reversing valve](new-cloud-models.md#central-hvac-configuration-writes)
+(`POST /capabilities/config/set-reversing-valve`), and Smart Early On
+(`PUT /smart-early-on/{dev}` with `{"enabled": ...}`; see
+[additional endpoints](cloud-workflows.md#additional-endpoints)).
 
 ## Telemetry and history
 
@@ -233,6 +332,27 @@ On a Baseboard Lite, over 24 hours:
   the state has humidity.
 
 The examined mobile app requests raw readings only for a one-day range. The Python `get_usage()` wrapper currently asks only for `oH1` and `t` summaries and buckets; it does not request raw history. It exposes daily runtime and the summary `t` through `UsageDay`, and each bucket's `t` as `UsageBucket.temperature`, with the caveat below. Pass `fields=` to request any of the supported metrics and `raw_fields=` for raw readings ([Python reference](../python/cloud.md#usage-history)).
+
+What Mysa's app 4.21.1 asks for depends on the product. The field names and
+the 32-day limit above were confirmed on a Baseboard Lite (2026-11-15); the
+per-product sets and the splitting below are from the app and were not tried.
+
+| Product | `summary` | `aggregatedReadings` | `rawReadings` | One request covers |
+| --- | --- | --- | --- | --- |
+| Baseboard V1 and V2, In-Floor | `oH1`, `k`, `n` as `sum`; `t`, `h` as `average` | `oH1`, `k`, `t`, `h`, `n` | `t`, `c`, `h`, `i`, `s`, `hs` | One month |
+| Mini-Split AC | `oH1`, `oC1` as `sum` | `oH1`, `oC1`, `t`, `h`, `n` | `t`, `c`, `h`, `s` | Five days |
+| Water Heater Controller | `k` as `sum` | `k` | `t`, `i` | One month |
+| Other capability models (Central HVAC, Climate Sensor) | The on-time fields the capabilities allow, and `k`, all as `sum` | The same on-time fields, for a one-day range only | `t`, `c`, `h`; a thermostat adds `e` and `s`, plus `hs` with a heat stage and `cs` with a cool stage | Five days |
+
+The on-time fields follow the capabilities: `oH1` with a heat mode, `oH2` with
+two heat stages, `oHE` with an emergency-heat mode, `oC1` and `oC2` likewise
+for cooling. `rawReadings` is sent only for a one-day range. The body is
+`timezone`, `start`, `end` and these keys; it has no `resolution` key. A
+longer range is split into consecutive requests of the length in the last
+column, counted in the request's time zone. Adjacent requests share their edge
+timestamp (one ends where the next starts), all are sent at once, and the
+answer lists are joined in order. The app requests no usage for a Baseboard
+Lite.
 
 For a Central HVAC, Mysa describes the runtime fields this way (not verified
 on hardware): heat-stage-two seconds are included in the heating total and
@@ -385,6 +505,28 @@ strictly ordered, but does not require the 2 °C gap (nor does it for heating).
 
 `DutyCycleOpt` is a different enum: 0 is BB1 baseboard, 4 BB1 radiant, 5/6/7 BB1 fan forced short/medium/long, 8 BB2 fan forced and 9 BB2 baseboard. The Lite uses the BB2 values. The examined mobile app enables heater-type selection for V2 and Lite from firmware 3.17.0; that gate is not a hardware-verified minimum.
 
+Which write Mysa's app 4.21.1 uses for the heater type depends on the model:
+
+| Model | Write | Values |
+| --- | --- | --- |
+| Baseboard V1 | Record key `DutyCycleOpt` | 0, 4, 5, 6, 7 |
+| Baseboard V2 and Lite | Record key `DutyCycleOpt` | 8, 9 |
+| Baseboard V3 | State write `bbConfig.controlType` | 0, 1, 2 (the second value set of [`bbConfig.reported`](#state-structure)) |
+
+The app never writes `bbConfig` for a V1, V2 or Lite. On a Baseboard Lite both
+a `DutyCycleOpt` record write and a `bbConfig.controlType` state write of 8 or
+9 reached reported state ([confirmation](#state-and-settings-confirmation));
+the V3 write has not been tried.
+
+Firmware gates on features in app 4.21.1, each passing at or above the version
+shown and none tried on a device:
+
+| Feature | Models | Firmware |
+| --- | --- | --- |
+| Radiant heater option (`DutyCycleOpt` 4) | Baseboard V1 | 1.4.0 |
+| Heater-type options | Baseboard V2 and Lite | 3.17.0 |
+| Temperature and humidity alerts | Baseboard V1, V2 and Lite, In-Floor, Mini-Split AC; newer models always pass | 3.14.0 |
+
 ### AC fan speed
 
 The AC mapping bridges legacy remote definitions and current state values. It is implemented in Python but remains untested on AC hardware.
@@ -415,7 +557,7 @@ Here, shadow fan 2 is medium and shadow mode 3 is cool. Other capability-based m
 
 [AC swing request](../../../examples/cloud/state-update.ac-swing.json)
 
-Horizontal swing uses `horizontalSwingState`. Toggle-only remotes use `verticalSwingToggle` / `horizontalSwingToggle`. In Mysa's app 4.21.1 a toggle field is sent as the number 1 (on) or 0 (off), and a reported toggle of 1 reads as on. When the chosen state is toggle (11) on a capability-based device, the app sends the toggle field alone; otherwise it sends the toggle first if it changed, then the state. None of this is verified on a device (no AC with a toggle-only remote was available). `mysa-client` exposes explicit swing states through its command helper and does not implement toggle-only commands.
+Horizontal swing uses `horizontalSwingState`. Toggle-only remotes use `verticalSwingToggle` / `horizontalSwingToggle`. In Mysa's app 4.21.1 a toggle field is sent as the number 1 (on) or 0 (off), and a reported toggle of 1 reads as on. When the chosen state is toggle (11) on a capability-based device, the app sends the toggle field alone; otherwise it sends the toggle first if it changed, then the state. The app's two-way swing choice (auto or off) sends different state numbers by remote format: with `SupportedCapsVersion` `"1.2"` it sends 3 (auto) for auto and 4 (position 1) for off; with any other remote it sends 2 (on) for auto and 1 (off) for off. None of this is verified on a device (no AC with a toggle-only remote was available). `mysa-client` exposes explicit swing states through its command helper and does not implement toggle-only commands.
 
 The remote's supported controls come from its `GET /devices` record:
 
@@ -440,6 +582,20 @@ and the range reaches 40 °C only then. Mysa's app caps the floor at 40 °C for
 tile and 28 °C for hardwood, laminate, vinyl and carpet.
 Neither is verified on hardware. This package takes the range from the
 thermostat's capabilities and adds no cap of its own.
+
+During In-Floor setup, Mysa's app 4.21.1 writes these keys to the device
+record with `POST /devices/{dev}/`, one key per request (not tried on a
+device):
+
+| Record key | Value |
+| --- | --- |
+| `FloorType` | 0 tile, 1 hardwood or laminate, 2 vinyl, 3 carpet |
+| `MaxFloorTemp` and `MaxSetpoint` | 40 for tile, 28 for the others (°C), written with the floor type |
+| `IsMysaFloorSensor` | `true` for Mysa's own floor sensor, `false` for another; written with `FloorOhms` 10 |
+| `FloorOhms` | Sensor resistance in kΩ for another sensor: 5, 10, 15, 20, 25 or a custom value |
+
+After setup the app changes the floor type with the state write
+`ifConfig.floorType` ([state writes](#state-writes-mysas-app-makes)).
 
 The Lite advertises `sensing.temperature.sensors.remote: false`, `trackingSensor.validValues: ["internal"]` and no external temperature probe connector. `GET /linking?targetId={dev}` returned an empty list ([example](../../../examples/cloud/linking.empty.json), again on 2026-11-15). In Mysa's app 4.21.1 each entry has `linkId`, `sourceId`, `targetId`, `weight` and `enabled`; a link takes part when `enabled` is not false and `weight > 0`, and a link whose source is its target is the thermostat's own sensor. The app offers only Climate Sensors as sources and Central HVAC as targets. Python reads links with [`get_sensor_links()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads) and does not create, change or remove them. A direct remote-tracking write reached `desired`, but no `tracking` value appeared in `reported`, in either normal or live mode.
 

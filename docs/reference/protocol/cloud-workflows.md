@@ -86,6 +86,34 @@ reusable template with no devices was removed by `PUT /schedule/{id}` with
 from device and deleted". Mysa's app 4.21.1 never deletes a schedule either;
 it detaches every device.
 
+What Mysa's app 4.21.1 puts in an event, by mode and model (derived from the
+app). On a Baseboard Lite the server stored a repeated day and time and 70
+events (2026-11-15, above); the per-model shapes below have not been tried on
+a device. Mode values are the [control mode enum](cloud-state.md#mode-and-heater-enums).
+
+| Part of the event's `state` | When the app sends it |
+| --- | --- |
+| `modes: {mode}` | Every event |
+| `targetHeat: {setpoint}` | Mode heat or emergency heat |
+| `targetHeat: {setpoint}` and `targetCool: {setpoint}` | Mode fan |
+| `targetCool: {setpoint}` | Any other mode except off, dry included |
+| No setpoint target | Mode off |
+| `modes.fan_mode` | An AC and other models with a fan |
+| `tracking: {tracking}` | An In-Floor, from its floor or ambient sensor choice |
+| `targetAuto: {heatSetpoint, coolSetpoint}` | A Central HVAC in auto |
+| `targetAuto: {setpoint}` | An AC in auto |
+
+The app sets `clientKey` to `App-` plus its version (`App-4.21.1`) and
+`executionTime` to `HH:mm:ss`. When an event is added for a day and time that
+already has one, the app replaces the earlier event; it does not refuse the
+new one. On a schedule read it treats an error whose message is "Schedule not
+found", and an access-revoked error, as "no schedule".
+
+For an AC that moves to a newer remote code set, app 4.21.1 converts its
+stored schedule and shortcuts with `POST /schedules/v2/{scheduleId}/migrateACv3`
+and `POST /homes/{home}/shortcut/migrateACv3`, each with the body
+`{"DeviceId": "{dev}"}` (derived from the app, not tried on a device).
+
 ### Legacy schedules and saved templates
 
 Read v1 with `GET /schedules`. To clear one device, POST
@@ -130,6 +158,12 @@ carry `Name`, `Events`, and `Devices`. Applying creates separate `V2Schedules`
 resources; deleting a template does not remove those device schedules. Event
 editing worked on L but returned 404 on R. Do not infer schedule absence from
 an empty modern list or an old REC `Schedule` pointer.
+The create body in Mysa's app 3.65.1 is
+`{Name, Events, OwnerId, HomeId, AppliedDevices: []}`, with `Events` in the
+V2 form described above. App 4.21.1 has the create, name, apply and delete
+routes but no `/events` route, so it cannot edit a saved template's events;
+that is consistent with the 404 on R. These routes were exercised in October
+2026; the create body's field list is derived from the app.
 
 A modern template is a schedule with `reusable: true` and `deviceIds: []`.
 `POST /schedule` with those answered 201, and the schedule then listed in the
@@ -148,6 +182,22 @@ With a schedule active, a plain setpoint write held the new value until the next
 For a timed hold, use `"holdType":"temporary"` and add `"endTime":"<ISO UTC timestamp>"`. Both returned 201 with a `holdId`. Changing the hold kept the same ID: a temporary hold sent after a permanent one kept its `holdId` (Baseboard Lite, 2026-11-15).
 
 A hold record does not move the setpoint. On a Baseboard Lite on 2026-11-15, with a schedule attached and the setpoint at 22 °C, a permanent hold whose state was 21 °C in heat mode was answered 201 and read back, and the reported setpoint stayed 22 for the next 150 seconds, both without `startTime` and with one ten seconds ahead. A caller that wants the temperature to change must also write the setpoint.
+
+The `state` Mysa's app 4.21.1 puts in a hold is the thermostat's current
+state, not a new target (derived from the app; only the heat-mode shape was
+sent to a Baseboard Lite, in the test above):
+
+| Part of the hold's `state` | When the app sends it |
+| --- | --- |
+| `modes: {mode}` | The reported mode, when there is one |
+| `modes.fan_mode` | The reported fan mode, when a mode and a fan mode are both reported |
+| `targetHeat: {setpoint}` | Mode heat or emergency heat |
+| `targetCool: {setpoint}` | Mode cool |
+| No setpoint | Any other mode (auto, off, fan, dry) |
+
+The setpoint is the desired heat or cool setpoint when the state has one,
+otherwise the reported one. With no state for the device the app sends an
+empty `state`.
 
 The server rejects a start time that has already passed with "Start time must be greater than current time". The Python client starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix. `startTime` is optional: a hold sent without one was answered 201 and read back with the time of the request as its start (Baseboard Lite, 2026-11-15), which is how Mysa's app 4.21.1 sends it. An `endTime` that has passed is refused with "End time must be greater than current time".
 
@@ -169,6 +219,21 @@ The PATCH returned 202. Treat `DeviceActions` as the replacement action map. Use
 
 Apply with `POST /homes/shortcut/apply/{shortcutId}` and `{"Timestamp":<Unix seconds>}`; the response was `Ok`. Later shortcut-application results were inconsistent;
 acceptance is not confirmation of the resulting thermostat state. The Python client implements reading and editing shortcuts for account cleanup. It has no apply wrapper.
+
+How Mysa's app 4.21.1 creates and fills shortcuts (derived from the app). The
+PATCH and the apply request were tested on a Baseboard Lite account in
+October 2026; the create request has not been tried.
+
+| Item | What the app sends |
+| --- | --- |
+| Default shortcuts | When a home has none, three `POST /scene` requests, each `{Home, Name, DeviceActions: {}, AllDevices: true}` with `Name` `"Away"`, `"Home"` or `"Vacation"`. The app does not choose the IDs |
+| Edit | `PATCH /scene/{shortcutId}` with `{DeviceActions, AllDevices: false}`, where `DeviceActions` is the existing map with the changed devices merged in |
+| Action `type` | 1 setpoint, 2 return to schedule, 3 hold |
+| Hold action fields | `mode` (the [control mode enum](cloud-state.md#mode-and-heater-enums)), `holdTillKey`, `secToHold`, `version: "V2"`, and when they apply `setpoint`, `fanSpeed`, `infloorSensor`, `stateChange`, `linking` |
+| `holdTillKey` | 0 until changed, 1 until the next schedule event, 2 until a chosen time |
+| Apply | `POST /homes/shortcut/apply/{shortcutId}` with `{Timestamp}` in Unix seconds, the current time unless the caller gives one |
+
+The app has no request that deletes a shortcut.
 
 ## Adding and removing devices
 
@@ -206,6 +271,20 @@ account: the existing record is returned and the submitted fields are not
 written. Legacy replacement uses `POST app-prod /devices/purgeadd`, which still
 worked in validation. A 409 recovery flow may write settings separately; that
 is a distinct request and should be verified against the resulting record.
+
+What Mysa's app 4.21.1 does around the claim (derived from the app, not tried
+on a device):
+
+| Step | App behavior |
+| --- | --- |
+| Claim answered 409 | The app does not read the returned record. It refreshes its account data, writes `ecoMode: 1` to the device record in a separate request, and carries on with the online check as after a 201. It has no replace request: `/devices/purgeadd` is only in app 3.65.1 |
+| Online check | Reads the device's cloud state at once, then every 5 seconds for up to 300 seconds. It passes when `identity.reported.timestamp` is newer than a baseline; if the first read already passes there is no polling. On a timeout setup stops with a verification failure |
+| Baseline, Bluetooth setup | The device's `identity.reported.timestamp`, read before the Wi-Fi password is sent. When that read fails or gives no usable timestamp, the phone's time minus 10 seconds |
+| Baseline, access-point setup | Always the phone's time minus 10 seconds |
+
+So a thermostat that was online before setup passes only once the cloud shows
+a newer `identity` timestamp than the one read just before the password was
+sent.
 
 An ownership conflict can produce "User is not allowed to access the specified
 home". Its HTTP status and another-account behavior remain unverified. Mysa's
@@ -276,6 +355,11 @@ fleet registration is shown as a setup failure, but the format write still
 runs. Subsequent
 firmware management uses the [newer OTA service](firmware-and-connectivity.md#newer-ota-service).
 
+App 4.21.1 builds the fleet name; it holds no list of fleets. The name is the
+model's short name in lower case, with `hvac` replaced by `lv`, followed by
+`-prod`. The four names in the table follow from that rule and were not each
+seen in the app (derived from the app, not tried on a device).
+
 ## Additional endpoints
 
 These additional routes have no dedicated `mysa-client` methods unless described earlier.
@@ -286,6 +370,7 @@ These additional routes have no dedicated `mysa-client` methods unless described
 | `GET /devices/{dev}/telemetry_alerts` | Lite returned `{"Items":[]}` |
 | `GET /smart-early-on/{dev}/availability` | Lite returned `available:false` with `model-not-eligible:BB-V2-0-L`; the server enforces this restriction. On 2026-11-15 the answer was `{available, code, reason, detail}`, with `available: false` and `code: "model-not-eligible"` |
 | `GET /smart-early-on/{dev}` | Lite returned `{deviceId, enabled: false}` (2026-11-15) |
+| `PUT /smart-early-on/{dev}` | With `{enabled}`, how Mysa's app 4.21.1 turns Smart Early On on or off. Derived from the app; the write has not been tried (the two reads above answered on a Lite) |
 | `GET /pairing/eligibility/{dev}` | Returns `{deviceId, canPair, reason, tenantMode}`. A Lite already on the account answered `canPair: true`, `reason: null`, `tenantMode: false` (2026-11-15). In Mysa's app 4.21.1 the reasons `NOT_OWNER` and `NOT_OWNER_TENANT_MODE` block pairing |
 | `POST /energy/v3/{home}/home` | Whole-home energy returned 404 on the Lite account. Neither Mysa's app 3.65.1 nor 4.21.1 has an `/energy/v3` route |
 | `POST /telemetry/usage/zone/{id}`, `POST /telemetry/usage/home/{id}` | Where Mysa's app 4.21.1 reads zone and home energy, with `{start,end,timezone,resolution}` (`resolution` is `halfHour` or `day`); it reads `total`, `bucketStarts` and per-device `devices[].total` / `energy` as kWh. On the Lite account both routes answered 200 with `{start,end,timezone,resolution,bucketStarts,devices,total}` (2026-11-15); `devices` was empty and `total` 0, since a Lite reports no energy. A home ID on the zone route returned 404 |
@@ -323,10 +408,10 @@ their parameters as a JSON body.
 
 | Workflow | App request mechanics |
 | --- | --- |
-| Telemetry alerts | `GET/PUT/DELETE /devices/{dev}/telemetry_alerts`; PUT sends an alert object, DELETE identifies `ThresholdCondition` and `ThresholdMetric` |
+| Telemetry alerts | `GET/PUT/DELETE /devices/{dev}/telemetry_alerts`; PUT sends an alert object, DELETE identifies `ThresholdCondition` and `ThresholdMetric`. Values and bodies are under [Telemetry alert values](#telemetry-alert-values) |
 | Zones | `POST /zones/` carries `devices` and `zone`; `POST /zones/{id}` changes `Name`; DELETE removes the zone. App 3.65.1 reads zones with `GET /zones`; app 4.21.1 has no zone read. On a Lite account, creating a zone set the device record's `Zone` and deleting it (204) cleared it; `GET /zones/{id}` takes a zone ID, and a home ID there returned 403 (2026-11-15). On a Baseboard Lite on 2026-11-15, `POST /zones` with `{zone, devices: [dev]}` answered 201 `{Zone: {Id, Name, Owner}}`, `POST /zones/{id}` with `{Name}` answered 200 and echoed the name, and `POST /devices/{dev}/` with `{Zone}` answered 200. The zone routes worked for the Lite although its capabilities say `zoning: false`; what that flag governs is not established. In Mysa's app 4.21.1, adding a device to a zone also attaches the zone's schedule and applies its hold (app-derived, not tested) |
 | Geofences | `POST/PATCH/GET/DELETE /geofence/` with optional ID; crossings carry `Users`, `Phone`, `CrossDirection`; app 3.65.1 also has an unauthenticated ("unsecured") background crossing path, not a generic control credential; app 4.21.1 does not have it |
-| Reminders | `GET/POST/PUT/DELETE /homes/reminders/` with the relevant ID; PUT creates a reminder and POST with its ID updates (resets) it, in both app 3.65.1 and 4.21.1; writes wrap the reminder in `payload`. On a Baseboard Lite account `GET /homes/reminders/{home}` answered 200 `{reminders: []}` (2026-11-15); no reminder write was tried |
+| Reminders | `GET/POST/PUT/DELETE /homes/reminders/` with the relevant ID; PUT creates a reminder and POST with its ID updates (resets) it, in both app 3.65.1 and 4.21.1; writes wrap the reminder in `payload`. On a Baseboard Lite account `GET /homes/reminders/{home}` answered 200 `{reminders: []}` (2026-11-15); no reminder write was tried. In app 4.21.1 the `payload` is `{Frequency, HomeId, ExecutionTime, Event: {UserId, DeviceId, EventType}}`, plus `Id` and `reminderId` (the same value) when the reminder already has an ID. `Frequency` is in seconds, `ExecutionTime` is Unix seconds (now plus `Frequency`), and `EventType` is 2 for a Central HVAC and 1 otherwise (derived from the app) |
 | Home records | `POST /homes`, `PUT /homes/{id}` for fields such as `Name` or `Address.PostalCode`, and `DELETE /homes/{id}`. The electricity rate `ERate` is a field of the home record: Mysa's app 4.21.1 reads it there and computes cost itself as kWh × `ERate`; the server sends no cost |
 | User profile/preferences | `PATCH /users/{user}` for fields such as `LanguagePreference` or `PrimaryHome`; notification settings use `GET/PUT /preferences/User_{user}_Home_{home}/Notifications` |
 | Home access | `GET /homes/{home}/users`; `POST /homes/revokeUserHomeAccess/{user}` carries `Home`; `/users/{user}/updateUserDeviceAccess` carries `DeviceToRevoke`, `DeviceToGrantAccess`, `Home` |
@@ -341,5 +426,32 @@ Mysa's current apps use `/homes/shortcut/apply/{id}`. Do not assume every
 route an app defines is ever called: Mysa's older app defines
 `/users/readingsForUser` but no request to it was found. Property-manager `GET /zones` on its
 separate host and Alexa authorization are app services outside this client.
+
+### Telemetry alert values
+
+How Mysa's apps 3.65.1 and 4.21.1 read and write temperature and humidity
+alerts at `/devices/{dev}/telemetry_alerts` (derived from the apps). On a
+Baseboard Lite the read answered `{"Items":[]}`; no alert write or delete has
+been tried on a device.
+
+| Request | Shape |
+| --- | --- |
+| `GET` | `{Items: [{Value, Version, ThresholdCondition, ThresholdMetric}]}` |
+| `PUT` | One request per alert and device, with exactly five keys: `{Version: 1, ThresholdCondition, ThresholdMetric, AlertKey, Value}`. `Value` is in °C for a temperature alert and in percent for humidity. The body holds no device ID |
+| `DELETE` | `{ThresholdCondition, ThresholdMetric}` as a JSON body |
+
+`ThresholdCondition` is 1 for a minimum and 2 for a maximum.
+`ThresholdMetric` is 1 for temperature and 2 for humidity. `AlertKey` is
+`"<metric>_<condition>"`:
+
+| Alert | `AlertKey` | `ThresholdCondition` | `ThresholdMetric` | Default and range in app 4.21.1 |
+| --- | --- | --- | --- | --- |
+| Too cold | `"1_1"` | 1 | 1 | 7 °C, 1–15 |
+| Too hot | `"1_2"` | 2 | 1 | 30 °C, 16–40 |
+| Humidity low | `"2_1"` | 1 | 2 | 30 %, 5–95 |
+| Humidity high | `"2_2"` | 2 | 2 | 60 %, 5–95 |
+
+For example, a too-hot alert at 30 °C is
+`{"Version": 1, "ThresholdCondition": 2, "ThresholdMetric": 1, "AlertKey": "1_2", "Value": 30}`.
 
 [Documentation index](../../README.md)

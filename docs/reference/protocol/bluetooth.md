@@ -156,6 +156,30 @@ tracking them before writing. A disconnect or timeout without `41` is not a
 successful join. The browser implementation allows up to 90 seconds for joining;
 that is a client timeout, not a documented firmware guarantee.
 
+<a id="app-timers-for-the-wi-fi-transaction"></a>
+
+Mysa's apps 3.65.1 and 4.21.1 use the same two timers. On the tested Lite the
+transaction works with the setup page's shorter waits; the apps' own timers
+were not tried on a device.
+
+| Timer | Length | Started | Ends |
+| --- | --- | --- | --- |
+| Acknowledgement | 60 seconds | Before `20` is written, and again after the SSID write and after the password write | Cleared when the join timer starts. If it runs out, the app reports no response |
+| Join | 240 seconds | When `22` arrives, with the write of `2f` | Cleared by `41` or a failure status. If it runs out, the app reports no response |
+
+Starting the join timer clears the acknowledgement timer, so the two never
+run together: after `2f` only the 240 seconds apply. Both apps end the
+attempt as failed on `42`, `80`, `fd` or `ff`, and app 3.65.1 ignores `40`
+on every model. Both apps accept a status notification only from the
+connected thermostat's configuration status characteristic and read its
+first byte.
+
+The apps write each packet with a write that expects a response. On Android,
+the Bluetooth library used by app 4.21.1 splits a packet longer than 20
+bytes into consecutive 20-byte writes, so a long SSID or password reaches
+the thermostat in several writes. Whether a thermostat accepts that was not
+tried here.
+
 Mysa's app 4.21.1 makes one exception, for newer models that may never send
 `41`. After `40` it starts a 120-second timer and treats the join as
 successful if neither `41` nor a failure status arrives first. It does this
@@ -193,6 +217,20 @@ the write is what the apps do, not an established requirement. The browser imple
 seconds before reading the count and bounds the operation with timeouts; the
 protocol does not provide an established ready notification in the examined flow.
 
+<a id="scan-timing-in-mysas-apps"></a>
+
+Scan timing in Mysa's apps differs from the setup page's. On the tested Lite
+the listing works with the setup page's sequence; the apps' sequences below
+were not tried on a device.
+
+| Step | App 3.65.1 | App 4.21.1 |
+| --- | --- | --- |
+| Reset | None | Write `02` to Network Record, wait 1 second |
+| Start scan | Write `01` to Network Count, wait 2 seconds | Write `01` to Network Count, wait 4 seconds |
+| Count is 0 | Run the whole listing again, up to three times | Write `02` and `01` again as above, then wait 5 seconds; if the count is still 0, run the whole listing again, up to three times |
+| Next record | Write `01` to Network Record, wait 500 ms; a failed write is retried up to three times | Same |
+| Result | Duplicate names dropped, strongest signal first | Same, and names that look like another thermostat's setup access point are hidden: `Mysa-` followed by six lower-case hexadecimal digits at the end of the name |
+
 Each record has this layout:
 
 ```text
@@ -203,6 +241,11 @@ Here `length` includes both the Base64 text and the final RSSI byte, unlike the
 Wi-Fi credential packet length. Total record length is therefore `length + 2`.
 RSSI is a signed byte in dBm; for example, `d7` is −41 dBm. This measures the
 Wi-Fi access point as seen by the thermostat, not the phone's Bluetooth signal.
+
+App 4.21.1 accepts a record when its first byte is `01`, `length` is not 1
+and the RSSI byte at offset `length + 1` lies inside the bytes read. It does
+not require the record to end there, so bytes after the RSSI are allowed and
+ignored. This tolerance was not tried on a device.
 
 The setup page combines duplicate network names using their strongest reading,
 sorts by signal strength, and displays results without selecting or filling in
@@ -312,6 +355,22 @@ The setup server is `http://192.168.4.1:57961`. Read `/pubkey`, `/hwid` and
 `/model`, then send `GET /network/` with an RSA-encrypted JSON `{ssid,pass}`
 value in the `mysa-data` header. Poll `/connected/` (200 joined, 202 pending,
 404 failed), then call `/reboot/`.
+
+<a id="access-point-requests-in-mysas-apps"></a>
+
+What Mysa's apps 3.65.1 and 4.21.1 do on this path is below. None of it was
+tried on a device: the access point has not been reached on a Lite.
+
+| Item | Apps 3.65.1 and 4.21.1 |
+| --- | --- |
+| Joining | App 3.65.1 on Android joins the `Mysa-xxxxxx` network with an empty password |
+| Account | No request to `192.168.4.1` carries an account token |
+| Answers | `/pubkey` returns the key text, `/hwid` returns `{hwid}` and `/model` returns `{model}`; the apps read the three together |
+| Encryption | RSA with PKCS#1 v1.5 padding over the JSON text `{"ssid": …, "pass": …}`, Base64-encoded without line breaks. App 3.65.1 trims both values first |
+| Tries in app 4.21.1 | The three reads, and `/network/`, up to three tries each, 2 seconds apart; `/network/` succeeds only on HTTP 200 |
+| Timeouts in app 4.21.1 | 10 seconds for a request, 5 seconds for `/connected/` |
+| `/connected/` | 202: ask again (app 3.65.1 waits 2 seconds, with a 5-second request timeout). 404: failed at once. App 4.21.1 retries any other error up to three times |
+| `/reboot/` | App 4.21.1 only logs an error from it |
 
 The earlier client encoding JSON-quotes the ciphertext header and also calls
 `/identify`. The later encoding removes line breaks and sends the ciphertext

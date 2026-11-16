@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Docs: what Mysa's app 4.21.1 does, for the parts this library may implement,
+  each marked as app-derived and untested unless a Baseboard Lite result is
+  given: the state writes behind the app's settings, how it confirms a write,
+  usage requests per product, schedule event and hold state by mode,
+  shortcuts, telemetry alerts, reminders, what it does on a 409 claim, fleet
+  firmware updates, Bluetooth setup timings, Central HVAC configuration
+  writes and the Water Heater Controller (docs only; no behaviour change).
 - Docs: results from a Baseboard Lite and Mysa's server on 2026-11-15 added
   (schedule attach, templates and V2 keys, holds, zones, pairing eligibility,
   the second MQTT sign-in path, two-decimal setpoints, legacy history routes),
