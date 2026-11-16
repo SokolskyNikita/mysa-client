@@ -15,6 +15,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from .const import (
     AC_FAN_TO_STATE,
+    MAX_SCHEDULE_EVENTS,
     NO_SETPOINT_MODES,
     SETPOINT_SECTION_BY_MODE,
     SWING_HORIZONTAL,
@@ -326,7 +327,33 @@ def encode_schedule_events(
             }
             encoded.append(dict(wire_event))
     encoded.sort(key=lambda event: (int(event["dayOfWeek"]), event["executionTime"]))
+    check_schedule_events(encoded)
     return encoded
+
+
+def check_schedule_events(events: Iterable[Mapping[str, Any]]) -> None:
+    """Refuse a weekly schedule that breaks Mysa's stated limits.
+
+    A schedule has at most ``MAX_SCHEDULE_EVENTS`` events and at most one per
+    day and time. Mysa's cloud stores a schedule that breaks either rule
+    without an error (seen on a Baseboard Lite), so check before sending.
+    Raises ``ValueError``.
+    """
+    seen: set[tuple[str, str]] = set()
+    count = 0
+    for event in events:
+        count += 1
+        slot = (str(event.get("dayOfWeek")), str(event.get("executionTime")))
+        if slot in seen:
+            raise ValueError(
+                "A schedule can have only one event per day and time "
+                f"(day {slot[0]}, {slot[1]})"
+            )
+        seen.add(slot)
+    if count > MAX_SCHEDULE_EVENTS:
+        raise ValueError(
+            f"A schedule can have at most {MAX_SCHEDULE_EVENTS} events, not {count}"
+        )
 
 
 def fan_speed_changes(speed: AcFan, mode: Mode | None = None) -> StateChanges:

@@ -75,6 +75,10 @@ class StandaloneAiohttpMocker:
         """Register a PATCH response."""
         self._mock.patch(self._url_matcher(url), **self._response_kwargs(url, kwargs))
 
+    def put(self, url: str | re.Pattern[str], **kwargs: Any) -> None:
+        """Register a PUT response."""
+        self._mock.put(self._url_matcher(url), **self._response_kwargs(url, kwargs))
+
     def delete(self, url: str | re.Pattern[str], **kwargs: Any) -> None:
         """Register a DELETE response."""
         self._mock.delete(self._url_matcher(url), **self._response_kwargs(url, kwargs))
@@ -223,6 +227,11 @@ class FakeCloud:
         mock.post(f"{base}/schedule/hold", callback=self._set_hold_checked, repeat=True)
         mock.get(f"{base}/schedule", callback=self._get_schedules, repeat=True)
         mock.post(f"{base}/schedule", callback=self._create_schedule, repeat=True)
+        mock.put(
+            re.compile(r".*/schedule/[^/]+$"),
+            callback=self._update_schedule,
+            repeat=True,
+        )
         mock.delete(
             re.compile(r".*/schedule/[^/]+/attach/[^/]+$"),
             callback=self._delete_schedule,
@@ -437,6 +446,20 @@ class FakeCloud:
         body["id"] = f"s{len(self.schedules) + 1}"
         self.schedules.append(body)
         return self._resp("POST", url, status=201, body={"scheduleId": body["id"]})
+
+    async def _update_schedule(self, url: URL, **kwargs: Any) -> CallbackResult:
+        schedule_id = url.path.split("/")[2]
+        body = json.loads(kwargs.get("data") or "{}")
+        required = {"name", "deviceType", "homeId", "reusable", "deviceIds", "events"}
+        if not required <= body.keys():  # Mysa refuses a partial body
+            return self._resp("PUT", url, status=400, body={"message": "invalid"})
+        for index, schedule in enumerate(self.schedules):
+            if schedule["id"] == schedule_id:
+                self.schedules[index] = {**body, "id": schedule_id}
+                return self._resp("PUT", url, body={"message": "updated"})
+        return self._resp(
+            "PUT", url, status=404, body={"message": "Schedule not found"}
+        )
 
     async def _delete_schedule(self, url: URL, **_kwargs: Any) -> CallbackResult:
         schedule_id = url.path.split("/")[2]

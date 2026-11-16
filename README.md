@@ -87,11 +87,11 @@ Keep passwords and tokens out of source control.
 ## API support and goals
 
 <!-- api-progress:start -->
-[![66.7% of known Mysa API operations fully implemented (74/111)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
+[![68.5% of known Mysa API operations fully implemented (76/111)](https://raw.githubusercontent.com/SokolskyNikita/mysa-client/main/docs/api-progress.svg)](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md)
 
-**66.7% of known Mysa API operations fully implemented (74/111).**
+**68.5% of known Mysa API operations fully implemented (76/111).**
 
-Cloud & account APIs: 62/89 (69.7%); Local & provisioning APIs: 12/22 (54.5%).
+Cloud & account APIs: 64/89 (71.9%); Local & provisioning APIs: 12/22 (54.5%).
 <!-- api-progress:end -->
 
 The [API inventory](https://github.com/SokolskyNikita/mysa-client/blob/main/docs/api-coverage.md) measures implemented operation breadth,

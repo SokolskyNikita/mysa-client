@@ -25,18 +25,43 @@ Weekdays use Sunday = `"0"`; execution times use local `HH:MM:00`. Schedule time
 
 Read schedules with `GET /schedule?homeId={home}&includeLegacyBaseboard=true&includeLegacyAc=true&includeLegacyInfloor=true`. It returns a list of objects with `id`, `name`, `reusable`, `homeId`, `deviceType`, `deviceIds`, `events`, `createdAt` and `updatedAt`. No schedule returned 404; Python converts that to an empty list.
 
-The Lite's legacy schedule adapter normalizes responses: generated names become
-`Schedule`, weekdays become integers, events are sorted Sunday-first, and
-`clientKey` becomes `v2-migration`. Compare event behavior rather than requiring
-the submitted and returned JSON to match exactly.
+Mysa keeps some older thermostats' schedules in an older store that has no
+custom names, and this route translates to and from it. A Baseboard Lite is
+one of them: the name it is given is not kept and reads back as `Schedule`
+(after a create and after an in-place update), weekdays become integers,
+events are sorted Sunday-first, and `clientKey` becomes `v2-migration`. Which
+other models use the older store is not established. Compare event behavior
+rather than requiring the submitted and returned JSON to match exactly.
+
+Mysa states these limits for one schedule: at most 56 events, at most one
+event per day and time, and at most 50 thermostats. This route does not
+enforce them. Tested on a Baseboard Lite on 2026-11-15, each of these was
+answered 201 and stored:
+
+| Request | Answer |
+| --- | --- |
+| 57 events | 201 |
+| Two events on the same day and time | 201 |
+| An event setpoint between steps (22.25) | 201 |
+| An event mode the thermostat doesn't list (cool) | 201 |
+| An unknown field in the body | 201 |
+| `dayOfWeek` as an integer instead of a string | 201 |
+| No `reusable` field | 201 |
+
+Whether the thermostat runs such a schedule was not tested (each was deleted
+at once). `encode_schedule_events()` and `MysaClient.update_schedule()`
+refuse more than 56 events and a repeated day and time
+(`check_schedule_events()`); setpoints and modes are checked when the events
+are built.
 
 `DELETE /schedule/{scheduleId}/attach/{dev}` detaches the device. For an unshared
 schedule, the response was "Schedule unattached from device and deleted".
 In-place editing is verified through `PUT /schedule/{id}`; see the [full-body update example](../../../examples/cloud/schedule-update.full-body.json). Send all six fields:
 `name`, `events`, `deviceType`, `homeId`, `deviceIds`, and `reusable`. A body
-containing only name/events fails. Acceptance and record readback did not
-establish complete scheduled execution. `mysa-client` does not expose an
-in-place schedule-update method; the wire format is retained for reference.
+containing only name/events fails with 400 `Invalid deviceType: undefined`.
+The schedule keeps its ID, and the new events were read back from a Baseboard
+Lite on 2026-11-15. Acceptance and record readback did not establish complete
+scheduled execution. `MysaClient.update_schedule()` sends this request.
 For supported replacement and recovery, follow the [schedule guide](../../guides/schedules.md).
 
 ### Legacy schedules and saved templates
@@ -82,7 +107,7 @@ For a timed hold, use `"holdType":"temporary"` and add `"endTime":"<ISO UTC time
 
 The server rejects a start time that has already passed with "Start time must be greater than current time". The Python client starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix.
 
-The observed hold workflow requires an active schedule. Treat a creation-time 404 as inconclusive unless the response confirms that no schedule is active.
+A hold body needs `holdType`: one with only `deviceId` is answered 400. The observed hold workflow requires an active schedule. Treat a creation-time 404 as inconclusive unless the response confirms that no schedule is active.
 
 `GET /schedule/hold/{dev}` reads the active hold; 404 means none. `DELETE /schedule/hold/{dev}` resumes the schedule. In the test, it returned "Device restored to follow its schedule" and restored the scheduled setpoint. Python treats a missing hold on resume as already complete.
 

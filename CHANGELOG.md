@@ -9,8 +9,27 @@
 - Docs: Mysa's cloud doesn't reject setpoints off the step grid (it rounds them
   to 0.1 °C) and doesn't check a write against the thermostat's capabilities;
   the tested outcomes are in the cloud state reference. Also documented: the
-  usage fields Mysa supports, that a usage bucket's `t` is not that bucket's
-  mean room temperature, the required `source`, and the rate-limit headers.
+  usage fields Mysa supports, the required `source`, and the rate-limit
+  headers.
+- New `MysaClient.update_schedule()`: replace a weekly schedule's name and
+  events in place (`PUT /schedule/{id}`), verified on a Baseboard Lite.
+- `MysaClient.get_usage()` takes `fields=` and `raw_fields=`. `UsageDay` and
+  `UsageBucket` gain `heat_stage2_seconds`, `emergency_heat_seconds`,
+  `cool_seconds`, `cool_stage2_seconds`, `power`, `humidity`,
+  `probe_temperature` and `samples`, and `UsageDay.raw` holds the new
+  `UsageSample` readings. The default request is unchanged. New constants
+  `USAGE_FIELDS` and `USAGE_RAW_FIELDS`. Only heating on-time, the temperature
+  value, the sample count and the raw readings are verified, on a Lite.
+- **Behavior change:** `encode_schedule_events()` (and so
+  `build_schedule_events()`) raises `ValueError` for more than 56 events or two
+  events on the same day and time. Mysa's cloud stores such a schedule without
+  an error. New `check_schedule_events()` and `MAX_SCHEDULE_EVENTS`.
+- New `Capabilities.single_auto_setpoint`.
+- Docs: a usage bucket's `t` depends on the range requested (a short range
+  gives the bucket's mean room temperature, longer ranges a smoothed value);
+  what the schedule route accepts without checking; Mysa's older schedule
+  store and why a Lite's schedule is named `Schedule`; how Mysa counts Central
+  HVAC stage runtime; the In-Floor range and tracked sensor.
 
 ## 0.4.0 (2026-11-15)
 

@@ -78,6 +78,75 @@ exported for callers that need the same day boundary, and
 fetched themselves. A naive `now` raises `ValueError`; request errors are those
 of `get_usage()`.
 
+## Usage history
+
+`await client.get_usage(device_id, time_zone, start, end, *, fields=("oH1",
+"t"), raw_fields=())` returns one `UsageDay` per local day, each with
+30-minute `UsageBucket` entries. The default asks for heating on-time
+(`heat_seconds`) and Mysa's temperature value, as before.
+
+`fields` takes any keys of `USAGE_FIELDS`, and each one fills an attribute on
+both `UsageDay` and `UsageBucket`:
+
+| Field | Attribute | Meaning |
+| --- | --- | --- |
+| `oH1` | `heat_seconds` | Heating on-time |
+| `oH2` | `heat_stage2_seconds` | Second heating stage (Central HVAC) |
+| `oHE` | `emergency_heat_seconds` | Auxiliary or emergency heat (Central HVAC) |
+| `oC1` | `cool_seconds` | Cooling on-time |
+| `oC2` | `cool_stage2_seconds` | Second cooling stage |
+| `k` | `power` | Power, summed, on a model that measures it |
+| `h` | `humidity` | Average humidity |
+| `t` | `average_temperature` / `temperature` | Mysa's temperature value |
+| `i` | `probe_temperature` | Average probe temperature (In-Floor) |
+| `n` | `samples` | Number of readings |
+
+`raw_fields` takes any of `USAGE_RAW_FIELDS` and fills `UsageDay.raw` with
+`UsageSample` readings about 30 seconds apart: room temperature (`c`),
+sensor temperature (`e`), humidity (`h`), setpoint (`s`), heat and cool
+setpoints (`hs`, `cs`), power (`k`), RSSI (`r`) and probe temperature (`i`);
+the time is always included.
+
+```python
+days = await client.get_usage(
+    device_id,
+    "America/Toronto",
+    start,
+    end,
+    fields=("oH1", "oH2", "oHE", "oC1", "oC2", "k", "h"),
+    raw_fields=("c", "s"),
+)
+```
+
+An attribute is `None` when the field wasn't requested or Mysa left it out,
+which it does for anything the thermostat has no data for: a Baseboard Lite
+returned only `oH1`, `t` and `n`. Only those three and the raw readings are
+verified, on a Lite; the staged, power, humidity and probe fields come from
+Mysa's field list and its app. A field outside the two lists raises
+`ValueError` before any request. Mysa refuses a range over 32 days. See the
+[protocol notes](../protocol/cloud-state.md#usage) for what a bucket's
+temperature value holds and for raw `k` on a Lite.
+
+## Weekly schedules
+
+`await client.update_schedule(schedule_id, *, home_id, device_type, device_ids,
+events, name, reusable=False)` replaces a schedule's name and events in place
+and keeps its ID. Mysa needs the whole record, so pass `home_id`,
+`device_type`, `device_ids` and `reusable` as `get_schedules()` returned them.
+A thermostat that keeps its schedule in Mysa's older store, such as a
+Baseboard Lite, does not keep the name.
+
+`check_schedule_events(events)` raises `ValueError` for more than
+`MAX_SCHEDULE_EVENTS` (56) events or two events on the same day and time.
+Mysa's cloud stores such a schedule without an error, so
+`encode_schedule_events()` and `update_schedule()` run the check first.
+
+`Capabilities.single_auto_setpoint` is `True` when the auto capability has a
+minimum gap of 0 and the same heat and cool range (one auto target), `False`
+for a pair that must stay apart, and `None` when no auto targets are
+described. It is not verified on a device; keep the model family as the main
+test.
+
 ## Setpoint rules
 
 Mysa lists setpoints on a step grid, usually 0.5 °C, and this package writes
