@@ -7,7 +7,7 @@
     "model": "BB-V2-0-L",
     "firmware": "3.17.5.13",
     "host": "https://mysa-backend.mysa.cloud",
-    "confirmation": "Rejection documented in primary reference; exact error body and individual observation date unknown",
+    "confirmation": "Not confirmed: a body-less request has not been tried on a device, and Mysa's app 4.21.1 sends this request with no body. Exact error body and observation date unknown",
     "notes": "Reconstructed documentation example, not a raw live capture. IDs and request times are illustrative; unknown metadata remains null."
   },
   "request": {

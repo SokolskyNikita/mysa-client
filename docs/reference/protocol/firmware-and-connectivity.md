@@ -50,7 +50,7 @@ Both control generations use the same availability endpoint and
 
 | Path | Trigger and completion |
 | --- | --- |
-| Current HTTPS | `POST /devices/{dev}/firmware-update` with JSON `{}` (live-verified); poll availability until `update` is false |
+| Current HTTPS | `POST /devices/{dev}/firmware-update`; a JSON `{}` body is the form tested here and was accepted. Poll availability until `update` is false |
 | Legacy MQTT | `MsgType: 6, EventType: 2`; poll the same availability endpoint, with boot messages `MsgType: 10` or MCM `msg: 61` as additional completion signals |
 
 Mysa's app 3.65.1 has no `/devices/{dev}/firmware-update` route.
@@ -60,9 +60,14 @@ clients poll every 10–20 seconds and may repeat the trigger while an update is
 available, with a six-minute limit in the current pairing flow. BLE credential
 transfer is documented [separately](bluetooth.md#credential-transfer-on-newer-models).
 
-Compare [JSON `{}`](../../../examples/cloud/firmware-trigger.empty-object.json) with
-[no request body](../../../examples/cloud/firmware-trigger.no-body-error.json).
-With no update available, the trigger returned HTTP 200 with
+Mysa's app 4.21.1 sends this request with no body and no `Content-Type`
+header. The form tested here is a [JSON `{}`](../../../examples/cloud/firmware-trigger.empty-object.json)
+body, which was accepted on a Baseboard Lite in October 2026. Whether Mysa
+accepts the request without a body was not tested, and neither form has been
+tried against an offered update; the
+[no-body example](../../../examples/cloud/firmware-trigger.no-body-error.json)
+(415) is a constructed example, not a capture.
+With no update available, the `{}` trigger returned HTTP 200 with
 `{"triggered":true,...}`, followed by incoming traffic on the thermostat's
 existing MQTT/TLS connection and an HTTPS connection to
 `devices10010.getmysa.com:443`. This identifies the host contacted for the check,
@@ -71,7 +76,7 @@ reboot or version change occurred; installation of an available release remains
 unverified. See [startup and connectivity](#thermostat-startup-and-connectivity)
 for the device's network behavior.
 
-`MysaClient.start_firmware_update()` sends the required JSON `{}`. The
+`MysaClient.start_firmware_update()` sends the tested JSON `{}` body. The
 consuming application owns opt-in UI, polling, and completion handling; see the
 HA [firmware workflow](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/cloud-workflows.md#firmware)
 for that integration's behavior. Neither the client method nor its offline tests
@@ -105,7 +110,7 @@ No firmware binary, reusable thermostat private key, or app-side image transfer
 was identified by reverse-engineering the original apps. The setup RSA public key encrypts Wi-Fi
 credentials, and AC `mqttFileDelivery`/IR signatures concern remote codes, not
 thermostat firmware. `CUSTOM_REBOOT_REASONS.REBOOT_URL_MANAGER = 10` is a
-reason label, not a command. MCM `REQUEST_REBOOT = 8` has no recovered app sender;
+reason label, not a command. No request in Mysa's apps sends MCM `REQUEST_REBOOT = 8`;
 legacy `MsgType: 10` is a boot notification, and MCM `msg: 10` is a different enum.
 
 The device's firmware-check HTTP path and installation of an offered release

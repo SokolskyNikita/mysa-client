@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Docs: results from a Baseboard Lite and Mysa's server on 2026-11-15 added
+  (schedule attach, templates and V2 keys, holds, zones, pairing eligibility,
+  the second MQTT sign-in path, two-decimal setpoints, legacy history routes),
+  and corrections to the firmware trigger body, swing toggles, heater-type
+  values and V2 schedule updates. App-derived statements now name the app
+  version only (docs and docstrings only; no behaviour change).
 - Docs: protocol reference corrected against Mysa's apps 3.65.1 and 4.21.1 and
   a Baseboard Lite. Setup order after Wi-Fi (claim, identity check, finalize,
   fleet registration), claim defaults per model, the `40` status grace period,

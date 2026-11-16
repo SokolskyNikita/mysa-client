@@ -111,9 +111,12 @@ def _device_body(
 ) -> dict[str, Any]:
     """The record Mysa's app sends when it adds a thermostat.
 
-    With app_defaults, the 4.20.1 app's body, settings defaults included.
-    Without, the 3.54.1 app's smaller body, which leaves the stored settings of
-    a thermostat that was on the account before alone.
+    With app_defaults, the body of Mysa's app 4.21.1, settings defaults
+    included, except in ``schedGlobalOffset``: this client sends 1 for an AC
+    (the app sends none) and always for Baseboard V1, V2 and In-Floor (the app
+    leaves it out when its stored value is already 0, 1 or 30). Without, the
+    3.54.1 app's smaller body, which leaves the stored settings of a
+    thermostat that was on the account before alone.
     """
     family = model_family(model)
     if family is None:
@@ -461,11 +464,13 @@ class MysaClient:
         ValueError before anything is sent.
 
         The fields in the body replace the stored ones when a thermostat comes
-        back to the account. With app_defaults (Mysa's 4.20.1 app), that
-        includes the settings defaults: heater type Baseboard on a V2/Lite, °C,
-        and more. app_defaults=False sends the 3.54.1 app's smaller body (ID,
-        name, model, home, time zone), so a returning thermostat keeps its
-        settings. `heater_type` (a DutyCycleOpt or HeaterType) and `extra` are
+        back to the account. With app_defaults, that includes the settings
+        defaults of Mysa's app 4.21.1: heater type Baseboard on a V2/Lite, °C,
+        and more. This client differs from the app only in
+        ``schedGlobalOffset``, which it sends as 1 for an AC and always for
+        Baseboard V1, V2 and In-Floor. app_defaults=False sends the 3.54.1
+        app's smaller body (ID, name, model, home, time zone), so a returning
+        thermostat keeps its settings. `heater_type` (a DutyCycleOpt or HeaterType) and `extra` are
         sent either way.
 
         Not tested: a thermostat on another account, which Mysa's app recognizes
@@ -738,7 +743,15 @@ class MysaClient:
         *,
         route: Literal["S", "R", "L"] = "R",
     ) -> None:
-        """Set the heater profile in the device settings record."""
+        """Set the heater type of a Baseboard V1, V2 or Lite.
+
+        Routes R (the default) and L write the record key ``DutyCycleOpt``,
+        the only heater-type write Mysa's app 4.21.1 makes for these models.
+        Route S instead writes ``bbConfig.controlType`` in the device state
+        and leaves the record alone; Mysa's app writes that field only on a
+        Baseboard V3, where the values are 0, 1 and 2, so don't use route S
+        with a ``HeaterType`` on a V3.
+        """
         await self._setting_route(
             device_id,
             {"bbConfig": {"controlType": int(heater_type)}},

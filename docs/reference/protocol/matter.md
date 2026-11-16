@@ -33,6 +33,11 @@ version here. `GET /matter/qr/{dev}` returns `qrCode`, the QR payload, and
 `manualCode`, the code to type in. This is app-derived and not verified on a
 device.
 
+For a model without Matter the route answers HTTP 200 with
+`{"error": "No Matter provisioning data found for this device"}` (Baseboard
+Lite, 2026-11-15). That is an error inside a success, so check for `qrCode`
+rather than the status.
+
 ## Expected local control path
 
 1. Complete setup in the Mysa app, then obtain the Matter setup code from

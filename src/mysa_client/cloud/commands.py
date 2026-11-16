@@ -231,12 +231,13 @@ def temperature_changes(
     Mini-Split AC (``family`` is ``ModelFamily.AC``), written as
     ``targetAuto.setpoint``; for any other family, or none, it raises
     ``SetpointModeError`` (a Central HVAC's auto targets are the pair, see
-    :func:`auto_temperature_changes`). Fan-only, dry, sleep and pre-cool have
-    no setpoint section, so they raise ``SetpointModeError`` rather than write
-    a target the mode ignores.
+    :func:`auto_temperature_changes`). Fan-only, dry, sleep and pre-cool raise
+    ``SetpointModeError``: this encoder writes no target in those modes.
+    Mysa's app 4.21.1 differs in two of them: it writes ``targetCool`` in dry
+    and both ``targetHeat`` and ``targetCool`` in fan-only.
 
     The emergency-heat and AC auto encodings are derived from Mysa's app
-    4.21.1 (``useControlService``); not verified on a device.
+    4.21.1; not verified on a device.
     """
     value = require_setpoint(temperature)
     if mode in NO_SETPOINT_MODES:
@@ -418,8 +419,8 @@ def setpoint_limit_changes(
     Mysa's app does. Pass a ``SetpointLimit`` from ``SetpointRules.limit``
     with the same ``kind``.
 
-    The cooling and AC encodings are derived from Mysa's app 4.21.1
-    (``HardwareLockoutOptions``); not verified on a device.
+    The cooling and AC encodings are derived from Mysa's app 4.21.1; not
+    verified on a device.
     """
     if kind not in (SetpointKind.HEAT, SetpointKind.COOL):
         raise ValueError(

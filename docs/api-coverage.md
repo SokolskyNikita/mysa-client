@@ -9,11 +9,11 @@ standalone client. HA orchestration and user-facing management behavior have a
 separate map in the [Mysa Home Assistant repository](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/docs/implementation/progress.md).
 
 <!-- api-coverage:start -->
-![Cloud & account APIs: 64 of 89 implemented (71.9 percent) ; Local & provisioning APIs: 12 of 22 implemented (54.5 percent)](api-coverage.svg)
+![Cloud & account APIs: 64 of 89 implemented (71.9 percent) ; Local & provisioning APIs: 12 of 23 implemented (52.2 percent)](api-coverage.svg)
 
 **01 Cloud & account APIs:** 64 of 89 known rows fully implemented (71.9%). Partial: 1; missing: 24.
 
-**02 Local & provisioning APIs:** 12 of 22 known rows fully implemented (54.5%). Partial: 0; missing: 10.
+**02 Local & provisioning APIs:** 12 of 23 known rows fully implemented (52.2%). Partial: 0; missing: 11.
 
 | Layer | Category | Implemented | Partial | Missing | Total |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -23,7 +23,7 @@ separate map in the [Mysa Home Assistant repository](https://github.com/Sokolsky
 | Cloud & account APIs | Schedules & templates | 13 | 1 | 3 | 17 |
 | Cloud & account APIs | Device services | 8 | 0 | 3 | 11 |
 | Local & provisioning APIs | HomeKit | 12 | 0 | 1 | 13 |
-| Local & provisioning APIs | Provisioning | 0 | 0 | 9 | 9 |
+| Local & provisioning APIs | Provisioning | 0 | 0 | 10 | 10 |
 <!-- api-coverage:end -->
 
 [Open the coverage map at full size](api-coverage.svg). Each tile corresponds to
@@ -52,7 +52,7 @@ operations for the Mysa client package. It tracks request methods, encoders,
 response parsing, and notification interfaces. It does not claim that a method
 is useful for every model or that a successful request proves a physical effect.
 
-The baseline comes from the October 10–12 research, recovered app behavior,
+The baseline comes from the October 10–12 research, the behavior of Mysa's apps,
 current client code, fixtures, and protocol tests. Count equivalent S/R/L host
 aliases once. Distinct protocol operations such as structured versus legacy
 state acquisition and authenticated HomeKit sessions remain separate. Rows
@@ -62,11 +62,13 @@ inapplicable features do not become requirements for every model.
 
 ### AC IR setup and lock-mode research
 
-The Android app comparison (3.54.1 versus 4.20.1) identifies extended physical
-lock modes and recovered AC routes `/ac/remote-match/` and
-`/mysa-legacy/{device}/ac-sync`, alongside IR setup and delivery workflows.
-These are method candidates, not validated request contracts: a route name does
-not establish that a PIN flow, remote match, or physical IR effect succeeds.
+Mysa's Android apps 3.54.1 and 4.20.1 have extended physical lock modes and
+the AC routes `/ac/remote-match/` and `/mysa-legacy/{device}/ac-sync`,
+alongside IR setup and delivery workflows. In app 4.21.1 remote matching is a
+set of REST routes under `/ac/remote-match/{device}/`; their request and
+response shapes are not yet written up in these pages, and none is tested (no
+AC was available). A route name does not establish that a PIN flow, remote
+match, or physical IR effect succeeds.
 The missing remote-match/synchronization family is counted in
 [API-SETUP-09](#api-setup-09); extended lock modes are part of
 [API-WRITE-19](#api-write-19). MQTT setup/delivery remains subject to the
@@ -143,17 +145,17 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-write-15"></a>API-WRITE-15 | Configure adaptive brightness and proximity behavior | Missing | The consumer app writes adaptive-brightness/proximity settings and sends a Mysa command; [commands.py](../src/mysa_client/cloud/commands.py) has no corresponding named codec/setter. |
 | <a id="api-write-16"></a>API-WRITE-16 | Configure in-floor tracking sensor, probe type, and floor limits | Missing | Fields and app behavior are documented in [cloud-state.md](reference/protocol/cloud-state.md) and [cloud-workflows.md](reference/protocol/cloud-workflows.md); no typed setting encoder or wrapper implements these operations. Reading the tracked sensor is covered by [API-READ-12](#api-read-12). |
 | <a id="api-write-17"></a>API-WRITE-17 | Link/unlink or select a remote temperature sensor | Missing | The cross-device sensor-linking feature is described in [cloud-state.md](reference/protocol/cloud-state.md#remote-temperature-tracking); links can be read ([API-READ-29](#api-read-29)), but this package has no linking write or typed request encoder. |
-| <a id="api-write-18"></a>API-WRITE-18 | Configure advanced HVAC equipment and emergency-heat options | Missing | [new-model reference](reference/protocol/new-cloud-models.md) documents these model-specific app controls; named encoders cover basic mode, setpoints, and fan operation only. |
+| <a id="api-write-18"></a>API-WRITE-18 | Configure advanced HVAC equipment and emergency-heat options | Missing | The [new-model reference](reference/protocol/new-cloud-models.md) documents only the fan-program fields; the staging, auxiliary-heat and other advanced `hvacConfig` settings of Mysa's app 4.21.1 are not yet written up in these pages. Named encoders cover basic mode, setpoints, and fan operation only. |
 | <a id="api-write-19"></a>API-WRITE-19 | Reconfigure existing device metadata and app-specific settings | Missing | Claim-time name/time-zone fields exist in [client.py](../src/mysa_client/cloud/client.py); dedicated existing-record updates for name/time zone, eco/animation, and extended lock modes have no named codecs or semantic wrappers. Generic settings transport is not counted for each field. |
-| <a id="api-write-20"></a>API-WRITE-20 | Request a legacy-family firmware update | Implemented | [client.py](../src/mysa_client/cloud/client.py) start_firmware_update() sends the known empty JSON body to /devices/{id}/firmware-update; installation completion is a separate device outcome. |
+| <a id="api-write-20"></a>API-WRITE-20 | Request a legacy-family firmware update | Implemented | [client.py](../src/mysa_client/cloud/client.py) start_firmware_update() sends an empty JSON object `{}` to /devices/{id}/firmware-update, the form tested and accepted on a Baseboard Lite; Mysa's app 4.21.1 sends no body, a form [not tested here](reference/protocol/firmware-and-connectivity.md#legacy-devices). Installation completion is a separate device outcome. |
 | <a id="api-write-21"></a>API-WRITE-21 | Request temporary cloud live reporting for a home | Implemented | [client.py](../src/mysa_client/cloud/client.py) start_live_mode() sends the timeout to /mysa-legacy/stream/home/{home}; this is HTTPS request support, not an MQTT subscription. |
 | <a id="api-write-22"></a>API-WRITE-22 | Replace a shortcut's per-device action map | Implemented | [client.py](../src/mysa_client/cloud/client.py) update_shortcut() sends the known PATCH /scene/{id} body; application is separate. |
-| <a id="api-write-23"></a>API-WRITE-23 | Create a Home/Away/Vacation shortcut | Missing | The known POST /scene consumer request is documented in [Consumer workflow reference](reference/protocol/cloud-workflows.md#retained-app-only-workflow-mechanics); no create wrapper exists. |
+| <a id="api-write-23"></a>API-WRITE-23 | Create a Home/Away/Vacation shortcut | Missing | Mysa's apps create a shortcut with POST /scene; the [shortcut reference](reference/protocol/cloud-workflows.md#home-away-and-vacation-shortcuts) documents reading, editing and applying, and the create body is not yet written up in these pages. No create wrapper exists. |
 | <a id="api-write-24"></a>API-WRITE-24 | Apply a Home/Away/Vacation shortcut to devices | Missing | The known POST /homes/shortcut/apply/{id} operation and timestamp body are described in [cloud-workflows.md](reference/protocol/cloud-workflows.md); the package has no apply wrapper. |
 | <a id="api-write-25"></a>API-WRITE-25 | Create, rename, or remove Mysa zones/groups | Missing | Known consumer zone operations are listed in [Consumer workflow reference](reference/protocol/cloud-workflows.md#retained-app-only-workflow-mechanics); the package has no zone request encoder/wrapper. |
 | <a id="api-write-26"></a>API-WRITE-26 | Create/update/delete geofences and their crossing actions | Missing | Known /geofence and crossing request shapes are documented in [Consumer workflow reference](reference/protocol/cloud-workflows.md#retained-app-only-workflow-mechanics); no wrapper or encoder exists. |
 | <a id="api-write-27"></a>API-WRITE-27 | Configure device telemetry alerts and maintenance reminders | Missing | Known device-alert and home-reminder methods are listed in [Consumer workflow reference](reference/protocol/cloud-workflows.md#retained-app-only-workflow-mechanics); no rule/reminder CRUD wrapper exists. |
-| <a id="api-write-28"></a>API-WRITE-28 | Configure Smart Early On or utility enrollment | Missing | Consumer feature and route families appear in [new-model reference](reference/protocol/new-cloud-models.md); exact payload contracts are not fully established and this package has no corresponding request methods. |
+| <a id="api-write-28"></a>API-WRITE-28 | Configure Smart Early On or utility enrollment | Missing | The Smart Early On reads are among the [additional endpoints](reference/protocol/cloud-workflows.md#additional-endpoints) (a Baseboard Lite is not eligible); the Smart Early On write and the utility-enrollment routes of Mysa's app 4.21.1 are not yet written up in these pages. This package has no corresponding request methods. |
 | <a id="api-write-29"></a>API-WRITE-29 | Set a custom Central HVAC fan-circulation duration | Missing | [commands.py](../src/mysa_client/cloud/commands.py) encodes only the fixed on/auto/off duration combinations; no arbitrary circulation-period encoder or setter exists. |
 | <a id="api-write-30"></a>API-WRITE-30 | Encode and send native Central HVAC fan speed | Implemented | [hvac_fan_speed_command()](../src/mysa_client/cloud/device_commands.py) constructs the native `modes.fan_mode` command with normalized expected effects; [execute_command()](reference/python/cloud.md#semantic-command-execution) validates supplied context and sends it. This named codec meets the inventory criterion; hardware behavior remains app-derived. |
 
@@ -170,13 +172,13 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-sched-07"></a>API-SCHED-07 | Detach/delete a modern schedule from a device | Implemented | [client.py](../src/mysa_client/cloud/client.py) delete_schedule() sends DELETE /schedule/{id}/attach/{deviceId}. |
 | <a id="api-sched-08"></a>API-SCHED-08 | Clear legacy V1 schedule for one device | Implemented | [client.py](../src/mysa_client/cloud/client.py) remove_schedule() writes seven empty weekday arrays with required device/model fields. |
 | <a id="api-sched-09"></a>API-SCHED-09 | Restore a native V1 schedule snapshot | Implemented | [client.py](../src/mysa_client/cloud/client.py) restore_native_schedule() replays validated native V1 schedule data through the known legacy route. |
-| <a id="api-sched-10"></a>API-SCHED-10 | Create/update a legacy V2 schedule snapshot | Implemented | [client.py](../src/mysa_client/cloud/client.py) restore_native_schedule() sends the preserved schedule, device IDs, and model to POST /schedules/v2/; general schedule authoring is outside this snapshot method. |
+| <a id="api-sched-10"></a>API-SCHED-10 | Create/update a legacy V2 schedule snapshot | Implemented | [client.py](../src/mysa_client/cloud/client.py) restore_native_schedule() sends the preserved schedule, device IDs, and model to POST /schedules/v2/ (create) or PUT /schedules/v2/ (update in place, keeping the id; confirmed on a Baseboard Lite, 2026-11-15); general schedule authoring is outside this snapshot method. |
 | <a id="api-sched-11"></a>API-SCHED-11 | Delete/detach a legacy V2 schedule | Implemented | [client.py](../src/mysa_client/cloud/client.py) remove_schedule() sends schedule ID plus device/model body to DELETE /schedules/v2/{scheduleId}. |
 | <a id="api-sched-12"></a>API-SCHED-12 | Query schedule compatibility | Missing | The known /schedule/compatibility API family is listed in [Additional API findings](reference/protocol/cloud-workflows.md#additional-endpoints); no compatibility query wrapper exists. |
 | <a id="api-sched-13"></a>API-SCHED-13 | Read an active schedule hold | Implemented | [client.py](../src/mysa_client/cloud/client.py) get_hold() reads GET /schedule/hold/{id} and represents 404 as no active hold. |
 | <a id="api-sched-14"></a>API-SCHED-14 | Create permanent or temporary schedule hold | Implemented | [client.py](../src/mysa_client/cloud/client.py) set_hold() encodes hold type, future start time, state, and optional end time. |
 | <a id="api-sched-15"></a>API-SCHED-15 | Resume schedule after a hold | Implemented | [client.py](../src/mysa_client/cloud/client.py) resume_schedule() deletes /schedule/hold/{id} and treats absence as already resumed. |
-| <a id="api-sched-16"></a>API-SCHED-16 | Read/create/rename/edit/delete saved schedule templates | Missing | The known /homes/{home}/savedSchedule and create/name/events/delete request family is described in [cloud-workflows.md](reference/protocol/cloud-workflows.md); there is no template endpoint wrapper. |
+| <a id="api-sched-16"></a>API-SCHED-16 | Read/create/rename/delete saved schedule templates | Missing | The known /homes/{home}/savedSchedule and create/name/delete request family is described in [cloud-workflows.md](reference/protocol/cloud-workflows.md#legacy-schedules-and-saved-templates); there is no template endpoint wrapper. Event editing (`.../events`) is not counted: Mysa's app 4.21.1 has none, and the route answered 404 on the modern host (October 2026). |
 | <a id="api-sched-17"></a>API-SCHED-17 | Apply a saved schedule template to devices | Missing | The known template PUT .../apply operation is described in [cloud-workflows.md](reference/protocol/cloud-workflows.md); the client only recognizes device schedules after creation. |
 
 ### Device services
@@ -225,7 +227,8 @@ bounded protocol operation, not an entire end-user feature or a Python line coun
 | <a id="api-setup-06"></a>API-SETUP-06 | Transfer newer-model credential file over BLE and verify CRC | Missing | File chunks, status fields, and CRC checks are documented in [Bluetooth reference](reference/protocol/bluetooth.md); there is no BLE transfer implementation. |
 | <a id="api-setup-07"></a>API-SETUP-07 | Register/finalize newer-model cloud claim | Missing | New-model credential transfer, fleet registration, claim, and /pairing/finalize are described in [cloud-workflows.md](reference/protocol/cloud-workflows.md); the current `add_device()` method accepts Wi-Fi-only legacy families. |
 | <a id="api-setup-08"></a>API-SETUP-08 | Retrieve Matter setup code and commission a device | Missing | Matter support and the known setup-code surface are described in [Matter reference](reference/protocol/matter.md) and [cloud-workflows.md](reference/protocol/cloud-workflows.md); no Matter adapter or commissioning flow exists here. |
-| <a id="api-setup-09"></a>API-SETUP-09 | Match an AC remote and run IR setup/synchronization | Missing | Recovered app routes `/ac/remote-match/` and `/mysa-legacy/{device}/ac-sync` are inventoried in [AC IR setup and lock-mode research](#ac-ir-setup-and-lock-mode-research); exact request contracts remain unvalidated. MQTT setup/delivery is separate from runtime fan/swing support. |
+| <a id="api-setup-09"></a>API-SETUP-09 | Match an AC remote and run IR setup/synchronization | Missing | The app routes `/ac/remote-match/` and `/mysa-legacy/{device}/ac-sync` are inventoried in [AC IR setup and lock-mode research](#ac-ir-setup-and-lock-mode-research); their request shapes are not yet written up here and none is tested. MQTT setup/delivery is separate from runtime fan/swing support. |
+| <a id="api-setup-10"></a>API-SETUP-10 | Check whether a device can be paired to the account | Missing | `GET /pairing/eligibility/{device}` is among the [additional endpoints](reference/protocol/cloud-workflows.md#additional-endpoints); a Baseboard Lite already on the account answered `canPair: true` (2026-11-15). No wrapper exists. |
 
 ## Keeping the map current
 

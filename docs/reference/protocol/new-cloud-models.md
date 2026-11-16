@@ -76,13 +76,8 @@ That sequence is not a hardware-validated setup guide.
 
 ## Evidence and limits
 
-The API field paths, stage decoding, and fan-program fields above come from a
-local decompilation of Mysa Android 4.20.1. The inspected
-`assets/index.android.bundle` matches the saved APK and has SHA-256
-`1cf8a5c0fd83fd1e2a355abd9d22fb70434ca023140d18bc56f5be4927538dde`.
-Relevant app code includes `CAPABILITY_PATHS`, `TELEMETRY_PATHS`,
-`decodeHvacState`, `getHeatCoolStagesFromModes`, `getValidFanSpeeds`,
-`setFanAlwaysOn`, and `setMinimumFanRuntime`.
+The API field paths, stage decoding, and fan-program fields above come from
+Mysa's Android app 4.20.1.
 
 The Home Assistant repository's
 [newer-model fixtures](https://github.com/SokolskyNikita/mysa-homeassistant/blob/main/tests/fixtures/app_4201_new_models.json)

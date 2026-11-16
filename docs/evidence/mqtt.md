@@ -58,4 +58,21 @@ and effective role permissions remain unknown. These observations explain the
 different results seen with the two pools, but they do not establish
 permissions for every account or topic.
 
+<a id="custom-authorizer-path"></a>
+
+On November 15, 2026, the [custom-authorizer path](../reference/protocol/mqtt.md#custom-authorizer-sign-in)
+was tried once on one Baseboard Lite with a hand-built MQTT 3.1.1 client, not
+this library. `GET /iot-token` returned `{token, endpoint, expiresIn: 3600,
+signature}`. The connection succeeded and a QoS 1 subscription to
+`/v1/dev/{deviceId}/out` was granted. A live-telemetry request
+(`MsgType: 11`, `Timeout: 180`) got a PUBACK and `msg: 40` telemetry arrived,
+which does not prove the request was delivered, since live reporting may
+already have been on. A `msg: 44` command with an unchanged setpoint, with and
+without `resp: 2`, got a PUBACK and no acknowledgement on `/out`; one with a
+new setpoint (21.5 °C) and `resp: 2` got a PUBACK, no acknowledgement and no
+disconnect, and the cloud still reported 22 °C after 15 seconds. A few minutes
+later the same command through this library's Identity Pool sign-in was
+acknowledged by the thermostat and reported by the cloud. A fault in the
+hand-built publish is not ruled out.
+
 [Documentation index](../README.md)

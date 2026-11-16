@@ -1,8 +1,7 @@
 """0.4.0 writes: auto-mode targets, schedule/hold modes and cooling limits.
 
-The encodings follow Mysa's Android app 4.21.1 (static analysis of
-``useControlService``, ``AutoModeSetpointControl`` and
-``HardwareLockoutOptions``); none of them has been verified on a device.
+The encodings follow Mysa's Android app 4.21.1; none of them has been
+verified on a device.
 
 New names are read from their module inside each test, so on a release
 without them each test fails on its own rather than the whole file failing to

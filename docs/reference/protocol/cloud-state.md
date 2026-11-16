@@ -20,6 +20,8 @@ The protocols were reverse-engineered from the original Mysa apps. Hardware obse
 
 `GET /devices` returns `{"DevicesObj":{"{dev}":{...}}}`. This is the account's settings record. Its fields include `Id`, `Model`, `Name`, `Home`, `TimeZone`, `LastPaired`, `Format`, `DutyCycleOpt`, `HeaterType`, `ButtonState`, brightness and setpoint limits, `UserTempOffset`, `ecoMode`, `Animation`, button timing values, `Voltage` and `MaxCurrent`. The record and the thermostat's reported state can disagree.
 
+A Baseboard Lite's record had these keys on 2026-11-15: `AllowedUsers`, `Animation`, `AutoBrightness`, `Brightness`, `ButtonAVE`, `ButtonDI`, `ButtonLowPower`, `ButtonPolling`, `ButtonRepeatDelay`, `ButtonRepeatStart`, `ButtonState`, `ButtonThreshold`, `DutyCycleOpt`, `Format`, `HeaterType`, `Home`, `Id`, `LastPaired`, `MaxBrightness`, `MaxSetpoint`, `MinBrightness`, `MinSetpoint`, `Mode`, `Model`, `Name`, `Owner`, `TimeZone`, `UserTempOffset`, `Voltage`, `ecoMode` and `schedGlobalOffset`. Its `Animation` is the string `"on"` or `"off"`, not a boolean, and `ecoMode` is 1 (off) or 0. Both were written with `POST /devices/{dev}/`, echoed in the answer and read back; whether the thermostat acts on them was not observed. Mysa's app 4.21.1 writes only `Name` and `TimeZone` to an existing record, one key per request, and has no setter for `ecoMode` or `Animation`; app 3.65.1 had both.
+
 `GET /capabilities/{dev}` describes the device's supported features and valid values. Compatibility queries append:
 
 ```text
@@ -36,6 +38,8 @@ The Lite request also worked without those parameters. Its response reported:
 | Hardware sensor flags | Humidity, proximity and ambient light all `false` |
 | Connectivity | HomeKit, Google Home and Alexa `true`; Matter `false` |
 | Smart features | Scheduling, geofence and shortcuts `true`; energy reporting, Early On, zoning and saved schedules `false` |
+
+On 2026-11-15 the Lite's response also had `interface.wakeOnApproach.userControllable: false` and no `tenantMode` or `adaptiveBrightness` entry under `interface`; its `smart` group also listed `cloudEarlyOn: false` and `wholeHomeEnergy: false`.
 
 The humidity flag conflicts with the [observed readings](#humidity-and-lite-energy-data). It must not be used to discard humidity that the thermostat actually reports.
 
@@ -99,13 +103,15 @@ Additional state-section names include `latestTelemetry`, `targetHeat`, `targetC
 
 A populated record, from the app only, has `Device`, `NewState` (`event`, `none`, `preheat` or `precool`) and `Timestamp` (unix seconds), and passes through `DeviceTime`, `CurrentState`, `CurrentSetpoint` and `NewSetpoint`, whose types and setpoint unit are not established. The app counts a device as in an event when `NewState` is `event`, `preheat` or `precool` and the timestamp is no more than 8 whole hours old. An empty object (no data) differs from an explicit `none`. This record is separate from the structured `drState` section. See the [Python method](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads).
 
+`GET /demand-response/devices/{dev}/events?from=<ISO>&to=<ISO>` is the event history. A Baseboard Lite that is not enrolled answered 200 with `{"events": []}` (2026-11-15). In Mysa's app 4.21.1 an event has `startAt` and `endAt`, and the answer may also be a bare list; no populated answer has been observed. This client has no wrapper.
+
 ### Live mode and liveness
 
 Outside live mode, the tested Lites sampled about every 31 seconds but uploaded in batches 12–30 minutes apart. `latestTelemetry` and usage `rawReadings` advanced together; neither supplied fresher data between uploads. This request changed the home's reporting interval to about five seconds:
 
 [Temporary live-reporting request](../../../examples/cloud/live-mode.request.json)
 
-The response has `message`, `streamedDeviceIds`, `skippedDeviceIds` and `failedDeviceIds`. The examined mobile app renews a 300-second stream about every 4.2 minutes. Live mode changes the thermostat's reporting rate; the client still has to poll state.
+The response has `message`, `streamedDeviceIds`, `skippedDeviceIds` and `failedDeviceIds`. Mysa's app 4.21.1 sends `{"timeout": 300}` when it starts and again every 240 seconds, only when the home has a legacy model (Baseboard V1, V2 or Lite, In-Floor, AC), and ignores the response. Live mode changes the thermostat's reporting rate; the client still has to poll state.
 
 The recorded cloud liveness check compared reading timestamps before and after
 a short stream (`timeout: 20`), polling `GET /state/{dev}` for advancement. The first fresh reading arrived about one second after that request. Readings stopped when the short stream expired. A returned ID in `streamedDeviceIds` alone does not confirm that the thermostat responded.
@@ -161,6 +167,16 @@ The `0 ≤ idle ≤ wake` brightness order that `set_display_brightness()` and
 `validate_cloud_command()` require is this package's rule; Mysa accepts either
 order. A setpoint write does not change the mode: a heat setpoint written while
 the thermostat was off left it off.
+
+A two-decimal Celsius setpoint is accepted and reported to 0.1 °C through the
+cloud (Baseboard Lite, 2026-11-15): 22.22 was reported as 22.2, and 22.78 as
+22.8 after the state showed 23 for a few seconds (seen once and not
+explained). The thermostat's HomeKit side showed the same two targets as 22.0
+and 23.0, so the cloud and [HomeKit](homekit.md#characteristic-coverage) can
+differ by up to 0.3 °C for one setpoint; both round to the same whole °F.
+Mysa's app 4.21.1 sends such values for a Fahrenheit target (72 °F as 22.22,
+73 °F as 22.78); app 3.65.1 snapped to 0.5 °C. Which value the thermostat
+regulates to was not observed.
 
 ## Telemetry and history
 
@@ -237,8 +253,14 @@ models: `c` corrected temperature, `e` sensor temperature, `i` / `a.i` floor
 temperature, `k` heat-sink temperature, `n` on-time, `f` off-time, `u`
 current, `v` voltage, `y` duty cycle, `x` effective setpoint, `r` RSSI, `p`
 free heap, `m` mode, `z` flag byte, and `a.k` aggregate kWh. The app calls
-this route for a Mini-Split AC only, so the names are not checked against a
-baseboard's response.
+this route for a Mini-Split AC only, in 5-day windows, so the names are not
+checked against a baseboard's response. App 4.21.1 does not call the route at
+all, so Mysa may withdraw it.
+
+On 2026-11-15 the route answered on both hosts for a Baseboard Lite with real
+samples. The response is keyed by a day timestamp; each day has
+`daySummary.formattedDate` and one array per requested attribute (`c` read
+21.7–21.9 °C).
 
 ### Humidity and Lite energy data
 
@@ -265,7 +287,7 @@ not measured Lite power consumption.
 
 Observed sources were `device`, `app`, `schedule` and `shortcuts`. The endpoint can distinguish wall-button changes from scheduled or app changes. Python returns these as `StateChange` objects sorted oldest first.
 
-The legacy endpoint `POST /energy/setpoints/device/{dev}`, accepts `{"Scope":"Day","Timestamp":<Unix seconds>,"PhoneTimezone":"America/Los_Angeles"}` and returns setpoint changes with `Prev`, `Next`, `Source` and `SourceTime`.
+The legacy endpoint `POST /energy/setpoints/device/{dev}`, accepts `{"Scope":"Day","Timestamp":<Unix seconds>,"PhoneTimezone":"America/Los_Angeles"}` and returns setpoint changes with `Prev`, `Next`, `Source` and `SourceTime`. On both hosts the response for a Baseboard Lite was `{Id, Scope, Timestamp, Setpoints: [{Prev, Next, Source, SourceTime, Timestamp, Device}]}` (2026-11-15). Mysa's app 4.21.1 still calls it, for every model, when a thermostat's control screen opens, and keeps the first entry.
 
 ## Model-specific controls
 
@@ -280,18 +302,23 @@ The following values are `CONTROL_MODE_TYPE`, used in `modes.mode`. Capability d
 | 3 | cool | `targetCool` |
 | 4 | heat | `targetHeat` |
 | 5 | emergencyHeat | `targetHeat` |
-| 6 | preCool | No established mapping |
-| 7 | fanOnly | None |
-| 8 | dry | None |
+| 6 | preCool | None |
+| 7 | fanOnly | `targetHeat` and `targetCool` in Mysa's app; none in Python |
+| 8 | dry | `targetCool` in Mysa's app; none in Python |
 | 9 | sleep | None |
 
-The `Mode` enum defines these values. Python writes no setpoint for the "None"
-and "No established mapping" rows: `temperature_changes` raises
-`SetpointModeError` for fan-only, dry, sleep and pre-cool, and holds and
-schedule events in those modes and in off drop their temperature. (Mysa's app
-4.21.1 does write `targetCool.setpoint` with a dry-mode change and both
-`targetHeat` and `targetCool` with a fan-only change; Python doesn't follow it
-there.) A single target given while off is still written to `targetHeat` by
+The `Mode` enum defines these values. The column is the section a setpoint
+change is written to in that mode. For a setpoint change made while the
+thermostat is in dry mode, Mysa's app 4.21.1 writes
+`{"source": 3, "modes": {"mode": 8}, "targetCool": {"setpoint": v}}`; in
+fan-only mode,
+`{"source": 3, "modes": {"mode": 7}, "targetHeat": {"setpoint": v}, "targetCool": {"setpoint": v}}`;
+in off, pre-cool and sleep, `{"source": 3}` with no target at all. These are
+setpoint writes in that mode, not mode changes, and are not verified on a
+device. Python doesn't follow the app in dry and fan-only: `temperature_changes`
+raises `SetpointModeError` for fan-only, dry, sleep and pre-cool, and holds and
+schedule events in those modes and in off drop their temperature. A single
+target given while off is still written to `targetHeat` by
 `temperature_changes` and `climate_command`. What auto mode's targets are
 depends on the model; see [Auto-mode targets](#auto-mode-targets).
 `commands.py` contains field encoders, while
@@ -308,21 +335,19 @@ applications needing paired AUTO targets can build the command with
 
 ### Auto-mode targets
 
-Mysa's app 4.21.1 writes auto-mode targets as follows (static analysis of the
-setpoint writer in `useControlService`, bytecode function 41848, and of
-`AutoModeSetpointControl`). None of it has been verified on a device. Every
-write is `POST /state/{dev}/update` with `source: 3`.
+Mysa's app 4.21.1 writes auto-mode targets as follows; none of it has been
+verified on a device. Every write is `POST /state/{dev}/update` with `source: 3`.
 
 | Model | Mode | Body | Python |
 | --- | --- | --- | --- |
 | Mini-Split AC (`AC-V1-0`, `AC-V1`) | auto | `{"targetAuto": {"setpoint": v}}` | `climate_command(AC, Mode.AUTO, temperature=...)`, `temperature_changes(Mode.AUTO, ..., family=AC)` |
 | Central HVAC (`ST-V1-0`, `ST-V1`, `LV`) | auto, one side | `{"targetAuto": {"heatSetpoint": v}}` or `{"targetAuto": {"coolSetpoint": v}}` | `climate_command(CENTRAL_HVAC, Mode.AUTO, low=...)` or `high=...` |
 | Central HVAC | auto, both sides | `{"targetAuto": {"heatSetpoint": l, "coolSetpoint": h}}` (app 4.20.1) | `climate_command(..., low=..., high=...)` |
-| any | heat or emergency heat | `{"targetHeat": {"setpoint": v}}` (the bytecode tests `HEAT \|\| EMERGENCY_HEAT`; the decompiled pseudo-JS drops the emergency-heat test) | `temperature_changes`, `climate_command` |
+| any | heat or emergency heat | `{"targetHeat": {"setpoint": v}}` (the app writes `targetHeat` in heat and in emergency heat) | `temperature_changes`, `climate_command` |
 
 The app changes a Central HVAC's auto targets one at a time and refuses a
 change that would leave heat not below cool or the pair closer than the
-capability's `minSetpointDelta` (`areSetpointsValid`); it never moves the
+capability's `minSetpointDelta`; it never moves the
 other target. `SetpointRules.heat_cool_side` applies the same check against
 the other side's current value, and `validate_cloud_command` repeats it
 against the state. A single temperature in auto mode on a Central HVAC, or on
@@ -339,9 +364,7 @@ it, or `None` (a Central HVAC's pair is `auto_heat_setpoint` /
 ### Setpoint limits
 
 Owner setpoint limits are `lockoutMin` / `lockoutMax` in `targetHeat`
-(heating) and `targetCool` (cooling), one limit per request. From Mysa's app
-4.21.1 (`HardwareLockoutOptions` and the lockout writers in
-`useControlService`, bytecode generators 41872 and 41873); the cooling and AC
+(heating) and `targetCool` (cooling), one limit per request. From Mysa's app 4.21.1; the cooling and AC
 forms are not verified on a device:
 
 | Model | Limit | Body |
@@ -352,8 +375,8 @@ forms are not verified on a device:
 
 There is no limit for the auto section. Values are °C. Before writing, the app
 requires a new maximum at or above the current minimum, a new minimum at or
-below the current maximum, and the two at least 2 °C apart
-(`validateSetpointLimits`); it offers only values from the capability's cool
+below the current maximum, and the two at least 2 °C apart; it offers only
+values from the capability's cool
 `setpoint.validValues`, or for an AC the whole degrees of its remote's range.
 It confirms the write from `targetCool.reported.lockoutMin` / `lockoutMax`
 (`DeviceState.cool_min` / `cool_max`). Python's `SetpointRules.limit(...,
@@ -392,7 +415,7 @@ Here, shadow fan 2 is medium and shadow mode 3 is cool. Other capability-based m
 
 [AC swing request](../../../examples/cloud/state-update.ac-swing.json)
 
-Horizontal swing uses `horizontalSwingState`. Toggle-only remotes use `verticalSwingToggle` / `horizontalSwingToggle` with `SWING_TOGGLE_MODES` 1 off and 2 on. `mysa-client` exposes explicit swing states through its command helper and does not implement toggle-only commands.
+Horizontal swing uses `horizontalSwingState`. Toggle-only remotes use `verticalSwingToggle` / `horizontalSwingToggle`. In Mysa's app 4.21.1 a toggle field is sent as the number 1 (on) or 0 (off), and a reported toggle of 1 reads as on. When the chosen state is toggle (11) on a capability-based device, the app sends the toggle field alone; otherwise it sends the toggle first if it changed, then the state. None of this is verified on a device (no AC with a toggle-only remote was available). `mysa-client` exposes explicit swing states through its command helper and does not implement toggle-only commands.
 
 The remote's supported controls come from its `GET /devices` record:
 
@@ -414,7 +437,7 @@ Tracking modes are 0 ambient, 1 probe and 2 remote; 480 seconds is the reference
 For an In-Floor thermostat, Mysa states that the setpoint range follows the
 tracked sensor: a heat setpoint above 30 °C needs the floor probe selected,
 and the range reaches 40 °C only then. Mysa's app caps the floor at 40 °C for
-tile and 28 °C for hardwood, laminate, vinyl and carpet (`MAX_FLOOR_TEMPS`).
+tile and 28 °C for hardwood, laminate, vinyl and carpet.
 Neither is verified on hardware. This package takes the range from the
 thermostat's capabilities and adds no cap of its own.
 
