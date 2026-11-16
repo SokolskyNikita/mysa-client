@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Docs: new page on Mysa's official Consumer API (`docs/guides/official-api.md`):
+  what it is, how to connect, and why this library doesn't use it yet.
 - `validate_cloud_command` refuses an operating mode that the thermostat's
   capabilities don't list, for every model except a Mini-Split AC (whose modes
   come from its remote record). It was checked only for Baseboard V3, Central
