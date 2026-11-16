@@ -136,10 +136,23 @@ and keeps its ID. Mysa needs the whole record, so pass `home_id`,
 A thermostat that keeps its schedule in Mysa's older store, such as a
 Baseboard Lite, does not keep the name.
 
-`check_schedule_events(events)` raises `ValueError` for more than
-`MAX_SCHEDULE_EVENTS` (56) events or two events on the same day and time.
-Mysa's cloud stores such a schedule without an error, so
-`encode_schedule_events()` and `update_schedule()` run the check first.
+`check_schedule_events(events, *, max_events=MAX_SCHEDULE_EVENTS)` raises
+`ValueError` for more than `max_events` events or two events on the same day
+and time. Mysa's cloud stores such a schedule without an error, so
+`encode_schedule_events()`, `build_schedule_events()` and `update_schedule()`
+run the check first; each takes the same `max_events`.
+
+The default, `MAX_SCHEDULE_EVENTS`, is 70: the most any model takes.
+`schedule_event_limit(family)` returns a model's own limit: 70 for a Baseboard
+Lite and a Mini-Split AC, and `BASE_SCHEDULE_EVENTS` (56) for the rest. A
+Baseboard Lite stored and ran 70 events; the AC's limit and the 56 come from
+Mysa's app. The app also allows 70 on other models with newer firmware, which
+this function does not model.
+
+```python
+limit = schedule_event_limit(model_family(record.model))
+events = build_schedule_events(items, rules=rules, max_events=limit)
+```
 
 `Capabilities.single_auto_setpoint` is `True` when the auto capability has a
 minimum gap of 0 and the same heat and cool range (one auto target), `False`

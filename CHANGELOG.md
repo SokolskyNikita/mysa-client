@@ -39,9 +39,16 @@
   `USAGE_FIELDS` and `USAGE_RAW_FIELDS`. Only heating on-time, the temperature
   value, the sample count and the raw readings are verified, on a Lite.
 - **Behavior change:** `encode_schedule_events()` (and so
-  `build_schedule_events()`) raises `ValueError` for more than 56 events or two
+  `build_schedule_events()`) raises `ValueError` for more than 70 events or two
   events on the same day and time. Mysa's cloud stores such a schedule without
-  an error. New `check_schedule_events()` and `MAX_SCHEDULE_EVENTS`.
+  an error. New `check_schedule_events()`, `MAX_SCHEDULE_EVENTS` (70),
+  `BASE_SCHEDULE_EVENTS` (56) and `schedule_event_limit(family)`; the three
+  functions and `update_schedule()` take `max_events=`. A Baseboard Lite and a
+  Mini-Split AC take 70 events and other models 56; a Lite stored and ran 70.
+- Fix `restore_native_schedule()` for a legacy V2 schedule: it updates the
+  schedule in place with PUT, keeping its id, while every listed thermostat
+  still follows it, and creates it again with POST otherwise. It always sent
+  POST before, which gives the schedule a new id.
 - New `Capabilities.single_auto_setpoint`.
 - Docs: a usage bucket's `t` depends on the range requested (a short range
   gives the bucket's mean room temperature, longer ranges a smoothed value);
