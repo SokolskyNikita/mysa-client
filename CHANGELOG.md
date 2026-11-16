@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-15)
 
 - Water Heater Controller: `model_family()` recognises `WHC-V1-0` and `WHC-V1`
   (any case) as the new `ModelFamily.WATER_HEATER`, and `MODEL_NAMES` names
