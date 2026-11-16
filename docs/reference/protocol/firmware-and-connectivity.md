@@ -92,6 +92,24 @@ Availability takes an optional `currentVersion` query. The app reads `updateAvai
 
 Status returns `status`, one of `QUEUED`, `IN_PROGRESS`, `SUCCEEDED`, `FAILED`, `TIMED_OUT`, `REJECTED`, `REMOVED` or `CANCELED`, and `percentComplete` (0–100). The app's poller does not trust the status alone: it waits for the device's `identity.reported.fw` to equal the target version after trimming, removing a leading `v`, and dropping anything from the first `-`. After a `SUCCEEDED` status it rechecks three more times before accepting it without a match. Everything here except the Lite's 404 is from the app; no fleet device has been observed.
 
+<a id="fleet-update-start-and-poller-in-app-4-21-1"></a>
+
+How Mysa's app 4.21.1 starts and follows a fleet update is below. All of it
+is what the app does; none of it has been tried, since no fleet model was
+available.
+
+| Step | App 4.21.1 |
+| --- | --- |
+| Start | `POST /ota/update` with `{deviceIds: [dev], versionId, requestSource: "USER", executionTimeout: {timeoutInMinutes: 5, retries: 0}, failureRetries: 1}`; `versionId` is `firmwareVersion.id` from the availability answer |
+| Answer | `requestIds`, an array. The app follows the first ID only, and takes `firmwareVersion.version` as the target version |
+| Poll | `GET /ota/update/{requestId}` at once, then every 10 seconds, each time with a read of the device's `identity.reported`. Of the status answer it reads only `status` |
+| Success | `identity.reported.fw` matches the target (the comparison above), whatever the status; or the `SUCCEEDED` rechecks above run out |
+| Failure without a cancel | `status` is `FAILED`, `TIMED_OUT`, `CANCELED`, `REJECTED` or `REMOVED` and the firmware does not match |
+| Timeout | 6 minutes after the start: the app sends the cancel request and reports a failure |
+| Failed checks | Six checks in a row that raise an error: cancel and failure |
+| Restart on the wrong firmware | The app keeps the `identity.reported.timestamp` it first sees while the status is `IN_PROGRESS`. A newer timestamp while the status is still `IN_PROGRESS` and the firmware still does not match: cancel and failure |
+| Cancel | `PUT /ota/update/{requestId}/cancel` with no body |
+
 Python reads availability and status with [`get_fleet_firmware_availability()` and `get_fleet_firmware_status()`](../python/cloud.md#demand-response-fleet-firmware-and-sensor-link-reads), returning the 404 as "not in a fleet", and offers the version comparison as `firmware_versions_match()`. It does not start or cancel fleet updates.
 
 ## Time, transport, and validation limits

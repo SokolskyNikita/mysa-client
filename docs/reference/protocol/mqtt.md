@@ -198,6 +198,24 @@ command sent without the current mode turns the unit off, and that a setpoint
 must be a whole number
 ([kgelinas/Mysa_HA issue 40](https://github.com/kgelinas/Mysa_HA/issues/40)).
 
+<a id="when-app-3-65-1-uses-msg-44"></a>
+
+Mysa's app 3.65.1 sends `msg: 44` only to a thermostat whose installed
+firmware is at or above a minimum for its model. This is what the app does;
+no thermostat with older firmware was available to try it.
+
+| Model | `msg: 44` from firmware |
+| --- | --- |
+| Baseboard Lite | Always, with no firmware test |
+| Baseboard V1 | 3.11.0 |
+| Baseboard V2 | 3.11.0 |
+| In-Floor | 3.11.0 |
+| Mini-Split AC | 3.12.0 |
+
+The installed versions `1.1.3.7` and `1.1.0.72` pass the test outright, and a
+device with no firmware record fails it. Below the minimum the app uses older
+messages in place of `msg: 44`.
+
 Mysa's broker refuses publishes for some accounts. It closes the connection
 about 100 ms after a publish to `/in` while subscriptions keep working
 ([bourquep/mysa2mqtt issue 299](https://github.com/bourquep/mysa2mqtt/issues/299),
