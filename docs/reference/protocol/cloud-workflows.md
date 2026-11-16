@@ -23,7 +23,7 @@ The protocols were reverse-engineered from the original Mysa apps. Hardware obse
 
 Weekdays use Sunday = `"0"`; execution times use local `HH:MM:00`. Schedule times follow the device's `TimeZone`; callers are responsible for choosing the intended local time. `clientKey` identifies the submitting client.
 
-Read schedules with `GET /schedule?homeId={home}&includeLegacyBaseboard=true&includeLegacyAc=true&includeLegacyInfloor=true`. It returns a list of objects with `id`, `name`, `reusable`, `homeId`, `deviceType`, `deviceIds`, `events`, `createdAt` and `updatedAt`. No schedule returned 404; Python converts that to an empty list.
+Read schedules with `GET /schedule?homeId={home}&includeLegacyBaseboard=true&includeLegacyAc=true&includeLegacyInfloor=true`. It returns a list of objects with `id`, `name`, `reusable`, `homeId`, `deviceType`, `deviceIds`, `events`, `createdAt` and `updatedAt`. No schedule returned 404; Python converts that to an empty list. In place of `homeId=` the route also takes `scheduleId=` (one schedule, including a reusable one with no devices) or `deviceId=` (the schedule attached to a device); both answered on a Baseboard Lite account on 2026-11-15, and Mysa's app 4.21.1 uses them.
 
 Mysa keeps some older thermostats' schedules in an older store that has no
 custom names, and this route translates to and from it. A Baseboard Lite is
@@ -70,6 +70,22 @@ Lite on 2026-11-15. Acceptance and record readback did not establish complete
 scheduled execution. `MysaClient.update_schedule()` sends this request.
 For supported replacement and recovery, follow the [schedule guide](../../guides/schedules.md).
 
+`POST /schedule/{scheduleId}/attach/{dev}` with no body attaches an existing
+schedule; the answer was 200 "Schedule attached to device" (Baseboard Lite,
+2026-11-15). Afterwards `GET /schedule?deviceId=` showed it with the name
+`Schedule`, `reusable: false` and the device attached, so attaching a
+reusable template to a Lite rewrites its name and `reusable` in that view.
+Detaching returned it to a reusable template with no devices. This client has
+no wrapper for the attach request.
+
+No direct delete for a schedule was found (Baseboard Lite account,
+2026-11-15): `DELETE /schedule/{id}` answered 404, and
+`DELETE /homes/savedSchedule/{id}` answered 403 for a modern template. A
+reusable template with no devices was removed by `PUT /schedule/{id}` with
+`reusable: false` and one device, then detaching, which answered "unattached
+from device and deleted". Mysa's app 4.21.1 never deletes a schedule either;
+it detaches every device.
+
 ### Legacy schedules and saved templates
 
 Read v1 with `GET /schedules`. To clear one device, POST
@@ -84,7 +100,9 @@ schedule's id, and a POST with the same body gave it a new id. A PUT for an
 thermostat still had no schedule. `restore_native_schedule()` therefore uses
 PUT only while every listed thermostat still follows that schedule, and POST
 otherwise. A schedule made through the modern `/schedule` route read back
-here with `Version` `"3.0.0"` and its events keyed `BB`. Preserve the native metadata;
+here with `Version` `"3.0.0"` and its events keyed `BB`; the V2 view of that
+schedule had the keys `LastUpdated`, `SavedScheduleId`, `Owner`, `Version`,
+`Events`, `Id` and `Hash` (Baseboard Lite, 2026-11-15). Preserve the native metadata;
 do not derive `Model` or `Owner` from an event key. See the
 [v2 update body](../../../examples/cloud/schedule-v2-update.full-body.json),
 [v2 delete body](../../../examples/cloud/schedule-v2-delete.with-body.json), and
@@ -96,8 +114,13 @@ and [L](../../../examples/cloud/schedule-v1-clear.legacy-host.json). Delete at
 V2 `Events` maps weekday number → minute number → model command. The legacy
 command fields are `mode|setpoint|fanSpeed|brightness|trackingSensor|lowerSetpoint|upperSetpoint`,
 with `%` for unset fields. Mode is the legacy enum, not S's mode enum.
-A Lite uses the model key `BB2L`, for example
-`{"0":{"1437":{"BB2L":"3|22|%|%|%|%|%"}}}`.
+The model key of a Lite's events is not always the same. An older Lite
+schedule read back keyed `BB2L` (October 2026), for example
+`{"0":{"1437":{"BB2L":"3|22|%|%|%|%|%"}}}`. A schedule made through the modern
+`/schedule` route read back in the V2 view keyed `BB` (Baseboard Lite,
+2026-11-15), and Mysa's app 3.65.1 keys Baseboard V2 and Lite actions under
+`BB` when it builds a V2 schedule. Which key a Lite's own V2 schedule returns
+today was not re-read. Replay whatever key the read returned.
 
 Saved templates are read through `/homes/{home}/savedSchedule`; create at
 `POST /homes/savedSchedule/create`, change name/events/apply using
@@ -108,6 +131,12 @@ resources; deleting a template does not remove those device schedules. Event
 editing worked on L but returned 404 on R. Do not infer schedule absence from
 an empty modern list or an old REC `Schedule` pointer.
 
+A modern template is a schedule with `reusable: true` and `deviceIds: []`.
+`POST /schedule` with those answered 201, and the schedule then listed in the
+home as a reusable schedule with no devices (Baseboard Lite account,
+2026-11-15). Mysa's app 4.21.1 saves a template this way and renames it with
+`PUT /schedule/{id}`.
+
 For the supported helper and adapter contracts, see [schedule workflow API](../python/runtime.md#schedule-hold-and-account-workflows).
 
 ### Holds
@@ -116,7 +145,9 @@ With a schedule active, a plain setpoint write held the new value until the next
 
 [Permanent hold exchange](../../../examples/cloud/hold.permanent.json)
 
-For a timed hold, use `"holdType":"temporary"` and add `"endTime":"<ISO UTC timestamp>"`. Both returned 201 with a `holdId`. Changing the hold kept the same ID.
+For a timed hold, use `"holdType":"temporary"` and add `"endTime":"<ISO UTC timestamp>"`. Both returned 201 with a `holdId`. Changing the hold kept the same ID: a temporary hold sent after a permanent one kept its `holdId` (Baseboard Lite, 2026-11-15).
+
+A hold record does not move the setpoint. On a Baseboard Lite on 2026-11-15, with a schedule attached and the setpoint at 22 °C, a permanent hold whose state was 21 °C in heat mode was answered 201 and read back, and the reported setpoint stayed 22 for the next 150 seconds, both without `startTime` and with one ten seconds ahead. A caller that wants the temperature to change must also write the setpoint.
 
 The server rejects a start time that has already passed with "Start time must be greater than current time". The Python client starts the hold ten seconds in the future and formats timestamps with milliseconds and a `Z` suffix. `startTime` is optional: a hold sent without one was answered 201 and read back with the time of the request as its start (Baseboard Lite, 2026-11-15), which is how Mysa's app 4.21.1 sends it. An `endTime` that has passed is refused with "End time must be greater than current time".
 
@@ -232,11 +263,11 @@ the [newer-model API reference](new-cloud-models.md) for model and state shapes.
 | Stage | Request or condition |
 | --- | --- |
 | Claim on account | `POST /devices` with base identity/home fields, without legacy heater defaults |
-| Verify cloud connection | Wait up to five minutes for a newer `identity` timestamp from `GET /state/{dev}` |
+| Verify cloud connection | Wait up to five minutes for a newer `identity` timestamp in the device's cloud state; which request the app makes for that read is not established |
 | Finalize pairing | `POST /pairing/finalize` with `{"deviceId":"{dev}"}` |
 | Register in OTA fleet | `POST /ota/fleet/devices` with `{"deviceIds":["{dev}"],"fleetName":"<fleet>"}`; fleets are `bb3-prod`, `lv-prod`, `cs-prod` and `whc-prod` (Water Heater Controller) |
 | Write display format | The app writes the account's Celsius or Fahrenheit setting to the device |
-| Obtain Matter setup code | `GET /matter/qr/{dev}` returns `{qrCode,manualCode}`; requested later from the app's Home Assistants page, not during setup |
+| Obtain Matter setup code | `GET /matter/qr/{dev}` returns `{qrCode,manualCode}`; requested later from the app's Home Assistants page, not during setup. For a model without Matter the route answers 200 with an `error` field instead (Baseboard Lite, 2026-11-15; see the [Matter reference](matter.md#documented-device-support)) |
 
 The stages are in the order Mysa's app 4.21.1 runs them once Wi-Fi is up,
 after credential transfer; fleet registration is its "register device" setup
@@ -253,13 +284,16 @@ These additional routes have no dedicated `mysa-client` methods unless described
 | --- | --- |
 | `GET /homes` | Tested home had `Zones: []` |
 | `GET /devices/{dev}/telemetry_alerts` | Lite returned `{"Items":[]}` |
-| `GET /smart-early-on/{dev}/availability` | Lite returned `available:false` with `model-not-eligible:BB-V2-0-L`; the server enforces this restriction |
+| `GET /smart-early-on/{dev}/availability` | Lite returned `available:false` with `model-not-eligible:BB-V2-0-L`; the server enforces this restriction. On 2026-11-15 the answer was `{available, code, reason, detail}`, with `available: false` and `code: "model-not-eligible"` |
+| `GET /smart-early-on/{dev}` | Lite returned `{deviceId, enabled: false}` (2026-11-15) |
+| `GET /pairing/eligibility/{dev}` | Returns `{deviceId, canPair, reason, tenantMode}`. A Lite already on the account answered `canPair: true`, `reason: null`, `tenantMode: false` (2026-11-15). In Mysa's app 4.21.1 the reasons `NOT_OWNER` and `NOT_OWNER_TENANT_MODE` block pairing |
 | `POST /energy/v3/{home}/home` | Whole-home energy returned 404 on the Lite account. Neither Mysa's app 3.65.1 nor 4.21.1 has an `/energy/v3` route |
 | `POST /telemetry/usage/zone/{id}`, `POST /telemetry/usage/home/{id}` | Where Mysa's app 4.21.1 reads zone and home energy, with `{start,end,timezone,resolution}` (`resolution` is `halfHour` or `day`); it reads `total`, `bucketStarts` and per-device `devices[].total` / `energy` as kWh. On the Lite account both routes answered 200 with `{start,end,timezone,resolution,bucketStarts,devices,total}` (2026-11-15); `devices` was empty and `total` 0, since a Lite reports no energy. A home ID on the zone route returned 404 |
 | `GET /homes/{home}/savedSchedule` | Returned `{"SavedSchedules":[]}` |
-| `GET /schedule/compatibility/{dev}` | Returned `[]` |
+| `GET /schedule/compatibility/{dev}` | Returned `[]`. It accepts `reusable=true` or `false`; a Lite answered `[]` either way, also while a reusable template existed (2026-11-15) |
+| `POST /schedule/compatibility` | With `{scheduleId, deviceIds}`, a Lite answered `{compatible: [dev], incompatible: [], incompatibilitySummary: {}}` (2026-11-15) |
 | `GET app-prod /devices/state` | Legacy state: timestamped `CorrectedTemp`, `SensorTemp`, `HeatSink`, `Humidity`, `SetPoint`, `Duty`, `OnTime`, `OffTime`, `Lock`, `Brightness`, `Mode`, `TstatMode`, `ScheduleMode`, `HoldTime`, `Rssi`, `Connected`, `Current`, `Voltage`, `FreeHeap`. An In-Floor also has `Infloor` (floor probe, °C) and `TrackedSensor` (3 floor, 5 ambient), per a third-party capture ([bourquep/mysa2mqtt issue 323](https://github.com/bourquep/mysa2mqtt/issues/323)); the device record's `Tracking` uses the same numbering |
-| `GET /feature-flags/features/check?versionNumber={clientVersion}` | Returns `{"features":{"<NAME>":{"value":true}}}`; all returned flags in the test were true except `HIDE_MATTER_IN_APP` |
+| `GET /feature-flags/features/check?versionNumber={clientVersion}` | Returns `{"features":{"<NAME>":{"value":true}}}`; all returned flags in the test were true except `HIDE_MATTER_IN_APP`. For `versionNumber=4.21.1` the route returned 21 flags on 2026-11-15, again all true except that one. The same flags also arrive in the bootstrap response as `featureFlags`; Mysa's app 4.21.1 reads `features[NAME].value` |
 | `POST /network-diagnostics/test` | Uploads the phone's `WifiConnection`, `SpeedTest` and `MysaConnectivity` results |
 | `GET /network-diagnostics/history` | Reads those uploads; neither diagnostics route probes the thermostat |
 | `PATCH /users/{user}` | Sign-in metadata: `LastAppVersion`, `OperatingSystem`, `DeviceType`, `LanguagePreference` |
@@ -267,7 +301,7 @@ These additional routes have no dedicated `mysa-client` methods unless described
 
 Other GET routes seen include `/homes/{home}/geofences`, `/homes/reminders/{home}`, `/homes/{home}/users`, `/invite/users/{user}`, `/devices/{dev}/drstate` (see [demand-response state](cloud-state.md#demand-response-state)), `/communication-preferences/` and notification preferences under `/preferences/User_{user}_Home_{home}/Notifications`.
 
-Model and firmware flags include `LV_ACCESS`, `LV_AUTOMODE_FW`, `LV_ADAPTIVE_BRIGHTNESS_FW`, `LV_STAGED_AUX_HEAT_FW`, `LV_FREEZE_PROTECTION_ENABLE_FW`, `LV_TEMP_DIFFERENTIAL_FW`, `LV_EXTERNAL_PROBE_FW`, `BB3_SMART_EARLY_ON_ACCESS`, `ENROLL_BB3_DR`, `SMART_EARLY_ON_V2_ACCESS`, `ADAPTIVE_BRIGHTNESS_ACCESS`, `STAGED_AUX_HEAT_ACCESS` and `DR_ENROLMENT_WEB_FLOW_ACCESS`. Their presence in a response does not establish that a particular thermostat supports the feature.
+Model and firmware flags include `LV_ACCESS`, `LV_AUTOMODE_FW`, `LV_ADAPTIVE_BRIGHTNESS_FW`, `LV_STAGED_AUX_HEAT_FW`, `LV_FREEZE_PROTECTION_ENABLE_FW`, `LV_TEMP_DIFFERENTIAL_FW`, `LV_EXTERNAL_PROBE_FW`, `BB3_SMART_EARLY_ON_ACCESS`, `ENROLL_BB3_DR`, `SMART_EARLY_ON_V2_ACCESS`, `ADAPTIVE_BRIGHTNESS_ACCESS`, `STAGED_AUX_HEAT_ACCESS` and `DR_ENROLMENT_WEB_FLOW_ACCESS`. The 21 flags returned on 2026-11-15 also included `MQTT_HOME_BASED_CLIENT` and three `LEGACY_*_MIGRATION` flags. Their presence in a response does not establish that a particular thermostat supports the feature.
 
 Additional legacy routes include `/energy/device|zone|home/{id}`,
 `/batchReadings/v2/{dev}`, `/schedules`, `/schedules/device/update/{dev}` and
@@ -279,7 +313,7 @@ uses `GET /nfc/auth-key`; it has no identified role in current provisioning.
 
 ## Retained app-only workflow mechanics
 
-These are recovered legacy app request shapes, preserved for interpreting existing
+These are request shapes from Mysa's older apps, preserved for interpreting existing
 account data. Use the primary reference for live R/L availability. The table
 does not claim delivery of alerts, notifications, geofence effects, or invitations.
 Mysa's app 3.65.1 uses the verbs given on this page for `/schedules/v2/`,
@@ -290,22 +324,22 @@ their parameters as a JSON body.
 | Workflow | App request mechanics |
 | --- | --- |
 | Telemetry alerts | `GET/PUT/DELETE /devices/{dev}/telemetry_alerts`; PUT sends an alert object, DELETE identifies `ThresholdCondition` and `ThresholdMetric` |
-| Zones | `POST /zones/` carries `devices` and `zone`; `POST /zones/{id}` changes `Name`; DELETE removes the zone. App 3.65.1 reads zones with `GET /zones`; app 4.21.1 has no zone read. On a Lite account, creating a zone set the device record's `Zone` and deleting it (204) cleared it; `GET /zones/{id}` takes a zone ID, and a home ID there returned 403 (2026-11-15) |
+| Zones | `POST /zones/` carries `devices` and `zone`; `POST /zones/{id}` changes `Name`; DELETE removes the zone. App 3.65.1 reads zones with `GET /zones`; app 4.21.1 has no zone read. On a Lite account, creating a zone set the device record's `Zone` and deleting it (204) cleared it; `GET /zones/{id}` takes a zone ID, and a home ID there returned 403 (2026-11-15). On a Baseboard Lite on 2026-11-15, `POST /zones` with `{zone, devices: [dev]}` answered 201 `{Zone: {Id, Name, Owner}}`, `POST /zones/{id}` with `{Name}` answered 200 and echoed the name, and `POST /devices/{dev}/` with `{Zone}` answered 200. The zone routes worked for the Lite although its capabilities say `zoning: false`; what that flag governs is not established. In Mysa's app 4.21.1, adding a device to a zone also attaches the zone's schedule and applies its hold (app-derived, not tested) |
 | Geofences | `POST/PATCH/GET/DELETE /geofence/` with optional ID; crossings carry `Users`, `Phone`, `CrossDirection`; app 3.65.1 also has an unauthenticated ("unsecured") background crossing path, not a generic control credential; app 4.21.1 does not have it |
-| Reminders | `GET/POST/PUT/DELETE /homes/reminders/` with the relevant ID; PUT creates a reminder and POST with its ID updates (resets) it, in both app 3.65.1 and 4.21.1; writes wrap the reminder in `payload` |
+| Reminders | `GET/POST/PUT/DELETE /homes/reminders/` with the relevant ID; PUT creates a reminder and POST with its ID updates (resets) it, in both app 3.65.1 and 4.21.1; writes wrap the reminder in `payload`. On a Baseboard Lite account `GET /homes/reminders/{home}` answered 200 `{reminders: []}` (2026-11-15); no reminder write was tried |
 | Home records | `POST /homes`, `PUT /homes/{id}` for fields such as `Name` or `Address.PostalCode`, and `DELETE /homes/{id}`. The electricity rate `ERate` is a field of the home record: Mysa's app 4.21.1 reads it there and computes cost itself as kWh × `ERate`; the server sends no cost |
 | User profile/preferences | `PATCH /users/{user}` for fields such as `LanguagePreference` or `PrimaryHome`; notification settings use `GET/PUT /preferences/User_{user}_Home_{home}/Notifications` |
 | Home access | `GET /homes/{home}/users`; `POST /homes/revokeUserHomeAccess/{user}` carries `Home`; `/users/{user}/updateUserDeviceAccess` carries `DeviceToRevoke`, `DeviceToGrantAccess`, `Home` |
 | Invitations | `POST /invite/` carries `Owner`, `Home`, `Invitee`, `Devices`; lists use `/invite/users/{user}` and `/invite/homes/{home}`; `PUT /invite/{id}/` carries `Action` or `Devices` |
 | Account deletion/migration | `POST /users/{user}/deleteUser` carries `userSub`, `reason`, `email`, `forgotten`; legacy `POST /homes/migrate` carries `From`, `To`, `Devices` |
 | Push/notifications | `/users/pushNotification` registers phone tokens; `/notifications` accepts notification keys; neither establishes delivery to the user |
-| Legacy aggregate energy | `POST /energy/device/{dev}`, `/energy/home/{home}`, `/energy/zone/{id}` use `Id`, `Scope`, `Res`, `Timestamp`, `TimeZone`, `PhoneTimezone`; Scope is Day/Week/Month and Res is halfHour/oneHour/Day |
-| AC anonymous setup | `POST /users/unauth` with `clientId` obtains temporary credentials in the recovered AC IR setup flow; its current permissions are unknown and it is not an established normal-control alternative |
+| Legacy aggregate energy | `POST /energy/device/{dev}`, `/energy/home/{home}`, `/energy/zone/{id}` use `Id`, `Scope`, `Res`, `Timestamp`, `TimeZone`, `PhoneTimezone`; Scope is Day/Week/Month and Res is halfHour/oneHour/Day. Both hosts still answered on 2026-11-15. For a Baseboard Lite, `/energy/device/{dev}` returned `{Id, Scope, Res, Timestamp, TimeZone, TotalEnergy, AverageTemp, AverageHumidity, TotalOnTime, EnergyReadings[], Version}`, each reading with `AvgReturnTemp`, `AvgReturnHumidity`, `AvgInFloorTemp`, `Energy`, `NumOfReadings`, `WeightAvgTotalEnergy`, `WeightAvgOnTime`, `OnTime` and `Timestamp`; `/energy/home/{home}` returned `EnergyReadings: {}` and `Version: "Home V1"`. Every figure was 0 for the Lite, which measures no energy |
+| AC anonymous setup | `POST /users/unauth` with `clientId` obtains temporary credentials in the AC IR setup flow of Mysa's older apps; its current permissions are unknown and it is not an established normal-control alternative |
 
 Older shortcut applications can use `/scene/apply/{id}` behind an app flag;
-current recovered clients use `/homes/shortcut/apply/{id}`. Do not assume every
-route declared in a bundle has a live caller: `/users/readingsForUser` was defined
-without an identified old-app call site. Property-manager `GET /zones` on its
+Mysa's current apps use `/homes/shortcut/apply/{id}`. Do not assume every
+route an app defines is ever called: Mysa's older app defines
+`/users/readingsForUser` but no request to it was found. Property-manager `GET /zones` on its
 separate host and Alexa authorization are app services outside this client.
 
 [Documentation index](../../README.md)

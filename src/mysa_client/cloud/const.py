@@ -188,7 +188,13 @@ class ButtonLock(IntEnum):
 
 
 class HeaterType(IntEnum):
-    """Baseboard switching profile (bbConfig.controlType / DutyCycleOpt)."""
+    """Heater type of a Baseboard V2 or Lite (its ``DutyCycleOpt`` values).
+
+    These two models also report the value in ``bbConfig.controlType``. A
+    Baseboard V3 uses 0 baseboard, 1 fan forced, 2 radiant in that field
+    (Mysa's app 4.21.1; not verified on a device), so don't send a
+    ``HeaterType`` to a V3.
+    """
 
     FAN_FORCED = 8
     BASEBOARD = 9
@@ -236,8 +242,8 @@ class ModelFamily(StrEnum):
     CLIMATE_SENSOR = "cs"
 
 
-# Every model string Mysa's app 4.20.1 accepts (its hwRev table, which also
-# lists lowercase copies; compare uppercased).
+# Every model string Mysa's app 4.20.1 accepts (the app also lists lowercase
+# copies; compare uppercased).
 MODEL_FAMILIES: Final[dict[str, ModelFamily]] = {
     **dict.fromkeys(
         ("BB-V1-0", "V1-0", "BB-V1-1", "V1-1", "V1"), ModelFamily.BASEBOARD_V1

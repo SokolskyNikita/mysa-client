@@ -116,8 +116,10 @@ Each characteristic below uses the suffix `-7361-2053-5349-442b52535349`.
 | `4d790001` | Network record | Read, Write |
 | `4d790002` | Network count and scan trigger | Read, Write, Notify |
 
-Only the scan-trigger write and record reads have an identified role. The
-network-record Write property does not establish a command format. The count
+Mysa's apps 3.65.1 and 4.21.1 write the byte `01` to Network Record after
+each record read, then wait 500 ms, to move to the next network; app 4.21.1
+also writes `02` to it before a scan. These writes were not tried on a device
+here. The count
 characteristic also has a `2902` descriptor; notification support alone does not
 establish a scan-completion signal.
 
@@ -184,7 +186,10 @@ HomeKit availability.
 
 Write the single byte `01` to Network Count to request a fresh scan. Allow time
 for results, read the count as a little-endian 16-bit integer, then read Network
-Record repeatedly to obtain the records. The browser implementation waits two
+Record repeatedly to obtain the records. Mysa's apps write `01` to Network
+Record after each read (see [Wi-Fi network scanning](#wi-fi-network-scanning));
+on the tested Lite repeated reads without that write returned the list, so
+the write is what the apps do, not an established requirement. The browser implementation waits two
 seconds before reading the count and bounds the operation with timeouts; the
 protocol does not provide an established ready notification in the examined flow.
 

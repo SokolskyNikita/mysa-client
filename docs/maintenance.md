@@ -25,7 +25,7 @@ copy application-specific defaults into client references. Move a topic only
 with its incoming links and published anchors accounted for.
 
 Protocol research can include operations this library does not implement.
-Clearly distinguish a recovered route or field from a supported public method.
+Clearly distinguish a route or field known from Mysa's apps from a supported public method.
 The client owns reusable Mysa semantics and workflow correctness, while each
 application chooses scheduling, source/freshness policy, lifecycle, storage,
 and presentation. HA roadmap exclusions do not automatically exclude a

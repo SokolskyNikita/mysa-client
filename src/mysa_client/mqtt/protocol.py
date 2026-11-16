@@ -106,11 +106,13 @@ _STATUS_MESSAGES = frozenset({17, 30, 40})
 def command_type(model: str) -> int | None:
     """The ``body.type`` a model expects in an MCM msg 44 command.
 
-    A thermostat ignores a command carrying another model's type. 5 (Lite) is
-    verified here. 1 (Baseboard V1), 3 (In-Floor) and 4 (Baseboard V2) come
-    from dlenski/mysotherm and bourquep/mysa2mqtt. None for every other
-    model, including a Mini-Split AC (type 2), whose commands need the
-    current mode and a whole-degree setpoint that this encoder doesn't build.
+    A thermostat ignores a command carrying another model's type. The types
+    are the ones Mysa's app 3.65.1 sends: Baseboard V1 1, Mini-Split AC 2,
+    In-Floor 3, Baseboard V2 4 and Baseboard Lite 5; dlenski/mysotherm and
+    bourquep/mysa2mqtt give the same numbers. Only 5 is verified on a device
+    here. None for every other model, including a Mini-Split AC (type 2),
+    whose commands need the current mode and a whole-degree setpoint that
+    this encoder doesn't build.
     """
     name = model.strip().upper()
     if name in _LITE_MODELS:

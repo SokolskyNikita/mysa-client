@@ -50,6 +50,10 @@ of validation on another model. Button lock, brightness, schedules, and humidity
 were absent from the tested Lite's HomeKit surface; the cloud supplies those
 supported functions. HomeKit target modes are not the cloud mode enum.
 
+A cloud setpoint off the 0.5 °C grid shows here rounded: targets the cloud
+reported as 22.2 and 22.8 °C read 22.0 and 23.0 over HomeKit (Baseboard Lite,
+2026-11-15). See [what Mysa checks on a write](cloud-state.md#what-mysa-checks-on-a-write).
+
 The vendor service `3354EC82-AF38-4755-B4A4-4DB8E418F555` contains hidden writable
 boolean `E71D8348-BB33-4C34-8C50-A64B1136EDD2`. A historical true/false trial
 retained the value without an observed display, button-lock, reboot, or MQTT

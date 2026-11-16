@@ -35,7 +35,7 @@ uncertain outcome.
 5. Read back the resource when checking its configuration. A saved schedule
    does not establish that its events will execute on the hardware.
 
-The workflow replaces by detach/recreate; it does not expose the recovered
+The workflow replaces by detach/recreate; it does not expose the
 in-place `PUT /schedule/{id}` operation or saved-template management. Those
 implementation gaps are recorded in the [API inventory](../api-coverage.md#schedules-and-templates).
 

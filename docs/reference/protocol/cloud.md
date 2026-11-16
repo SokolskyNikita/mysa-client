@@ -153,11 +153,11 @@ recommendation to use them all.
 | Temperature offset | `tracking.ambientOffset`: reported | — | — |
 | Setpoint limits | `targetHeat.lockoutMin` / `lockoutMax`: reported | `MinSetpoint` / `MaxSetpoint`: reported | = R |
 | Screen units | `physicalInterface.format` = `C` / `F`: applied | `Format` = `celsius` / `fahrenheit`: applied | = R |
-| Heater profile | `bbConfig.controlType` = 8 / 9: reported | `DutyCycleOpt` = 8 / 9: reported | = R |
+| Heater profile | `bbConfig.controlType` = 8 / 9: reported on a Lite. A Baseboard V3 uses 0 / 1 / 2 in this field, so 8 / 9 must not be sent there; Mysa's app 4.21.1 writes it only on a V3 (V3 untested) | `DutyCycleOpt` = 8 / 9: reported. This record key is the only heater-type write Mysa's app 4.21.1 makes for a V1, V2 or Lite | = R |
 | Device name / time zone | — | `Name` / `TimeZone`: stored | = R |
-| Schedules | `POST /schedule`; full-body `PUT /schedule/{id}`; `DELETE /schedule/{id}/attach/{dev}` | v1 `POST /schedules/device/update/{dev}`; v2 `POST /schedules/v2/`, `DELETE /schedules/v2/{id}` | = R, with the [v1 body difference](cloud-workflows.md#legacy-schedules-and-saved-templates) |
+| Schedules | `POST /schedule`; full-body `PUT /schedule/{id}`; `DELETE /schedule/{id}/attach/{dev}`; `POST /schedule/{id}/attach/{dev}` attaches an existing schedule (Lite, 2026-11-15) | v1 `POST /schedules/device/update/{dev}`; v2 `POST /schedules/v2/` (create), `PUT /schedules/v2/` (update, keeps the id), `DELETE /schedules/v2/{id}` | = R, with the [v1 body difference](cloud-workflows.md#legacy-schedules-and-saved-templates) |
 | Hold / resume | `POST /schedule/hold`; `DELETE /schedule/hold/{dev}`: stored/removed | — | — |
-| Firmware trigger | `POST /devices/{dev}/firmware-update` with JSON `{}`: accepted | — | Same trigger returns 403 |
+| Firmware trigger | `POST /devices/{dev}/firmware-update` with JSON `{}`: accepted. Mysa's app 4.21.1 sends no body; that form is [untested](firmware-and-connectivity.md#legacy-devices) | — | Same trigger returns 403 |
 | Live reporting | `POST /mysa-legacy/stream/home/{home}` with `{"timeout":seconds}`: accepted | — | Same route returns 403 |
 | Claim / remove / replace | — | `POST /devices`, `DELETE /devices/{dev}` | Claim/delete work; existing replacement uses `POST /devices/purgeadd` |
 
@@ -166,7 +166,10 @@ edit/apply, alert, zone, geofence, and reminder record operations worked on R
 and L; shortcut application was inconsistent. Saved-template create/rename/
 apply/delete worked on both, but event editing worked only on L (R: 404).
 `ecoMode` and `Animation` settings persisted on both without verified physical
-effects. Other account/app administration is known from app sources, not
+effects. On a Baseboard Lite on 2026-11-15, `Animation` was the string `"on"`
+or `"off"` and `ecoMode` 1 (off) or 0; both were written with
+`POST /devices/{dev}/`, echoed and read back (see the
+[device record](cloud-state.md#account-discovery-and-capabilities)). Other account/app administration is known from app sources, not
 validated as thermostat functionality.
 
 <a id="important-wire-rules"></a>

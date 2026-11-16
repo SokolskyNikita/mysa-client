@@ -55,6 +55,26 @@ allow the operation. See AWS's [Cognito authorization guide](https://docs.aws.am
 [action definitions](https://docs.aws.amazon.com/iot/latest/developerguide/iot-policy-actions.html),
 and [resource mapping](https://docs.aws.amazon.com/iot/latest/developerguide/iot-action-resources.html).
 
+### Custom-authorizer sign-in
+
+A second sign-in path exists; `MysaMqttClient` does not use it.
+`GET /iot-token` on `mysa-backend.mysa.cloud` returns
+`{token, endpoint, expiresIn: 3600, signature}`. The client connects over
+WebSocket to that endpoint with the query parameters
+`x-amz-customauthorizer-name`, `x-amz-customauthorizer-signature` and `token`,
+with no Identity Pool credentials. Mysa's app 3.65.1 uses this path by default
+(one token per connection, no refresh, up to three immediate connect retries,
+no automatic reconnect) and the Identity Pool path as its fallback.
+
+On a Baseboard Lite on 2026-11-15, a hand-built client connected through this
+path, subscribed to `/v1/dev/{deviceId}/out`, got PUBACKs for its publishes
+and received `msg: 40` telemetry. A `msg: 44` setpoint command published
+through it was not applied, with and without `resp: 2`, while the same
+command through the Identity Pool path was applied a few minutes later. This
+was one test, and a fault in the hand-built publish is not ruled out, so
+whether commands work on this path is not established. See the
+[dated entry](../../evidence/mqtt.md#custom-authorizer-path).
+
 <a id="legacy-wire-protocol"></a>
 
 ## Wire protocol

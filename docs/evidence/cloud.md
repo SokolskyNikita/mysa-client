@@ -39,8 +39,8 @@ reading, power and diagnostics values used by the
 [health and electrical fields](../reference/python/cloud.md#device-health-and-electrical-fields).
 Both heaters were idle, so every load-related value was 0. Everything beyond
 those answers (populated demand-response records, fleet offers and statuses,
-link entries, probe temperature and the meaning of power values) comes from
-static analysis of Mysa's Android app 4.21.1 and is not verified on a device.
+link entries, probe temperature and the meaning of power values) is derived
+from Mysa's Android app 4.21.1 and is not verified on a device.
 The sanitized results are in [reads_0_4_0.json](../../tests/fixtures/reads_0_4_0.json).
 
 <a id="integration-status-and-validation"></a>
